@@ -1,0 +1,62 @@
+# 依赖
+node_modules/
+**/node_modules/
+
+# 构建产物
+dist/
+build/
+**/dist/
+**/build/
+
+# 环境变量
+.env
+.env.*
+.env.local
+**/.env
+**/.env.*
+!.env.example
+
+# 数据库文件
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Prisma 生成文件
+**/generated/prisma/
+
+# 备份目录
+backups/
+**/backups/
+
+# 日志
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 编辑器/IDE
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.cursor/
+
+# 操作系统
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 临时文件
+*.tmp
+*.bak
+*.cache
+
+# Trae 本地数据
+.trae/

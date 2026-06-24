@@ -1,0 +1,14 @@
+node_modules
+# Keep environment variables out of version control
+.env
+
+/generated/prisma
+
+# 数据库文件
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# 备份目录
+/backups/

@@ -1,0 +1,180 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ============ 枚举定义 ============
+
+// 账户角色
+enum Role {
+  HUIZHANG // 会长
+  CHAOGUAN // 超管
+  GUANLI // 管理
+}
+
+// 账户状态
+enum AccountStatus {
+  ACTIVE // 正常
+  DISABLED // 禁用
+}
+
+// 历史操作类型
+enum HistoryAction {
+  UPDATE // 修改
+  DELETE // 删除
+}
+
+// 通知类型
+enum NotificationType {
+  RANK_PUBLISH // 排名公布
+  RULE_CHANGE // 规则变更
+  DATA_CHANGE // 数据变更
+}
+
+// ============ 账户表 ============
+
+model Account {
+  id           Int           @id @default(autoincrement())
+  username     String        @unique
+  passwordHash String
+  role         Role
+  branchId     Int?
+  status       AccountStatus @default(ACTIVE)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  branch             Branch?       @relation(fields: [branchId], references: [id])
+  createdDataRecords DataRecord[]  @relation("DataRecordCreatedBy")
+  modifiedHistories  DataHistory[] @relation("DataHistoryModifier")
+
+  @@index([branchId])
+}
+
+// ============ 分部表 ============
+
+model Branch {
+  id        Int      @id @default(autoincrement())
+  name      String
+  createdAt DateTime @default(now())
+
+  accounts          Account[]
+  personnelBranches PersonnelBranch[]
+  dataRecords       DataRecord[]
+  rewardRules       RewardRule?
+  notifications     Notification[]
+}
+
+// ============ 人员表 ============
+
+model Personnel {
+  id        Int      @id @default(autoincrement())
+  name      String
+  createdAt DateTime @default(now())
+
+  personnelBranches PersonnelBranch[]
+  dataRecords       DataRecord[]
+}
+
+// ============ 人员-分部关联表 ============
+
+model PersonnelBranch {
+  id          Int      @id @default(autoincrement())
+  personnelId Int
+  branchId    Int
+  createdAt   DateTime @default(now())
+
+  personnel Personnel @relation(fields: [personnelId], references: [id])
+  branch    Branch    @relation(fields: [branchId], references: [id])
+
+  @@unique([personnelId, branchId])
+  @@index([branchId])
+}
+
+// ============ 数据记录表 ============
+
+model DataRecord {
+  id          Int      @id @default(autoincrement())
+  personnelId Int
+  branchId    Int
+  weekStart   DateTime
+  sg          Int      @default(0)
+  mx          Int      @default(0)
+  qm          Int      @default(0)
+  createdBy   Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  personnel Personnel     @relation(fields: [personnelId], references: [id])
+  branch    Branch        @relation(fields: [branchId], references: [id])
+  creator   Account       @relation("DataRecordCreatedBy", fields: [createdBy], references: [id])
+  histories DataHistory[]
+
+  // 单字段索引
+  @@index([personnelId])
+  @@index([branchId])
+  @@index([weekStart])
+  @@index([createdBy])
+  // 组合索引：常用查询场景（按周+分部查询、按周+分部+人员查询）
+  @@index([weekStart, branchId])
+  @@index([weekStart, branchId, personnelId])
+  @@index([branchId, personnelId])
+}
+
+// ============ 修改历史表 ============
+
+model DataHistory {
+  id         Int           @id @default(autoincrement())
+  recordId   Int?
+  modifierId Int
+  modifyTime DateTime      @default(now())
+  action     HistoryAction
+  field      String?
+  oldValue   String?
+  newValue   String?
+
+  record   DataRecord? @relation(fields: [recordId], references: [id], onDelete: SetNull)
+  modifier Account     @relation("DataHistoryModifier", fields: [modifierId], references: [id])
+
+  @@index([recordId])
+  @@index([modifierId])
+}
+
+// ============ 奖励规则表 ============
+
+model RewardRule {
+  id             Int      @id @default(autoincrement())
+  branchId       Int      @unique
+  sgRatio        Int      @default(3)
+  qmRatio        Int      @default(3)
+  rank1Reward    Int      @default(100)
+  rank2Reward    Int      @default(80)
+  rank3Reward    Int      @default(60)
+  maixuThreshold Int      @default(40)
+  maixuReward    Int      @default(52)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  branch Branch @relation(fields: [branchId], references: [id])
+}
+
+// ============ 通知表 ============
+
+model Notification {
+  id        Int              @id @default(autoincrement())
+  branchId  Int
+  type      NotificationType
+  content   String
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  @@index([branchId])
+}

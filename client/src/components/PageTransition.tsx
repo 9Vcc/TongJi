@@ -1,0 +1,20 @@
+import { motion } from 'framer-motion'
+import { type ReactNode } from 'react'
+
+/**
+ * 页面切换动画包装组件
+ * 使用 Framer Motion 实现淡入+上移动画
+ * 每次路由变化时自动触发
+ */
+export default function PageTransition({ children }: { children: ReactNode }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -8 }}
+      transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+    >
+      {children}
+    </motion.div>
+  )
+}
