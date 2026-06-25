@@ -110,6 +110,7 @@ export interface RewardRule {
   qmEnabled: boolean
   rankEnabled: boolean
   maixuEnabled: boolean
+  stackRankAndMaixu: boolean
   branch?: { id: number; name: string }
 }
 
@@ -251,6 +252,7 @@ export interface UpdateRewardRuleInput {
   rankEnabled?: boolean
   maixuEnabled?: boolean
   maixuMinEnabled?: boolean
+  stackRankAndMaixu?: boolean
 }
 
 // 录入历史记录日志项（创建/修改/删除统一结构）

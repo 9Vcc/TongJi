@@ -28,6 +28,7 @@ type RuleForm = {
   rankEnabled: boolean
   maixuEnabled: boolean
   maixuMinEnabled: boolean
+  stackRankAndMaixu: boolean
 }
 
 const defaultRuleForm: RuleForm = {
@@ -44,6 +45,7 @@ const defaultRuleForm: RuleForm = {
   rankEnabled: true,
   maixuEnabled: true,
   maixuMinEnabled: false,
+  stackRankAndMaixu: true,
 }
 
 // 开关行：左侧标签 + 右侧 toggle
@@ -228,6 +230,7 @@ export default function BranchesPage() {
           rankEnabled: r.rankEnabled,
           maixuEnabled: r.maixuEnabled,
           maixuMinEnabled: r.maixuMinEnabled,
+          stackRankAndMaixu: r.stackRankAndMaixu,
         })
       }
     } catch (err) {
@@ -609,6 +612,16 @@ export default function BranchesPage() {
                 />
               </div>
             </div>
+
+            {/* 排名奖金与麦序达标奖励叠加开关 */}
+            <ToggleRow
+              label="排名奖金与麦序达标奖励叠加"
+              desc="开启：前3名达标时同时获得排名奖金与麦序达标奖励；关闭：前3名只拿排名奖金，不叠加麦序达标奖励"
+              checked={ruleForm.stackRankAndMaixu}
+              onChange={(v) =>
+                setRuleForm({ ...ruleForm, stackRankAndMaixu: v })
+              }
+            />
           </div>
         )}
       </Modal>

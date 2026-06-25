@@ -33,6 +33,8 @@ interface RewardRuleLike {
   qmEnabled: boolean
   rankEnabled: boolean
   maixuEnabled: boolean
+  // 排名奖金与麦序达标奖励是否叠加（true=前3名达标时叠加两者）
+  stackRankAndMaixu: boolean
 }
 
 // 默认奖励规则（分部未配置时使用，与 schema 默认值一致）
@@ -50,6 +52,7 @@ const DEFAULT_RULE: RewardRuleLike = {
   qmEnabled: true,
   rankEnabled: true,
   maixuEnabled: true,
+  stackRankAndMaixu: true,
 }
 
 /**
@@ -67,24 +70,35 @@ export function computeBaseWelfare(
 }
 
 /**
- * 计算排名奖励
- * - rankEnabled=false：排名奖励整体关闭，返回 0
- * - 第1名：rank1Reward
- * - 第2名：rank2Reward
- * - 第3名：rank3Reward
- * - 第4名及以后：若 maixuEnabled 且麦序 ≥ maixuThreshold 则获得 maixuReward，否则 0
+ * 计算排名奖励（排名奖金 + 麦序达标奖励）
+ * - 麦序达标奖励：所有麦序达标（maixuEnabled && mx >= maixuThreshold）者均可获得 maixuReward，
+ *   仅受 maixuEnabled 控制，与 rankEnabled 无关
+ * - 排名奖金：仅前3名分别获得 rank1Reward/rank2Reward/rank3Reward，受 rankEnabled 控制
+ *   rankEnabled=false 时排名奖金部分为 0，但不影响麦序达标奖励
+ * - stackRankAndMaixu：控制前3名是否同时叠加排名奖金与麦序达标奖励
+ *   true（默认）：前3名达标时 rankBonus + maixuBonus 叠加
+ *   false：前3名只拿 rankBonus，不叠加 maixuBonus；rank≥4 仍可拿 maixuBonus
  */
 export function computeRankReward(
   rank: number,
   mx: number,
   rule: RewardRuleLike
 ): number {
-  if (!rule.rankEnabled) return 0
-  if (rank === 1) return rule.rank1Reward
-  if (rank === 2) return rule.rank2Reward
-  if (rank === 3) return rule.rank3Reward
-  if (rule.maixuEnabled && mx >= rule.maixuThreshold) return rule.maixuReward
-  return 0
+  // 麦序达标奖励：仅受 maixuEnabled 控制，与 rankEnabled 无关
+  const maixuBonus =
+    rule.maixuEnabled && mx >= rule.maixuThreshold ? rule.maixuReward : 0
+  // 排名奖金：仅前3名，受 rankEnabled 控制
+  let rankBonus = 0
+  if (rule.rankEnabled) {
+    if (rank === 1) rankBonus = rule.rank1Reward
+    else if (rank === 2) rankBonus = rule.rank2Reward
+    else if (rank === 3) rankBonus = rule.rank3Reward
+  }
+  // 叠加开关：前3名（rankBonus > 0）且关闭叠加时，不重复发放 maixuBonus
+  if (rankBonus > 0 && !rule.stackRankAndMaixu) {
+    return rankBonus
+  }
+  return rankBonus + maixuBonus
 }
 
 /**
@@ -127,10 +141,10 @@ export async function resolveCycle(
  * - cycle=MONTH：按 refDate 所在月范围聚合所有周记录（sg/mx/qm 求和）后排名
  *
  * 排名按分部分组，每个分部内按麦序(mx)降序排列
- * - 前3名分别获得 rank1Reward/rank2Reward/rank3Reward
- * - 麦序≥maixuThreshold 但未进前3者获得 maixuReward
+ * - 前3名分别获得 rank1Reward/rank2Reward/rank3Reward 排名奖金
+ * - 所有麦序≥maixuThreshold 者均获得 maixuReward（前3名达标时与排名奖金叠加）
  * - 基础福利 = sg*sgRatio + qm*qmRatio（受开关控制）
- * - 总福利 = 基础福利 + 排名奖励
+ * - 总福利 = 基础福利 + 排名奖励（排名奖金 + 麦序达标奖励）
  */
 export async function computeRanking(
   refDate: Date,

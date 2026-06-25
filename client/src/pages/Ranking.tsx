@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Trophy, Info } from 'lucide-react'
 import {
@@ -38,6 +38,8 @@ export default function Ranking() {
   const [branches, setBranches] = useState<Branch[]>([])
   const [branchId, setBranchId] = useState<number | undefined>(undefined)
   const [loading, setLoading] = useState(false)
+  // 标记会长是否已完成初始随机选厅，避免用户手动切回"全部厅"时被覆盖
+  const initBranchRef = useRef(false)
 
   // 当前厅的统计周期（全部厅时统一按周）
   const currentCycle: StatCycle = useMemo(() => {
@@ -48,7 +50,16 @@ export default function Ranking() {
 
   useEffect(() => {
     // 所有用户都需加载厅列表以获取统计周期
-    branchesApi.list().then(setBranches).catch(() => {})
+    branchesApi.list().then((list) => {
+      setBranches(list)
+      // 会长首次进入：随机选择一个厅（而非默认全部厅）
+      if (isHuizhang && !initBranchRef.current && list.length > 0) {
+        const randomBranch = list[Math.floor(Math.random() * list.length)]
+        setBranchId(randomBranch.id)
+      }
+      initBranchRef.current = true
+    }).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
@@ -278,7 +289,8 @@ export default function Ranking() {
         </div>
       </div>
 
-      {/* 福利计算说明 */}
+      {/* 福利计算说明：仅在选择具体厅时显示（全部厅时不显示） */}
+      {branchId && (
       <div className="bg-card border border-border rounded-xl p-5">
         <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
           <div className="flex items-center gap-2">
@@ -369,6 +381,7 @@ export default function Ranking() {
           </div>
         )}
       </div>
+      )}
       </motion.div>
       </AnimatePresence>
     </div>

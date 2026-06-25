@@ -128,15 +128,6 @@ export default function Login() {
             </button>
           </form>
         </motion.div>
-
-        <motion.p
-          className="text-center text-xs text-textMuted mt-6"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-        >
-          默认账户 admin / admin123
-        </motion.p>
       </div>
     </div>
   )

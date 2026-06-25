@@ -23,7 +23,8 @@ import type {
 } from '../types'
 
 const request = axios.create({
-  baseURL: 'http://localhost:3001/api',
+  // 相对路径，由 Vite proxy / 反向代理转发到后端，避免硬编码 localhost 导致公网访问失败
+  baseURL: '/api',
   timeout: 30000,
 })
 

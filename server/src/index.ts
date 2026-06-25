@@ -22,17 +22,9 @@ import dataHistoryRoutes from './routes/data-history';
 
 const fastify = Fastify({ logger: true });
 
-// 配置 CORS：允许前端开发服务器（Vite 默认端口及备用端口）访问
+// 配置 CORS：允许所有来源（任意域名/IP/端口），便于内网穿透与公网访问
 fastify.register(cors, {
-  origin: (origin, cb) => {
-    // 允许无 origin 的请求（如 curl、同源请求、服务器端请求）
-    if (!origin) return cb(null, true);
-    // 允许 localhost 任意端口（开发环境）及生产域名
-    const allowed = /^http:\/\/localhost:\d+$/.test(origin) ||
-                    /^http:\/\/127\.0\.0\.1:\d+$/.test(origin);
-    if (allowed) return cb(null, true);
-    return cb(new Error('CORS 不允许的来源: ' + origin), false);
-  },
+  origin: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
@@ -133,8 +125,9 @@ fastify.post('/api/seed', async (_request, reply) => {
 // 启动服务
 const start = async () => {
   try {
-    await fastify.listen({ port: 3001, host: '0.0.0.0' });
-    fastify.log.info('Server is running on http://localhost:3001');
+    // 监听 IPv6 :: 双栈地址，同时接受 IPv4 与 IPv6 入站连接
+    await fastify.listen({ port: 3001, host: '::' });
+    fastify.log.info('Server is running on http://[::]:3001 (IPv4/IPv6 dual-stack)');
 
     // 定时数据库备份：每天凌晨 3 点执行
     cron.schedule('0 3 * * *', () => {

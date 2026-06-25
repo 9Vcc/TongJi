@@ -173,6 +173,10 @@ model RewardRule {
   qmEnabled      Boolean  @default(true)
   rankEnabled    Boolean  @default(true)
   maixuEnabled   Boolean  @default(true)
+  // 排名奖金与麦序达标奖励是否叠加
+  // true：前3名达标时排名奖金 + 麦序达标奖励叠加
+  // false：前3名只拿排名奖金，不叠加麦序达标奖励
+  stackRankAndMaixu Boolean @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

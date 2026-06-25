@@ -14,7 +14,6 @@ import {
   Users,
   Sun,
   ListOrdered,
-  Gift,
   ChevronLeft,
   ChevronRight,
   Trophy,
@@ -27,6 +26,7 @@ import {
   rankingApi,
   branchesApi,
   dataQueryApi,
+  rewardRulesApi,
   getErrorMessage,
 } from '../api'
 import { useAuth } from '../hooks/useAuth'
@@ -43,6 +43,7 @@ import type {
   DashboardSummary,
   DashboardCompare,
   RankingItem,
+  RewardRule,
   Branch,
   StatCycle,
 } from '../types'
@@ -142,6 +143,8 @@ export default function Dashboard() {
   const [viewAllMonth, setViewAllMonth] = useState(false)
   // 本周数据汇总卡片专用排名数据（跟随页面顶部全局 branchId 切换）
   const [chartRanking, setChartRanking] = useState<RankingItem[]>([])
+  // 当前厅奖励规则（用于判断全麦转换是否关闭）
+  const [rules, setRules] = useState<RewardRule[]>([])
   const [loading, setLoading] = useState(false)
 
   const isHuizhang = user?.role === 'HUIZHANG'
@@ -193,11 +196,13 @@ export default function Dashboard() {
       dashboardApi.getSummary(weekParam, branchId, currentCycle, viewAllParam),
       dashboardApi.getCompare(weekParam, branchId, currentCycle, viewAllParam),
       dashboardApi.getTop3(weekParam, branchId, currentCycle, viewAllParam),
+      rewardRulesApi.get(branchId),
     ])
-      .then(([s, c, t]) => {
+      .then(([s, c, t, rs]) => {
         setSummary(s)
         setCompare(c)
         setTop3(t)
+        setRules(rs)
       })
       .catch((err) => {
         toast.error(getErrorMessage(err))
@@ -205,6 +210,14 @@ export default function Dashboard() {
       .finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekStart, branchId, currentCycle, viewAllParam])
+
+  // 全麦是否计入福利：仅当选中具体厅且该厅规则关闭全麦转换时为 false
+  // 选"全部厅"时多厅规则可能不一致，保持显示全麦
+  const qmEnabled = useMemo(() => {
+    if (!branchId) return true
+    const rule = rules.find((r) => r.branchId === branchId)
+    return rule ? rule.qmEnabled : true
+  }, [rules, branchId])
 
   // 加载本期数据汇总卡片专用排名数据（跟随页面顶部全局 branchId 切换）
   useEffect(() => {
@@ -276,16 +289,12 @@ export default function Dashboard() {
 
   // 计算变化趋势
   const trends = useMemo(() => {
-    if (!compare) return { sg: null, mx: null, welfare: null, personnel: null }
+    if (!compare) return { sg: null, mx: null, personnel: null }
     const calc = (cur: number, prev: number) =>
       prev === 0 ? (cur > 0 ? 100 : 0) : ((cur - prev) / prev) * 100
     return {
       sg: calc(compare.thisWeek.totalSG, compare.lastWeek.totalSG),
       mx: calc(compare.thisWeek.totalMX, compare.lastWeek.totalMX),
-      welfare: calc(
-        compare.thisWeek.totalWelfare,
-        compare.lastWeek.totalWelfare
-      ),
       personnel: calc(
         compare.thisWeek.personnelCount,
         compare.lastWeek.personnelCount
@@ -312,56 +321,64 @@ export default function Dashboard() {
     }
     const labels = [...branchMap.keys()]
     const data = [...branchMap.values()]
-    // 三个指标各一组柱子，固定三色便于分辨
+    // 三个指标各一组柱子，固定三色便于分辨；全麦转换关闭时不显示全麦
+    const datasets = [
+      {
+        label: '收光',
+        data: data.map((d) => d.sg),
+        backgroundColor: 'rgb(5 150 105 / 0.8)',
+        borderColor: 'rgb(5 150 105)',
+        borderWidth: 1,
+        borderRadius: 4,
+      },
+      {
+        label: '麦序',
+        data: data.map((d) => d.mx),
+        backgroundColor: 'rgb(217 119 6 / 0.8)',
+        borderColor: 'rgb(217 119 6)',
+        borderWidth: 1,
+        borderRadius: 4,
+      },
+    ]
+    if (qmEnabled) {
+      datasets.push({
+        label: '全麦',
+        data: data.map((d) => d.qm),
+        backgroundColor: 'rgb(34 197 94 / 0.8)',
+        borderColor: 'rgb(34 197 94)',
+        borderWidth: 1,
+        borderRadius: 4,
+      })
+    }
+    return {
+      labels,
+      datasets,
+    }
+  }, [chartRanking, qmEnabled])
+
+  // 周对比柱状图数据（收光/麦序/全麦；全麦转换关闭时不显示全麦）
+  const compareChart = useMemo(() => {
+    const labels = qmEnabled
+      ? ['收光', '麦序', '全麦']
+      : ['收光', '麦序']
+    if (!compare) {
+      return {
+        labels,
+        datasets: [],
+      }
+    }
+    const thisWeekData = qmEnabled
+      ? [compare.thisWeek.totalSG, compare.thisWeek.totalMX, compare.thisWeek.totalQM]
+      : [compare.thisWeek.totalSG, compare.thisWeek.totalMX]
+    const lastWeekData = qmEnabled
+      ? [compare.lastWeek.totalSG, compare.lastWeek.totalMX, compare.lastWeek.totalQM]
+      : [compare.lastWeek.totalSG, compare.lastWeek.totalMX]
     return {
       labels,
       datasets: [
         {
-          label: '收光',
-          data: data.map((d) => d.sg),
-          backgroundColor: 'rgb(5 150 105 / 0.8)',
-          borderColor: 'rgb(5 150 105)',
-          borderWidth: 1,
-          borderRadius: 4,
-        },
-        {
-          label: '麦序',
-          data: data.map((d) => d.mx),
-          backgroundColor: 'rgb(217 119 6 / 0.8)',
-          borderColor: 'rgb(217 119 6)',
-          borderWidth: 1,
-          borderRadius: 4,
-        },
-        {
-          label: '全麦',
-          data: data.map((d) => d.qm),
-          backgroundColor: 'rgb(34 197 94 / 0.8)',
-          borderColor: 'rgb(34 197 94)',
-          borderWidth: 1,
-          borderRadius: 4,
-        },
-      ],
-    }
-  }, [chartRanking])
-
-  // 周对比柱状图数据（仅收光/麦序/全麦）
-  const compareChart = useMemo(() => {
-    if (!compare) {
-      return {
-        labels: ['收光', '麦序', '全麦'],
-        datasets: [],
-      }
-    }
-    return {
-      labels: ['收光', '麦序', '全麦'],
-      datasets: [
-        {
           label: thisPeriodWord,
-          data: [
-            compare.thisWeek.totalSG,
-            compare.thisWeek.totalMX,
-            compare.thisWeek.totalQM,
-          ],
+          data: thisWeekData,
           backgroundColor: 'rgb(5 150 105 / 0.8)',
           borderColor: 'rgb(5 150 105)',
           borderWidth: 1,
@@ -369,11 +386,7 @@ export default function Dashboard() {
         },
         {
           label: lastPeriodWord,
-          data: [
-            compare.lastWeek.totalSG,
-            compare.lastWeek.totalMX,
-            compare.lastWeek.totalQM,
-          ],
+          data: lastWeekData,
           backgroundColor: isDark
             ? 'rgb(100 116 139 / 0.8)'
             : 'rgb(156 163 175 / 0.8)',
@@ -383,7 +396,7 @@ export default function Dashboard() {
         },
       ],
     }
-  }, [compare, isDark, thisPeriodWord, lastPeriodWord])
+  }, [compare, isDark, thisPeriodWord, lastPeriodWord, qmEnabled])
 
   // 本周数据汇总卡片专用配置：竖直方向（X 轴厅名，Y 轴数值）
   const branchChartOptions = {
@@ -605,10 +618,9 @@ export default function Dashboard() {
         className="space-y-5"
       >
       {/* KPI 卡片 */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {!summary ? (
           <>
-            <KpiCardSkeleton />
             <KpiCardSkeleton />
             <KpiCardSkeleton />
             <KpiCardSkeleton />
@@ -644,17 +656,6 @@ export default function Dashboard() {
                 icon={ListOrdered}
                 color="34 197 94"
                 trend={trends.mx}
-                loading={false}
-                periodLabel={lastPeriodWord}
-              />
-            </div>
-            <div>
-              <KpiCard
-                title={`${thisPeriodWord}总福利`}
-                value={summary?.totalWelfare ?? 0}
-                icon={Gift}
-                color="239 68 68"
-                trend={trends.welfare}
                 loading={false}
                 periodLabel={lastPeriodWord}
               />

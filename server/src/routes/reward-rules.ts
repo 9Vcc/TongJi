@@ -18,6 +18,7 @@ interface RewardRuleInput {
   rankEnabled?: boolean
   maixuEnabled?: boolean
   maixuMinEnabled?: boolean
+  stackRankAndMaixu?: boolean
 }
 
 function isNonNegInt(v: unknown): boolean {
@@ -104,6 +105,7 @@ export default async function rewardRuleRoutes(fastify: FastifyInstance) {
         'rankEnabled',
         'maixuEnabled',
         'maixuMinEnabled',
+        'stackRankAndMaixu',
       ]
 
       const data: Record<string, number | boolean> = {}
