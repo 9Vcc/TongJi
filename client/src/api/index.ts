@@ -19,6 +19,7 @@ import type {
   UpdateRecordInput,
   UpdateRewardRuleInput,
   WeekCompareItem,
+  DataLogItem,
 } from '../types'
 
 const request = axios.create({
@@ -99,13 +100,16 @@ export const accountsApi = {
   },
 }
 
-// ============ 分部管理 ============
+// ============ 厅管理 ============
 export const branchesApi = {
   list() {
     return request.get<unknown, Branch[]>('/branches')
   },
-  create(name: string) {
-    return request.post<unknown, Branch>('/branches', { name })
+  create(name: string, statCycle?: 'WEEK' | 'MONTH') {
+    return request.post<unknown, Branch>('/branches', { name, statCycle })
+  },
+  update(id: number, data: { name?: string; statCycle?: 'WEEK' | 'MONTH' }) {
+    return request.put<unknown, Branch>(`/branches/${id}`, data)
   },
   delete(id: number) {
     return request.delete<unknown, { message: string }>(`/branches/${id}`)
@@ -197,28 +201,48 @@ export const rewardRulesApi = {
 
 // ============ 排名 ============
 export const rankingApi = {
-  getRanking(weekStart?: string, branchId?: number) {
+  getRanking(
+    weekStart?: string,
+    branchId?: number,
+    cycle?: 'WEEK' | 'MONTH',
+    viewAll?: boolean
+  ) {
     return request.get<unknown, RankingItem[]>('/ranking', {
-      params: { weekStart, branchId },
+      params: { weekStart, branchId, cycle, viewAll: viewAll ? 'true' : undefined },
     })
   },
 }
 
 // ============ 看板 ============
 export const dashboardApi = {
-  getSummary(weekStart?: string, branchId?: number) {
+  getSummary(
+    weekStart?: string,
+    branchId?: number,
+    cycle?: 'WEEK' | 'MONTH',
+    viewAll?: boolean
+  ) {
     return request.get<unknown, DashboardSummary>('/dashboard/summary', {
-      params: { weekStart, branchId },
+      params: { weekStart, branchId, cycle, viewAll: viewAll ? 'true' : undefined },
     })
   },
-  getTop3(weekStart?: string, branchId?: number) {
+  getTop3(
+    weekStart?: string,
+    branchId?: number,
+    cycle?: 'WEEK' | 'MONTH',
+    viewAll?: boolean
+  ) {
     return request.get<unknown, RankingItem[]>('/dashboard/top3', {
-      params: { weekStart, branchId },
+      params: { weekStart, branchId, cycle, viewAll: viewAll ? 'true' : undefined },
     })
   },
-  getCompare(weekStart?: string, branchId?: number) {
+  getCompare(
+    weekStart?: string,
+    branchId?: number,
+    cycle?: 'WEEK' | 'MONTH',
+    viewAll?: boolean
+  ) {
     return request.get<unknown, DashboardCompare>('/dashboard/compare', {
-      params: { weekStart, branchId },
+      params: { weekStart, branchId, cycle, viewAll: viewAll ? 'true' : undefined },
     })
   },
 }
@@ -236,6 +260,21 @@ export const exportApi = {
       params: { weekStart, branchId },
       responseType: 'blob',
     })
+  },
+}
+
+// ============ 录入历史记录 ============
+export const dataHistoryApi = {
+  list(params?: {
+    date?: string
+    weekStart?: string
+    branchId?: number
+    personnelId?: number
+    modifierId?: number
+    type?: 'create' | 'update' | 'delete'
+    limit?: number
+  }) {
+    return request.get<unknown, DataLogItem[]>('/data-history', { params })
   },
 }
 

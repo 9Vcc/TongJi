@@ -10,9 +10,14 @@ import {
 } from '../api'
 import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
-import { formatDate, getWeekStart, getWeekRangeText } from '../utils'
+import {
+  formatDate,
+  getWeekStart,
+  getWeekRangeText,
+  getMonthRangeText,
+} from '../utils'
 import { Skeleton } from '../components/Skeleton'
-import type { RankingItem, RewardRule, Branch } from '../types'
+import type { RankingItem, RewardRule, Branch, StatCycle } from '../types'
 
 const rankBadgeColors = ['#F59E0B', '#94A3B8', '#CD7F32']
 const rankRowBg = [
@@ -34,11 +39,17 @@ export default function Ranking() {
   const [branchId, setBranchId] = useState<number | undefined>(undefined)
   const [loading, setLoading] = useState(false)
 
+  // 当前厅的统计周期（全部厅时统一按周）
+  const currentCycle: StatCycle = useMemo(() => {
+    const branch = branches.find((b) => b.id === branchId)
+    return branch?.statCycle ?? 'WEEK'
+  }, [branches, branchId])
+  const isMonthCycle = currentCycle === 'MONTH'
+
   useEffect(() => {
-    if (isHuizhang) {
-      branchesApi.list().then(setBranches).catch(() => {})
-    }
-  }, [isHuizhang])
+    // 所有用户都需加载厅列表以获取统计周期
+    branchesApi.list().then(setBranches).catch(() => {})
+  }, [])
 
   useEffect(() => {
     dataQueryApi
@@ -70,6 +81,30 @@ export default function Ranking() {
     return Array.from(set).sort().reverse()
   }, [weeks, weekStart])
 
+  // 按月统计时：从周列表提取不重复月份，每月取最早周一作为参考日
+  const allMonths = useMemo(() => {
+    const monthMap = new Map<string, string>() // YYYY-MM -> refDate
+    const addMonth = (dateStr: string) => {
+      const d = new Date(dateStr)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      if (!monthMap.has(key)) monthMap.set(key, dateStr)
+    }
+    weeks.forEach(addMonth)
+    addMonth(formatDate(getWeekStart()))
+    addMonth(weekStart)
+    return Array.from(monthMap.entries())
+      .map(([key, ref]) => ({ key, ref }))
+      .sort((a, b) => b.key.localeCompare(a.key))
+  }, [weeks, weekStart])
+
+  // 当前选中月份的参考日（确保 weekStart 落在所选月）
+  const selectedMonthRef = useMemo(() => {
+    const d = new Date(weekStart)
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const found = allMonths.find((m) => m.key === key)
+    return found?.ref ?? weekStart
+  }, [weekStart, allMonths])
+
   const currentRule = rules[0]
 
   return (
@@ -77,19 +112,48 @@ export default function Ranking() {
       {/* 顶部选择器 */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <label className="text-sm text-textSecondary">周次</label>
-          <select
-            value={weekStart}
-            onChange={(e) => setWeekStart(e.target.value)}
-            aria-label="选择周次"
-            className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/50 min-w-[220px] cursor-pointer"
-          >
-            {allWeeks.map((w) => (
-              <option key={w} value={w}>
-                {getWeekRangeText(w)}
-              </option>
-            ))}
-          </select>
+          <label className="text-sm text-textSecondary">
+            {isMonthCycle ? '月份' : '周次'}
+          </label>
+          {isMonthCycle ? (
+            <select
+              value={selectedMonthRef}
+              onChange={(e) => setWeekStart(e.target.value)}
+              aria-label="选择月份"
+              className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/50 min-w-[220px] cursor-pointer"
+            >
+              {allMonths.map((m) => (
+                <option key={m.key} value={m.ref}>
+                  {getMonthRangeText(m.ref)}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <select
+              value={weekStart}
+              onChange={(e) => setWeekStart(e.target.value)}
+              aria-label="选择周次"
+              className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/50 min-w-[220px] cursor-pointer"
+            >
+              {allWeeks.map((w) => (
+                <option key={w} value={w}>
+                  {getWeekRangeText(w)}
+                </option>
+              ))}
+            </select>
+          )}
+          {branchId && (
+            <span
+              className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                isMonthCycle
+                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                  : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+              }`}
+              title={isMonthCycle ? '该厅按月统计' : '该厅按周统计'}
+            >
+              {isMonthCycle ? '按月统计' : '按周统计'}
+            </span>
+          )}
         </div>
 
         {isHuizhang && (
@@ -100,10 +164,11 @@ export default function Ranking() {
             }
             className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer"
           >
-            <option value="">全部分部</option>
+            <option value="">全部厅</option>
             {branches.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.name}
+                {b.statCycle === 'MONTH' ? '（按月）' : ''}
               </option>
             ))}
           </select>
@@ -124,7 +189,9 @@ export default function Ranking() {
       <div className="bg-card border border-border rounded-xl overflow-hidden">
         <div className="flex items-center gap-2 px-5 py-4 border-b border-border">
           <Trophy size={18} className="text-warning" />
-          <h3 className="text-base font-semibold text-textPrimary">本周排名</h3>
+          <h3 className="text-base font-semibold text-textPrimary">
+            {isMonthCycle ? '本月排名' : '本周排名'}
+          </h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -213,11 +280,22 @@ export default function Ranking() {
 
       {/* 福利计算说明 */}
       <div className="bg-card border border-border rounded-xl p-5">
-        <div className="flex items-center gap-2 mb-4">
-          <Info size={18} className="text-primary" />
-          <h3 className="text-base font-semibold text-textPrimary">
-            福利计算说明
-          </h3>
+        <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Info size={18} className="text-primary" />
+            <h3 className="text-base font-semibold text-textPrimary">
+              福利计算说明
+            </h3>
+          </div>
+          <span
+            className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+              isMonthCycle
+                ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+            }`}
+          >
+            {isMonthCycle ? '按月统计周期' : '按周统计周期'}
+          </span>
         </div>
         {!currentRule && loading ? (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -235,41 +313,54 @@ export default function Ranking() {
               label="收光转换"
               value={`× ${currentRule.sgRatio}`}
               desc={`收光 × ${currentRule.sgRatio} 计入福利`}
+              enabled={currentRule.sgEnabled}
             />
             <RuleCard
               label="全麦转换"
               value={`× ${currentRule.qmRatio}`}
               desc={`全麦 × ${currentRule.qmRatio} 计入福利`}
+              enabled={currentRule.qmEnabled}
             />
             <RuleCard
               label="排名第1奖励"
               value={currentRule.rank1Reward}
               desc="排名第1额外奖励"
+              enabled={currentRule.rankEnabled}
             />
             <RuleCard
               label="排名第2奖励"
               value={currentRule.rank2Reward}
               desc="排名第2额外奖励"
+              enabled={currentRule.rankEnabled}
             />
             <RuleCard
               label="排名第3奖励"
               value={currentRule.rank3Reward}
               desc="排名第3额外奖励"
+              enabled={currentRule.rankEnabled}
             />
             <RuleCard
               label="麦序达标阈值"
               value={currentRule.maixuThreshold}
               desc="麦序达到此值视为达标"
+              enabled={currentRule.maixuEnabled}
             />
             <RuleCard
               label="麦序达标奖励"
               value={currentRule.maixuReward}
               desc="麦序达标后额外奖励"
+              enabled={currentRule.maixuEnabled}
             />
             <RuleCard
-              label="所属分部"
+              label="麦序最低标准"
+              value={currentRule.maixuMinStandard}
+              desc="启用后麦序未达标不计任何福利"
+              enabled={currentRule.maixuMinEnabled}
+            />
+            <RuleCard
+              label="所属厅"
               value={currentRule.branch?.name ?? '-'}
-              desc="当前规则适用的分部"
+              desc="当前规则适用的厅"
             />
           </div>
         ) : (
@@ -288,15 +379,34 @@ function RuleCard({
   label,
   value,
   desc,
+  enabled = true,
 }: {
   label: string
   value: number | string
   desc: string
+  enabled?: boolean
 }) {
   return (
-    <div className="border border-border rounded-lg p-4 bg-card card-hover hover:border-primary/50">
-      <div className="text-xs text-textSecondary">{label}</div>
-      <div className="text-lg font-semibold text-textPrimary mt-1 font-mono">
+    <div
+      className={`border rounded-lg p-4 bg-card card-hover ${
+        enabled
+          ? 'border-border hover:border-primary/50'
+          : 'border-border opacity-60'
+      }`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs text-textSecondary">{label}</div>
+        {!enabled && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400">
+            已关闭
+          </span>
+        )}
+      </div>
+      <div
+        className={`text-lg font-semibold mt-1 font-mono ${
+          enabled ? 'text-textPrimary' : 'text-textMuted line-through'
+        }`}
+      >
         {value}
       </div>
       <div className="text-xs text-textMuted mt-1">{desc}</div>

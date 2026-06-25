@@ -388,7 +388,12 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const { id } = request.params as { id: string }
       const currentUser = request.user
-      const body = request.body as { sg?: number; mx?: number; qm?: number }
+      const body = request.body as {
+        sg?: number
+        mx?: number
+        qm?: number
+        personnelId?: number
+      }
 
       const recordId = Number(id)
       if (Number.isNaN(recordId)) {
@@ -412,7 +417,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         }
       }
 
-      // 校验字段合法性
+      // 校验 sg/mx/qm 字段合法性
       const updates: { field: 'sg' | 'mx' | 'qm'; value: number }[] = []
       for (const field of ['sg', 'mx', 'qm'] as const) {
         if (body[field] !== undefined) {
@@ -423,12 +428,35 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         }
       }
 
-      if (updates.length === 0) {
+      // 校验 personnelId
+      const personnelChanged =
+        body.personnelId !== undefined &&
+        body.personnelId !== record.personnelId
+      if (body.personnelId !== undefined && !Number.isInteger(body.personnelId)) {
+        return reply.code(400).send({ error: '人员ID必须为整数' })
+      }
+      if (personnelChanged) {
+        // 校验新人员属于该分部
+        const assoc = await prisma.personnelBranch.findUnique({
+          where: {
+            personnelId_branchId: {
+              personnelId: body.personnelId!,
+              branchId: record.branchId,
+            },
+          },
+        })
+        if (!assoc) {
+          return reply.code(400).send({ error: '人员不属于该分部' })
+        }
+      }
+
+      if (updates.length === 0 && !personnelChanged) {
         return reply.code(400).send({ error: '没有需要更新的字段' })
       }
 
       // 记录修改历史并更新
       const updated = await prismaClient.$transaction(async (tx) => {
+        // 记录 sg/mx/qm 字段历史
         for (const { field, value } of updates) {
           const oldValue = record[field]
           if (oldValue === value) continue
@@ -443,6 +471,61 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
             },
           })
         }
+
+        // 人员变更：合并到目标人员本周记录
+        if (personnelChanged) {
+          const newPersonnelId = body.personnelId!
+          // 记录人员变更历史
+          await tx.dataHistory.create({
+            data: {
+              recordId: record.id,
+              modifierId: currentUser.id,
+              action: HistoryAction.UPDATE,
+              field: 'personnelId',
+              oldValue: String(record.personnelId),
+              newValue: String(newPersonnelId),
+            },
+          })
+
+          const target = await tx.dataRecord.findFirst({
+            where: {
+              personnelId: newPersonnelId,
+              branchId: record.branchId,
+              weekStart: record.weekStart,
+            },
+          })
+
+          // 计算新值（应用本次 sg/mx/qm 更新）
+          const newSg = body.sg ?? record.sg
+          const newMx = body.mx ?? record.mx
+          const newQm = body.qm ?? record.qm
+
+          if (target) {
+            // 目标人员本周已有记录：累加并删除当前记录
+            const merged = await tx.dataRecord.update({
+              where: { id: target.id },
+              data: {
+                sg: target.sg + newSg,
+                mx: target.mx + newMx,
+                qm: target.qm + newQm,
+              },
+            })
+            await tx.dataRecord.delete({ where: { id: record.id } })
+            return merged
+          } else {
+            // 目标人员本周无记录：直接更新当前记录的 personnelId
+            return tx.dataRecord.update({
+              where: { id: record.id },
+              data: {
+                personnelId: newPersonnelId,
+                sg: body.sg ?? undefined,
+                mx: body.mx ?? undefined,
+                qm: body.qm ?? undefined,
+              },
+            })
+          }
+        }
+
         return tx.dataRecord.update({
           where: { id: record.id },
           data: {

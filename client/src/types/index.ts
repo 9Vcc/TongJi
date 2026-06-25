@@ -10,6 +10,9 @@ export type NotificationType = 'RULE_CHANGE' | 'DATA_UPDATE' | 'SYSTEM'
 // 历史操作类型
 export type HistoryAction = 'UPDATE' | 'DELETE'
 
+// 统计周期
+export type StatCycle = 'WEEK' | 'MONTH'
+
 // 用户/账户
 export interface User {
   id: number
@@ -31,6 +34,7 @@ export interface LoginResponse {
 export interface Branch {
   id: number
   name: string
+  statCycle: StatCycle
   createdAt: string
   personnelCount?: number
   dataRecordCount?: number
@@ -100,6 +104,12 @@ export interface RewardRule {
   rank3Reward: number
   maixuThreshold: number
   maixuReward: number
+  maixuMinStandard: number
+  maixuMinEnabled: boolean
+  sgEnabled: boolean
+  qmEnabled: boolean
+  rankEnabled: boolean
+  maixuEnabled: boolean
   branch?: { id: number; name: string }
 }
 
@@ -223,6 +233,7 @@ export interface UpdateRecordInput {
   sg?: number
   mx?: number
   qm?: number
+  personnelId?: number
 }
 
 // 更新奖励规则入参
@@ -234,4 +245,35 @@ export interface UpdateRewardRuleInput {
   rank3Reward?: number
   maixuThreshold?: number
   maixuReward?: number
+  maixuMinStandard?: number
+  sgEnabled?: boolean
+  qmEnabled?: boolean
+  rankEnabled?: boolean
+  maixuEnabled?: boolean
+  maixuMinEnabled?: boolean
+}
+
+// 录入历史记录日志项（创建/修改/删除统一结构）
+export type DataLogType = 'create' | 'update' | 'delete'
+
+export interface DataLogItem {
+  id: number
+  type: DataLogType
+  time: string
+  personnelId: number
+  personnelName: string
+  branchId: number
+  branchName: string
+  weekStart: string
+  operatorId: number
+  operatorName: string
+  action?: HistoryAction
+  field?: string | null
+  oldValue?: string | null
+  newValue?: string | null
+  recordId: number | null
+  // 创建/当前记录的数值（type=create 时使用）
+  sg?: number
+  mx?: number
+  qm?: number
 }

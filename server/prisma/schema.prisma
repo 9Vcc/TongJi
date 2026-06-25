@@ -31,6 +31,12 @@ enum HistoryAction {
   DELETE // 删除
 }
 
+// 统计周期
+enum StatCycle {
+  WEEK // 按周统计
+  MONTH // 按月统计
+}
+
 // 通知类型
 enum NotificationType {
   RANK_PUBLISH // 排名公布
@@ -60,9 +66,10 @@ model Account {
 // ============ 分部表 ============
 
 model Branch {
-  id        Int      @id @default(autoincrement())
+  id        Int       @id @default(autoincrement())
   name      String
-  createdAt DateTime @default(now())
+  statCycle StatCycle @default(WEEK)
+  createdAt DateTime  @default(now())
 
   accounts          Account[]
   personnelBranches PersonnelBranch[]
@@ -158,6 +165,14 @@ model RewardRule {
   rank3Reward    Int      @default(60)
   maixuThreshold Int      @default(40)
   maixuReward    Int      @default(52)
+  // 麦序最低标准：启用后麦序未达到此值则不计福利（基础福利与排名奖励均置0）
+  maixuMinStandard Int    @default(0)
+  maixuMinEnabled  Boolean @default(false)
+  // 各奖励项开关（true=启用，false=该奖励项不计入福利）
+  sgEnabled      Boolean  @default(true)
+  qmEnabled      Boolean  @default(true)
+  rankEnabled    Boolean  @default(true)
+  maixuEnabled   Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

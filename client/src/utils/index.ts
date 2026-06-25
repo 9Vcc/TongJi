@@ -63,6 +63,16 @@ export function getWeekRangeText(weekStart: Date | string): string {
 }
 
 /**
+ * 获取月份范围显示文本（如 2026-06-01 ~ 2026-06-30）
+ */
+export function getMonthRangeText(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date) : date
+  const start = new Date(d.getFullYear(), d.getMonth(), 1)
+  const end = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+  return `${formatDate(start)} ~ ${formatDate(end)}`
+}
+
+/**
  * 角色显示文本
  */
 export function getRoleText(role: string): string {

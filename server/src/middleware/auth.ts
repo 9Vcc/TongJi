@@ -43,6 +43,9 @@ export function requireRole(...roles: Role[]) {
       return reply.code(401).send({ error: '未认证' })
     }
 
+    // 未指定角色时，默认允许所有已认证用户（管理级别即可）
+    if (roles.length === 0) return
+
     // 取所需角色中的最低等级作为门槛
     const requiredLevel = Math.min(...roles.map((r) => ROLE_LEVEL[r]))
     const userLevel = ROLE_LEVEL[request.user.role]

@@ -21,6 +21,11 @@ export default function Modal({
 }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null)
   const previouslyFocused = useRef<HTMLElement | null>(null)
+  // 稳定 onClose 引用，避免父组件重渲染时内联函数变化导致 effect 重复执行
+  const onCloseRef = useRef(onClose)
+  useEffect(() => {
+    onCloseRef.current = onClose
+  })
 
   // 锁定背景滚动 + ESC 关闭 + 焦点管理
   useEffect(() => {
@@ -37,7 +42,7 @@ export default function Modal({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault()
-        onClose()
+        onCloseRef.current()
         return
       }
       // 焦点陷阱：Tab 键循环聚焦在弹窗内
@@ -67,7 +72,7 @@ export default function Modal({
       // 恢复之前的焦点
       previouslyFocused.current?.focus()
     }
-  }, [open, onClose])
+  }, [open])
 
   return (
     <AnimatePresence>

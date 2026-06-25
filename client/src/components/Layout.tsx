@@ -12,6 +12,8 @@ import {
   Menu,
   X,
   BarChart3,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { notificationsApi } from '../api'
@@ -43,6 +45,10 @@ const pageTitleMap: Record<string, string> = {
   '/ranking': '排名与福利',
   '/personnel': '人员管理',
   '/settings': '系统设置',
+  '/settings/accounts': '账户管理',
+  '/settings/branches': '厅管理',
+  '/settings/notifications': '通知列表',
+  '/settings/history': '录入历史记录',
 }
 
 export default function Layout({ children }: LayoutProps) {
@@ -50,6 +56,7 @@ export default function Layout({ children }: LayoutProps) {
   const navigate = useNavigate()
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [notifications, setNotifications] = useState<Notification[]>([])
 
@@ -99,25 +106,36 @@ export default function Layout({ children }: LayoutProps) {
   }
 
   return (
-    <div className="min-h-screen bg-surface flex">
-      {/* 侧边栏 */}
+    <div className="min-h-screen bg-surface">
+      {/* 固定侧边栏（独立，不随页面滚动） */}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-40 w-60 bg-card border-r border-border flex flex-col transform transition-transform duration-200 ${
+        className={`fixed inset-y-0 left-0 z-40 w-60 bg-card border-r border-border flex flex-col overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        }`}
+        } ${sidebarCollapsed ? 'lg:w-16' : 'lg:w-60'}`}
       >
         {/* Logo */}
-        <div className="flex items-center gap-2 px-5 h-16 border-b border-border">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+        <div className="flex items-center h-16 border-b border-border shrink-0 px-4">
+          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center shrink-0">
             <BarChart3 size={18} className="text-white" />
           </div>
-          <span className="text-lg font-semibold text-textPrimary">
-            统计系统
-          </span>
+          <AnimatePresence initial={false}>
+            {!sidebarCollapsed && (
+              <motion.span
+                key="logo-text"
+                initial={{ opacity: 0, width: 0 }}
+                animate={{ opacity: 1, width: 'auto' }}
+                exit={{ opacity: 0, width: 0 }}
+                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                className="text-lg font-semibold text-textPrimary whitespace-nowrap overflow-hidden ml-2"
+              >
+                统计系统
+              </motion.span>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* 导航菜单 */}
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto overflow-x-hidden scrollbar-thin">
           {navItems.map((item) => {
             const Icon = item.icon
             return (
@@ -126,41 +144,102 @@ export default function Layout({ children }: LayoutProps) {
                 to={item.to}
                 end={item.to === '/'}
                 onClick={() => setSidebarOpen(false)}
+                title={sidebarCollapsed ? item.label : undefined}
                 className={({ isActive }) =>
                   `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
+                    sidebarCollapsed ? 'lg:justify-center' : ''
+                  } ${
                     isActive
                       ? 'bg-primary text-white'
                       : 'text-textSecondary hover:bg-surface hover:text-textPrimary'
                   }`
                 }
               >
-                <Icon size={18} />
-                {item.label}
+                <Icon size={18} className="shrink-0" />
+                <AnimatePresence initial={false}>
+                  {!sidebarCollapsed && (
+                    <motion.span
+                      key={`label-${item.to}`}
+                      initial={{ opacity: 0, width: 0 }}
+                      animate={{ opacity: 1, width: 'auto' }}
+                      exit={{ opacity: 0, width: 0 }}
+                      transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                      className="whitespace-nowrap overflow-hidden"
+                    >
+                      {item.label}
+                    </motion.span>
+                  )}
+                </AnimatePresence>
               </NavLink>
             )
           })}
         </nav>
 
         {/* 用户信息 */}
-        <div className="px-3 py-4 border-t border-border">
-          <div className="px-3 py-2 mb-2">
+        <div className="px-2 py-3 border-t border-border shrink-0">
+          <div
+            className={`px-3 py-2 mb-1 ${
+              sidebarCollapsed ? 'lg:px-0 lg:text-center' : ''
+            }`}
+          >
             <div className="text-sm font-medium text-textPrimary truncate">
               {user?.username}
             </div>
-            <div className="text-xs text-textMuted">
-              {getRoleText(user?.role || '')}
-              {user?.branchId ? ` · 分部ID ${user.branchId}` : ''}
-            </div>
+            <AnimatePresence initial={false}>
+              {!sidebarCollapsed && (
+                <motion.div
+                  key="user-role"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="text-xs text-textMuted overflow-hidden whitespace-nowrap"
+                >
+                  {getRoleText(user?.role || '')}
+                  {user?.branchId ? ` · 厅ID ${user.branchId}` : ''}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
           <button
             onClick={handleLogout}
             aria-label="退出登录"
-            className="flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-danger hover:bg-danger/10 transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-danger/50"
+            title={sidebarCollapsed ? '退出登录' : undefined}
+            className={`flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-danger hover:bg-danger/10 transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-danger/50 ${
+              sidebarCollapsed ? 'lg:justify-center' : ''
+            }`}
           >
-            <LogOut size={16} />
-            退出登录
+            <LogOut size={16} className="shrink-0" />
+            <AnimatePresence initial={false}>
+              {!sidebarCollapsed && (
+                <motion.span
+                  key="logout-text"
+                  initial={{ opacity: 0, width: 0 }}
+                  animate={{ opacity: 1, width: 'auto' }}
+                  exit={{ opacity: 0, width: 0 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  className="whitespace-nowrap overflow-hidden"
+                >
+                  退出登录
+                </motion.span>
+              )}
+            </AnimatePresence>
           </button>
         </div>
+
+        {/* 桌面端折叠/展开按钮（浮于侧边栏右边缘，醒目样式） */}
+        <button
+          onClick={() => setSidebarCollapsed((v) => !v)}
+          aria-label={sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'}
+          title={sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'}
+          className="hidden lg:flex absolute top-1/2 -right-4 -translate-y-1/2 z-50 w-8 h-8 bg-primary text-white rounded-full items-center justify-center shadow-md hover:shadow-lg hover:scale-110 hover:bg-primary-hover active:scale-95 transition-all duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2"
+        >
+          {sidebarCollapsed ? (
+            <ChevronRight size={18} />
+          ) : (
+            <ChevronLeft size={18} />
+          )}
+        </button>
       </aside>
 
       {/* 遮罩层（移动端） */}
@@ -177,8 +256,12 @@ export default function Layout({ children }: LayoutProps) {
         )}
       </AnimatePresence>
 
-      {/* 主内容区 */}
-      <div className="flex-1 flex flex-col min-w-0">
+      {/* 主内容区（左侧留出侧边栏宽度，随折叠状态动画） */}
+      <div
+        className={`flex flex-col min-h-screen transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-60'
+        }`}
+      >
         {/* 顶部栏 */}
         <header className="h-16 bg-card border-b border-border flex items-center justify-between px-4 lg:px-6 sticky top-0 z-20">
           <div className="flex items-center gap-3">

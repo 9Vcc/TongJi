@@ -18,6 +18,7 @@ import rankingRoutes from './routes/ranking';
 import dashboardRoutes from './routes/dashboard';
 import exportRoutes from './routes/export';
 import notificationRoutes from './routes/notifications';
+import dataHistoryRoutes from './routes/data-history';
 
 const fastify = Fastify({ logger: true });
 
@@ -79,6 +80,9 @@ fastify.register(exportRoutes);
 
 // 注册系统通知路由
 fastify.register(notificationRoutes);
+
+// 注册录入历史记录路由（会长、超管可见）
+fastify.register(dataHistoryRoutes);
 
 // 健康检查路由
 fastify.get('/health', async () => {

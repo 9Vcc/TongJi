@@ -30,6 +30,10 @@ export default async function accountRoutes(fastify: FastifyInstance) {
       let targetBranchId: number | null = null
 
       if (currentUser.role === Role.HUIZHANG) {
+        // 会长添加会长时可不绑定分部
+        if (role === Role.HUIZHANG) {
+          targetBranchId = branchId ?? null
+        }
         // 会长添加超管/管理时需指定 branchId
         if (role === Role.CHAOGUAN || role === Role.GUANLI) {
           if (!branchId) {
@@ -157,8 +161,8 @@ export default async function accountRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: '账户不存在' })
       }
 
-      // 不能操作会长账户
-      if (account.role === Role.HUIZHANG) {
+      // 不能操作会长账户（会长除外）
+      if (account.role === Role.HUIZHANG && currentUser.role !== Role.HUIZHANG) {
         return reply.code(403).send({ error: '不能操作会长账户' })
       }
 
@@ -211,8 +215,8 @@ export default async function accountRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: '账户不存在' })
       }
 
-      // 不能删除会长账户
-      if (account.role === Role.HUIZHANG) {
+      // 不能操作会长账户（会长除外）
+      if (account.role === Role.HUIZHANG && currentUser.role !== Role.HUIZHANG) {
         return reply.code(403).send({ error: '不能删除会长账户' })
       }
 
@@ -261,8 +265,8 @@ export default async function accountRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: '账户不存在' })
       }
 
-      // 不能操作会长账户
-      if (account.role === Role.HUIZHANG) {
+      // 不能操作会长账户（会长除外）
+      if (account.role === Role.HUIZHANG && currentUser.role !== Role.HUIZHANG) {
         return reply.code(403).send({ error: '不能操作会长账户' })
       }
 
@@ -300,13 +304,13 @@ export default async function accountRoutes(fastify: FastifyInstance) {
       }
 
       if (role !== undefined && role !== account.role) {
-        const validRoles: Role[] = [Role.CHAOGUAN, Role.GUANLI]
+        // 会长可设置任意角色；超管不能设置超管/会长
+        const validRoles: Role[] =
+          currentUser.role === Role.HUIZHANG
+            ? [Role.HUIZHANG, Role.CHAOGUAN, Role.GUANLI]
+            : [Role.GUANLI]
         if (!validRoles.includes(role)) {
           return reply.code(400).send({ error: '无效的角色' })
-        }
-        // 超管不能将管理提升为超管
-        if (currentUser.role === Role.CHAOGUAN && role === Role.CHAOGUAN) {
-          return reply.code(403).send({ error: '无权设置超管角色' })
         }
         updateData.role = role
       }

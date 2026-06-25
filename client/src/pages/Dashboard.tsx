@@ -37,18 +37,19 @@ import {
   getWeekStart,
   getPreviousWeekStart,
   getWeekRangeText,
+  getMonthRangeText,
 } from '../utils'
 import type {
   DashboardSummary,
   DashboardCompare,
   RankingItem,
   Branch,
+  StatCycle,
 } from '../types'
 import AnimatedNumber from '../components/AnimatedNumber'
-import CandlestickChart from '../components/CandlestickChart'
 import {
   KpiCardSkeleton,
-  ChartSkeleton,
+  Skeleton,
   Top3Skeleton,
 } from '../components/Skeleton'
 
@@ -68,9 +69,10 @@ interface KpiCardProps {
   color: string
   trend?: number | null
   loading: boolean
+  periodLabel?: string
 }
 
-function KpiCard({ title, value, icon: Icon, color, trend, loading }: KpiCardProps) {
+function KpiCard({ title, value, icon: Icon, color, trend, loading, periodLabel = '上周' }: KpiCardProps) {
   const trendIcon =
     trend == null ? null : trend > 0 ? (
       <TrendingUp size={14} className="text-up" />
@@ -107,7 +109,7 @@ function KpiCard({ title, value, icon: Icon, color, trend, loading }: KpiCardPro
                 {trend > 0 ? '+' : ''}
                 {trend.toFixed(1)}%
               </span>
-              <span className="text-textMuted">较上周</span>
+              <span className="text-textMuted">较{periodLabel}</span>
             </div>
           )}
         </div>
@@ -130,10 +132,16 @@ export default function Dashboard() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null)
   const [compare, setCompare] = useState<DashboardCompare | null>(null)
   const [top3, setTop3] = useState<RankingItem[]>([])
-  const [ranking, setRanking] = useState<RankingItem[]>([])
   const [branches, setBranches] = useState<Branch[]>([])
   const [availableWeeks, setAvailableWeeks] = useState<string[]>([])
-  const [branchId, setBranchId] = useState<number | undefined>(undefined)
+  // 会长默认全部厅(undefined)；非会长默认锁定到自己所在厅
+  const [branchId, setBranchId] = useState<number | undefined>(() =>
+    user?.role === 'HUIZHANG' ? undefined : user?.branchId ?? undefined
+  )
+  // 用户可手动切换"查看整体统计"（按月汇总全部厅）
+  const [viewAllMonth, setViewAllMonth] = useState(false)
+  // 本周数据汇总卡片专用排名数据（跟随页面顶部全局 branchId 切换）
+  const [chartRanking, setChartRanking] = useState<RankingItem[]>([])
   const [loading, setLoading] = useState(false)
 
   const isHuizhang = user?.role === 'HUIZHANG'
@@ -143,47 +151,128 @@ export default function Dashboard() {
   const chartTextColor = isDark ? '#CBD5E1' : '#4B5563'
   const chartGridColor = isDark ? 'rgba(148, 163, 184, 0.15)' : 'rgba(107, 114, 128, 0.15)'
 
+  // 当前统计周期：
+  // - 会长全部厅：按月
+  // - 非会长开启"按月统计"：本厅按月（即使该厅原为按周）
+  // - 单厅默认：跟随该厅 statCycle
+  const currentCycle: StatCycle = useMemo(() => {
+    if (!branchId) return 'MONTH'
+    // 非会长开启按月统计时，强制本厅按月
+    if (!isHuizhang && viewAllMonth) return 'MONTH'
+    const branch = branches.find((b) => b.id === branchId)
+    return branch?.statCycle ?? 'WEEK'
+  }, [branches, branchId, isHuizhang, viewAllMonth])
+  const isMonthCycle = currentCycle === 'MONTH'
+  // 周期文案
+  const periodWord = isMonthCycle ? '月' : '周'
+  const thisPeriodWord = isMonthCycle ? '本月' : '本周'
+  const lastPeriodWord = isMonthCycle ? '上月' : '上周'
+
   useEffect(() => {
-    if (isHuizhang) {
-      branchesApi.list().then(setBranches).catch(() => {})
-    }
-  }, [isHuizhang])
+    // 所有用户都需加载厅列表以获取统计周期
+    branchesApi.list().then(setBranches).catch(() => {})
+  }, [])
+
+  // 切换"按月统计"：非会长用户在本厅按周/按月之间切换（始终限定本厅）
+  const toggleViewAllMonth = () => {
+    setViewAllMonth((v) => !v)
+  }
 
   // 获取可用周列表
   useEffect(() => {
     dataQueryApi.getWeeks(branchId).then(setAvailableWeeks).catch(() => {})
   }, [branchId])
 
+  // 非会长开启"查看整体统计"时传 viewAll=true；会长无需此参数
+  const viewAllParam = !isHuizhang && viewAllMonth
+
   useEffect(() => {
     const weekParam = formatDate(weekStart)
     setLoading(true)
     Promise.all([
-      dashboardApi.getSummary(weekParam, branchId),
-      dashboardApi.getCompare(weekParam, branchId),
-      dashboardApi.getTop3(weekParam, branchId),
-      rankingApi.getRanking(weekParam, branchId),
+      dashboardApi.getSummary(weekParam, branchId, currentCycle, viewAllParam),
+      dashboardApi.getCompare(weekParam, branchId, currentCycle, viewAllParam),
+      dashboardApi.getTop3(weekParam, branchId, currentCycle, viewAllParam),
     ])
-      .then(([s, c, t, r]) => {
+      .then(([s, c, t]) => {
         setSummary(s)
         setCompare(c)
         setTop3(t)
-        setRanking(r)
       })
       .catch((err) => {
         toast.error(getErrorMessage(err))
       })
       .finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekStart, branchId])
+  }, [weekStart, branchId, currentCycle, viewAllParam])
 
-  const handlePrevWeek = () => setWeekStart(getPreviousWeekStart(weekStart))
-  const handleNextWeek = () => {
-    const next = new Date(weekStart)
-    next.setDate(next.getDate() + 7)
-    if (next <= getWeekStart()) {
-      setWeekStart(next)
+  // 加载本期数据汇总卡片专用排名数据（跟随页面顶部全局 branchId 切换）
+  useEffect(() => {
+    const weekParam = formatDate(weekStart)
+    rankingApi
+      .getRanking(weekParam, branchId, currentCycle, viewAllParam)
+      .then(setChartRanking)
+      .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekStart, branchId, currentCycle, viewAllParam])
+
+  // 按月统计时，weekStart 始终保持为该月任意一天（用月初1号）
+  // 后端 getMonthStart 会把任意日期归一到月初，无需前端预先转周一
+  const setMonthRef = (d: Date) => {
+    d.setDate(1)
+    d.setHours(0, 0, 0, 0)
+    setWeekStart(d)
+  }
+
+  const handlePrevWeek = () => {
+    if (isMonthCycle) {
+      const d = new Date(weekStart)
+      d.setMonth(d.getMonth() - 1)
+      setMonthRef(d)
+    } else {
+      setWeekStart(getPreviousWeekStart(weekStart))
     }
   }
+  const handleNextWeek = () => {
+    if (isMonthCycle) {
+      const d = new Date(weekStart)
+      d.setMonth(d.getMonth() + 1)
+      const thisMonthStart = new Date()
+      thisMonthStart.setDate(1)
+      thisMonthStart.setHours(0, 0, 0, 0)
+      if (d <= thisMonthStart) setMonthRef(d)
+    } else {
+      const next = new Date(weekStart)
+      next.setDate(next.getDate() + 7)
+      if (next <= getWeekStart()) {
+        setWeekStart(next)
+      }
+    }
+  }
+
+  // 按月统计时：从历史周列表提取不重复月份（每月取首个周一作为参考日）
+  const availableMonths = useMemo(() => {
+    const monthMap = new Map<string, string>() // YYYY-MM -> refDate
+    const addMonth = (dateStr: string) => {
+      const d = new Date(dateStr)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      if (!monthMap.has(key)) monthMap.set(key, dateStr)
+    }
+    availableWeeks.forEach(addMonth)
+    addMonth(formatDate(getWeekStart()))
+    addMonth(formatDate(weekStart))
+    return Array.from(monthMap.entries())
+      .map(([key, ref]) => ({ key, ref }))
+      .sort((a, b) => b.key.localeCompare(a.key))
+  }, [availableWeeks, weekStart])
+
+  // 当前选中月份的参考日（确保 weekStart 落在所选月）
+  const selectedMonthRef = useMemo(() => {
+    const d = new Date(weekStart)
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    const found = availableMonths.find((m) => m.key === key)
+    return found?.ref ?? formatDate(weekStart)
+  }, [weekStart, availableMonths])
 
   // 计算变化趋势
   const trends = useMemo(() => {
@@ -204,72 +293,138 @@ export default function Dashboard() {
     }
   }, [compare])
 
-  // 按人员汇总柱状图数据
-  const personnelChart = useMemo(() => {
-    const labels = ranking.map((r) => r.personnelName)
+  // 本周数据汇总柱状图数据（主看板）
+  // X 轴为厅名，三个指标（收光/麦序/全麦）各一组三色柱子
+  // 选择"全部厅"时：X 轴为各厅，三色柱纵向对比各厅的三个指标
+  // 选择具体厅时：X 轴为该厅，三色柱展示该厅的三个指标
+  const branchChart = useMemo(() => {
+    // 按厅聚合 chartRanking 数据：厅名 → 指标汇总
+    const branchMap = new Map<
+      string,
+      { sg: number; mx: number; qm: number }
+    >()
+    for (const r of chartRanking) {
+      const cur = branchMap.get(r.branchName) ?? { sg: 0, mx: 0, qm: 0 }
+      cur.sg += r.sg
+      cur.mx += r.mx
+      cur.qm += r.qm
+      branchMap.set(r.branchName, cur)
+    }
+    const labels = [...branchMap.keys()]
+    const data = [...branchMap.values()]
+    // 三个指标各一组柱子，固定三色便于分辨
     return {
       labels,
       datasets: [
         {
           label: '收光',
-          data: ranking.map((r) => r.sg),
+          data: data.map((d) => d.sg),
           backgroundColor: 'rgb(5 150 105 / 0.8)',
+          borderColor: 'rgb(5 150 105)',
+          borderWidth: 1,
           borderRadius: 4,
         },
         {
           label: '麦序',
-          data: ranking.map((r) => r.mx),
+          data: data.map((d) => d.mx),
           backgroundColor: 'rgb(217 119 6 / 0.8)',
+          borderColor: 'rgb(217 119 6)',
+          borderWidth: 1,
           borderRadius: 4,
         },
         {
           label: '全麦',
-          data: ranking.map((r) => r.qm),
+          data: data.map((d) => d.qm),
           backgroundColor: 'rgb(34 197 94 / 0.8)',
+          borderColor: 'rgb(34 197 94)',
+          borderWidth: 1,
           borderRadius: 4,
         },
       ],
     }
-  }, [ranking])
+  }, [chartRanking])
 
-  // 周对比柱状图数据
+  // 周对比柱状图数据（仅收光/麦序/全麦）
   const compareChart = useMemo(() => {
     if (!compare) {
       return {
-        labels: ['收光', '麦序', '全麦', '总福利'],
+        labels: ['收光', '麦序', '全麦'],
         datasets: [],
       }
     }
     return {
-      labels: ['收光', '麦序', '全麦', '总福利'],
+      labels: ['收光', '麦序', '全麦'],
       datasets: [
         {
-          label: '本周',
+          label: thisPeriodWord,
           data: [
             compare.thisWeek.totalSG,
             compare.thisWeek.totalMX,
             compare.thisWeek.totalQM,
-            compare.thisWeek.totalWelfare,
           ],
           backgroundColor: 'rgb(5 150 105 / 0.8)',
+          borderColor: 'rgb(5 150 105)',
+          borderWidth: 1,
           borderRadius: 4,
         },
         {
-          label: '上周',
+          label: lastPeriodWord,
           data: [
             compare.lastWeek.totalSG,
             compare.lastWeek.totalMX,
             compare.lastWeek.totalQM,
-            compare.lastWeek.totalWelfare,
           ],
           backgroundColor: isDark
             ? 'rgb(100 116 139 / 0.8)'
             : 'rgb(156 163 175 / 0.8)',
+          borderColor: isDark ? 'rgb(100 116 139)' : 'rgb(156 163 175)',
+          borderWidth: 1,
           borderRadius: 4,
         },
       ],
     }
-  }, [compare, isDark])
+  }, [compare, isDark, thisPeriodWord, lastPeriodWord])
+
+  // 本周数据汇总卡片专用配置：竖直方向（X 轴厅名，Y 轴数值）
+  const branchChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: 'top' as const,
+        labels: {
+          font: { size: 12, family: 'Fira Sans' },
+          color: chartTextColor,
+          usePointStyle: true,
+          pointStyle: 'circle' as const,
+        },
+      },
+      tooltip: {
+        backgroundColor: isDark ? '#1E293B' : '#FFFFFF',
+        titleColor: isDark ? '#F1F5F9' : '#111827',
+        bodyColor: isDark ? '#CBD5E1' : '#4B5563',
+        borderColor: isDark ? '#334155' : '#E5E7EB',
+        borderWidth: 1,
+        padding: 10,
+        cornerRadius: 8,
+        titleFont: { family: 'Fira Sans' },
+        bodyFont: { family: 'Fira Code' },
+      },
+    },
+    scales: {
+      // X 轴：类别轴（厅名）
+      x: {
+        grid: { color: chartGridColor },
+        ticks: { color: chartTextColor, font: { family: 'Fira Sans' } },
+      },
+      // Y 轴：数值轴（纵向延伸）
+      y: {
+        beginAtZero: true,
+        grid: { color: chartGridColor },
+        ticks: { color: chartTextColor, font: { family: 'Fira Code' } },
+      },
+    },
+  }
 
   const chartOptions = {
     responsive: true,
@@ -309,7 +464,7 @@ export default function Dashboard() {
     },
   }
 
-  // Top3 按分部分组
+  // Top3 按厅分组
   const top3ByBranch = useMemo(() => {
     const map = new Map<string, RankingItem[]>()
     for (const item of top3) {
@@ -325,40 +480,55 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-5">
-      {/* 周选择器 */}
+      {/* 周期选择器（按周/按月厅自动切换） */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <button
             onClick={handlePrevWeek}
-            aria-label="上一周"
+            aria-label={isMonthCycle ? '上一月' : '上一周'}
             className="p-2 border border-border rounded-lg bg-card text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
           >
             <ChevronLeft size={16} />
           </button>
-          <select
-            value={formatDate(weekStart)}
-            onChange={(e) => setWeekStart(new Date(e.target.value))}
-            aria-label="选择周次"
-            className="px-4 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary min-w-[220px] focus:outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/50 cursor-pointer"
-          >
-            {!availableWeeks.includes(formatDate(weekStart)) && (
-              <option value={formatDate(weekStart)}>
-                {getWeekRangeText(weekStart)}
-              </option>
-            )}
-            {availableWeeks
-              .slice()
-              .sort()
-              .reverse()
-              .map((w) => (
-                <option key={w} value={w}>
-                  {getWeekRangeText(w)}
+          {isMonthCycle ? (
+            <select
+              value={selectedMonthRef}
+              onChange={(e) => setWeekStart(new Date(e.target.value))}
+              aria-label="选择月份"
+              className="px-4 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary min-w-[220px] focus:outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/50 cursor-pointer"
+            >
+              {availableMonths.map((m) => (
+                <option key={m.key} value={m.ref}>
+                  {getMonthRangeText(m.ref)}
                 </option>
               ))}
-          </select>
+            </select>
+          ) : (
+            <select
+              value={formatDate(weekStart)}
+              onChange={(e) => setWeekStart(new Date(e.target.value))}
+              aria-label="选择周次"
+              className="px-4 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary min-w-[220px] focus:outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/50 cursor-pointer"
+            >
+              {!availableWeeks.includes(formatDate(weekStart)) && (
+                <option value={formatDate(weekStart)}>
+                  {getWeekRangeText(weekStart)}
+                </option>
+              )}
+              {availableWeeks
+                .slice()
+                .sort()
+                .reverse()
+                .map((w) => (
+                  <option key={w} value={w}>
+                    {getWeekRangeText(w)}
+                  </option>
+                ))}
+            </select>
+          )}
           <button
             onClick={handleNextWeek}
-            aria-label="下一周"
+            aria-label={isMonthCycle ? '下一月' : '下一周'}
             className="p-2 border border-border rounded-lg bg-card text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
           >
             <ChevronRight size={16} />
@@ -367,8 +537,41 @@ export default function Dashboard() {
             onClick={() => setWeekStart(getWeekStart())}
             className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
           >
-            本周
+            {isMonthCycle ? '本月' : '本周'}
           </button>
+          <span
+            className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+              isMonthCycle
+                ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+            }`}
+            title={
+              isMonthCycle
+                ? branchId
+                  ? '该厅按月统计'
+                  : '全部厅按月汇总'
+                : '该厅按周统计'
+            }
+          >
+            {isMonthCycle ? '按月统计' : '按周统计'}
+          </span>
+          {!isHuizhang && (
+            <button
+              onClick={toggleViewAllMonth}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
+                viewAllMonth
+                  ? 'bg-primary text-white border-primary'
+                  : 'bg-card text-textSecondary border-border hover:text-textPrimary hover:border-primary'
+              }`}
+              title={
+                viewAllMonth
+                  ? '当前按月统计本厅，点击切回按周'
+                  : '点击切换为按月统计本厅'
+              }
+            >
+              {viewAllMonth ? '按月统计' : '按周统计'}
+            </button>
+          )}
         </div>
 
         {isHuizhang && (
@@ -377,13 +580,14 @@ export default function Dashboard() {
             onChange={(e) =>
               setBranchId(e.target.value ? Number(e.target.value) : undefined)
             }
-            aria-label="选择分部"
+            aria-label="选择厅"
             className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/50 cursor-pointer"
           >
-            <option value="">全部分部</option>
+            <option value="">全部厅</option>
             {branches.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.name}
+                {b.statCycle === 'MONTH' ? '（按月）' : ''}
               </option>
             ))}
           </select>
@@ -413,92 +617,85 @@ export default function Dashboard() {
           <>
             <div>
               <KpiCard
-                title="分部人员数"
+                title="厅人员数"
                 value={summary?.personnelCount ?? 0}
                 icon={Users}
                 color="5 150 105"
                 trend={trends.personnel}
                 loading={false}
+                periodLabel={lastPeriodWord}
               />
             </div>
             <div>
               <KpiCard
-                title="本周总收光"
+                title={`${thisPeriodWord}总收光`}
                 value={summary?.totalSG ?? 0}
                 icon={Sun}
                 color="217 119 6"
                 trend={trends.sg}
                 loading={false}
+                periodLabel={lastPeriodWord}
               />
             </div>
             <div>
               <KpiCard
-                title="本周总麦序"
+                title={`${thisPeriodWord}总麦序`}
                 value={summary?.totalMX ?? 0}
                 icon={ListOrdered}
                 color="34 197 94"
                 trend={trends.mx}
                 loading={false}
+                periodLabel={lastPeriodWord}
               />
             </div>
             <div>
               <KpiCard
-                title="本周总福利"
+                title={`${thisPeriodWord}总福利`}
                 value={summary?.totalWelfare ?? 0}
                 icon={Gift}
                 color="239 68 68"
                 trend={trends.welfare}
                 loading={false}
+                periodLabel={lastPeriodWord}
               />
             </div>
           </>
         )}
       </div>
 
-      {/* K线图 */}
-      <CandlestickChart branchId={branchId} />
-
-      {/* 图表行 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {ranking.length === 0 && compare === null ? (
-          <>
-            <ChartSkeleton />
-            <ChartSkeleton />
-          </>
-        ) : (
-          <>
-            <div className="bg-card border border-border rounded-xl p-5">
-              <h3 className="text-base font-semibold text-textPrimary mb-4">
-                本周数据汇总（按人员）
-              </h3>
-              <div className="h-72">
-                {ranking.length > 0 ? (
-                  <Bar data={personnelChart} options={chartOptions} />
-                ) : (
-                  <div className="h-full flex items-center justify-center text-sm text-textMuted">
-                    暂无数据
-                  </div>
-                )}
+      {/* 主看板：本期数据汇总（各厅指标对比）柱状图 */}
+      <div className="bg-card border border-border rounded-xl p-5">
+        <h3 className="text-base font-semibold text-textPrimary mb-4">
+          {thisPeriodWord}数据汇总（各厅对比）
+        </h3>
+        <div className="h-80">
+          {chartRanking.length === 0 ? (
+            loading ? (
+              <Skeleton className="h-full w-full" />
+            ) : (
+              <div className="h-full flex items-center justify-center text-sm text-textMuted">
+                暂无数据
               </div>
-            </div>
-
-            <div className="bg-card border border-border rounded-xl p-5">
-              <h3 className="text-base font-semibold text-textPrimary mb-4">
-                周对比（本周 vs 上周）
-              </h3>
-              <div className="h-72">
-                {compare ? (
-                  <Bar data={compareChart} options={chartOptions} />
-                ) : (
-                  <div className="h-full flex items-center justify-center text-sm text-textMuted">
-                    暂无数据
-                  </div>
-                )}
-              </div>
-            </div>
-          </>
-        )}
+            )
+          ) : (
+            <Bar data={branchChart} options={branchChartOptions} />
+          )}
+        </div>
       </div>
+
+      {/* 周期对比柱状图（本期 vs 上期）：仅当本期与上期均有数据时显示 */}
+      {compare &&
+        compare.thisWeek.personnelCount > 0 &&
+        compare.lastWeek.personnelCount > 0 && (
+          <div className="bg-card border border-border rounded-xl p-5">
+            <h3 className="text-base font-semibold text-textPrimary mb-4">
+              {periodWord}对比（{thisPeriodWord} vs {lastPeriodWord}）
+            </h3>
+            <div className="h-72">
+              <Bar data={compareChart} options={chartOptions} />
+            </div>
+          </div>
+        )}
 
       {/* Top3 排名 */}
       {top3.length === 0 ? (

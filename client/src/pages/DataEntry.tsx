@@ -16,12 +16,14 @@ import {
   dataQueryApi,
   personnelApi,
   branchesApi,
+  rankingApi,
   exportApi,
   getErrorMessage,
 } from '../api'
 import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
 import Modal from '../components/Modal'
+import SearchableSelect from '../components/SearchableSelect'
 import { TableSkeleton, Spinner } from '../components/Skeleton'
 import {
   formatDate,
@@ -29,8 +31,16 @@ import {
   getWeekStart,
   getPreviousWeekStart,
   getWeekRangeText,
+  getMonthRangeText,
 } from '../utils'
-import type { DataRecord, Personnel, Branch, ImportResult } from '../types'
+import type {
+  DataRecord,
+  Personnel,
+  Branch,
+  ImportResult,
+  RankingItem,
+  StatCycle,
+} from '../types'
 
 type RecordForm = {
   personnelId: string
@@ -58,10 +68,17 @@ export default function DataEntry() {
   const [branches, setBranches] = useState<Branch[]>([])
   const [branchId, setBranchId] = useState<number | undefined>(undefined)
   const [loading, setLoading] = useState(false)
+  const [monthRanking, setMonthRanking] = useState<RankingItem[]>([])
+  const [monthLoading, setMonthLoading] = useState(false)
 
   const [form, setForm] = useState<RecordForm>(emptyForm)
-  const [editingId, setEditingId] = useState<number | null>(null)
   const [submitting, setSubmitting] = useState(false)
+
+  // 编辑弹窗独立状态
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editForm, setEditForm] = useState<RecordForm>(emptyForm)
+  const [editSubmitting, setEditSubmitting] = useState(false)
 
   const [importOpen, setImportOpen] = useState(false)
   const [importTab, setImportTab] = useState<'excel' | 'paste'>('excel')
@@ -70,11 +87,18 @@ export default function DataEntry() {
   const [importing, setImporting] = useState(false)
   const [exporting, setExporting] = useState<'excel' | 'csv' | null>(null)
 
-  // 当前生效的分部ID（用于录入/导入）
+  // 当前生效的厅ID（用于录入/导入）
   const effectiveBranchId = useMemo(() => {
     if (isHuizhang) return branchId
     return user?.branchId ?? undefined
   }, [isHuizhang, branchId, user])
+
+  // 当前厅的统计周期（按周/按月）
+  const currentCycle: StatCycle = useMemo(() => {
+    const branch = branches.find((b) => b.id === effectiveBranchId)
+    return branch?.statCycle ?? 'WEEK'
+  }, [branches, effectiveBranchId])
+  const isMonthCycle = currentCycle === 'MONTH'
 
   const loadData = async () => {
     setLoading(true)
@@ -101,10 +125,9 @@ export default function DataEntry() {
   }
 
   useEffect(() => {
-    if (isHuizhang) {
-      branchesApi.list().then(setBranches).catch(() => {})
-    }
-  }, [isHuizhang])
+    // 所有用户都需加载厅列表以获取统计周期
+    branchesApi.list().then(setBranches).catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (effectiveBranchId !== undefined || isHuizhang) {
@@ -117,6 +140,21 @@ export default function DataEntry() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekStart, effectiveBranchId])
 
+  // 按月统计厅：加载本月汇总（ranking 接口按厅周期聚合）
+  useEffect(() => {
+    if (!isMonthCycle || !effectiveBranchId) {
+      setMonthRanking([])
+      return
+    }
+    setMonthLoading(true)
+    rankingApi
+      .getRanking(formatDate(weekStart), effectiveBranchId)
+      .then(setMonthRanking)
+      .catch(() => setMonthRanking([]))
+      .finally(() => setMonthLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMonthCycle, effectiveBranchId, weekStart])
+
   const handlePrevWeek = () => setWeekStart(getPreviousWeekStart(weekStart))
   const handleNextWeek = () => {
     const next = new Date(weekStart)
@@ -126,13 +164,13 @@ export default function DataEntry() {
 
   const resetForm = () => {
     setForm(emptyForm)
-    setEditingId(null)
   }
 
+  // 新建录入提交（仅 create 模式）
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     if (!effectiveBranchId) {
-      toast.error(isHuizhang ? '请选择分部' : '当前账户未关联分部')
+      toast.error(isHuizhang ? '请选择厅' : '当前账户未关联厅')
       return
     }
     if (!form.personnelId) {
@@ -156,19 +194,18 @@ export default function DataEntry() {
 
     setSubmitting(true)
     try {
-      if (editingId) {
-        await dataRecordsApi.update(editingId, { sg, mx, qm })
-        toast.success('修改成功')
-      } else {
-        await dataRecordsApi.create({
-          personnelId: Number(form.personnelId),
-          branchId: effectiveBranchId,
-          sg,
-          mx,
-          qm,
-        })
-        toast.success('录入成功')
-      }
+      // 判断是否为累加录入（该人员本周已有记录）
+      const existing = records.find(
+        (r) => r.personnelId === Number(form.personnelId)
+      )
+      await dataRecordsApi.create({
+        personnelId: Number(form.personnelId),
+        branchId: effectiveBranchId,
+        sg,
+        mx,
+        qm,
+      })
+      toast.success(existing ? '已累加到现有记录' : '录入成功')
       resetForm()
       await loadData()
     } catch (err) {
@@ -178,15 +215,62 @@ export default function DataEntry() {
     }
   }
 
+  // 打开编辑弹窗
   const handleEdit = (record: DataRecord) => {
     setEditingId(record.id)
-    setForm({
+    setEditForm({
       personnelId: String(record.personnelId),
       sg: String(record.sg),
       mx: String(record.mx),
       qm: String(record.qm),
     })
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    setEditModalOpen(true)
+  }
+
+  // 编辑弹窗提交
+  const handleEditSubmit = async () => {
+    if (!editingId) return
+    if (!editForm.personnelId) {
+      toast.error('请选择人员')
+      return
+    }
+    const sg = Number(editForm.sg)
+    const mx = Number(editForm.mx)
+    const qm = Number(editForm.qm)
+    if (
+      !Number.isInteger(sg) ||
+      sg < 0 ||
+      !Number.isInteger(mx) ||
+      mx < 0 ||
+      !Number.isInteger(qm) ||
+      qm < 0
+    ) {
+      toast.error('收光/麦序/全麦必须为非负整数')
+      return
+    }
+
+    setEditSubmitting(true)
+    try {
+      const payload: {
+        sg: number
+        mx: number
+        qm: number
+        personnelId?: number
+      } = { sg, mx, qm }
+      const original = records.find((r) => r.id === editingId)
+      if (original && original.personnelId !== Number(editForm.personnelId)) {
+        payload.personnelId = Number(editForm.personnelId)
+      }
+      await dataRecordsApi.update(editingId, payload)
+      toast.success('修改成功')
+      setEditModalOpen(false)
+      setEditingId(null)
+      await loadData()
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setEditSubmitting(false)
+    }
   }
 
   const handleDelete = async (id: number) => {
@@ -226,7 +310,7 @@ export default function DataEntry() {
 
   const handleImport = async () => {
     if (!effectiveBranchId) {
-      toast.error(isHuizhang ? '请选择分部' : '当前账户未关联分部')
+      toast.error(isHuizhang ? '请选择厅' : '当前账户未关联厅')
       return
     }
     setImporting(true)
@@ -262,13 +346,31 @@ export default function DataEntry() {
     }
   }
 
-  // 人员选项（过滤本周已录入的，编辑时保留当前）
+  // 人员选项（仅显示名称）
   const personnelOptions = useMemo(() => {
-    const recordedIds = new Set(records.map((r) => r.personnelId))
-    return personnel.filter(
-      (p) => !recordedIds.has(p.id) || String(p.id) === form.personnelId
-    )
-  }, [personnel, records, form.personnelId])
+    return personnel.map((p) => ({
+      value: String(p.id),
+      label: p.name,
+    }))
+  }, [personnel])
+
+  // 人员选中：自动切换到其所在厅（会长模式），表格同步过滤只显示其数据
+  const handlePersonnelSelect = (val: string) => {
+    setForm({ ...form, personnelId: val })
+    if (val && isHuizhang) {
+      const p = personnel.find((x) => x.id === Number(val))
+      const firstBranch = p?.branches?.[0]
+      if (firstBranch && firstBranch.id !== branchId) {
+        setBranchId(firstBranch.id)
+      }
+    }
+  }
+
+  // 表格过滤：选中人员时仅显示其数据
+  const filteredRecords = useMemo(() => {
+    if (!form.personnelId) return records
+    return records.filter((r) => r.personnelId === Number(form.personnelId))
+  }, [records, form.personnelId])
 
   return (
     <div className="space-y-5">
@@ -296,6 +398,18 @@ export default function DataEntry() {
           >
             本周
           </button>
+          {effectiveBranchId && (
+            <span
+              className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                isMonthCycle
+                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                  : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+              }`}
+              title={isMonthCycle ? '该厅按月统计，数据按月汇总' : '该厅按周统计'}
+            >
+              {isMonthCycle ? '按月统计' : '按周统计'}
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -307,7 +421,7 @@ export default function DataEntry() {
               }
               className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer"
             >
-              <option value="">选择分部</option>
+              <option value="">选择厅</option>
               {branches.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}
@@ -353,7 +467,7 @@ export default function DataEntry() {
       {/* 录入表单 */}
       <div className="bg-card border border-border rounded-xl p-5">
         <h3 className="text-base font-semibold text-textPrimary mb-4">
-          {editingId ? '编辑数据' : '手动录入'}
+          手动录入
         </h3>
         <form
           onSubmit={handleSubmit}
@@ -361,21 +475,13 @@ export default function DataEntry() {
         >
           <div className="lg:col-span-1">
             <label className="block text-xs text-textSecondary mb-1">人员</label>
-            <select
+            <SearchableSelect
               value={form.personnelId}
-              onChange={(e) =>
-                setForm({ ...form, personnelId: e.target.value })
-              }
-              disabled={!!editingId}
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:bg-surface disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
-            >
-              <option value="">请选择人员</option>
-              {personnelOptions.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+              onChange={handlePersonnelSelect}
+              options={personnelOptions}
+              placeholder="搜索人员姓名"
+              emptyText="无匹配人员"
+            />
           </div>
           <div>
             <label className="block text-xs text-textSecondary mb-1">收光</label>
@@ -424,22 +530,102 @@ export default function DataEntry() {
               ) : (
                 <Plus size={16} />
               )}
-              {editingId ? '保存' : '添加'}
+              添加
             </button>
-            {editingId && (
-              <button
-                type="button"
-                onClick={resetForm}
-                className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
-              >
-                取消
-              </button>
-            )}
           </div>
         </form>
       </div>
 
-      {/* 数据表格：weekStart/effectiveBranchId 变化时重新触发入场动画 */}
+      {/* 按月统计厅：本月汇总卡片（ranking 接口按月聚合） */}
+      <AnimatePresence mode="wait">
+        {isMonthCycle && effectiveBranchId && (
+          <motion.div
+            key={`month-${formatDate(weekStart)}-${effectiveBranchId}`}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            className="bg-card border border-amber-200 dark:border-amber-900/40 rounded-xl overflow-hidden"
+          >
+            <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-textPrimary">
+                  本月汇总
+                </h3>
+                <p className="text-xs text-textSecondary mt-0.5">
+                  {getMonthRangeText(weekStart)}（按月统计，汇总本月各周数据）
+                </p>
+              </div>
+            </div>
+            {monthLoading ? (
+              <div className="px-5 py-8 text-center text-sm text-textMuted">
+                加载中...
+              </div>
+            ) : monthRanking.length === 0 ? (
+              <div className="px-5 py-8 text-center text-sm text-textMuted">
+                本月暂无数据
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-surface border-b border-border">
+                    <tr className="text-left text-textSecondary">
+                      <th className="px-4 py-3 font-medium">排名</th>
+                      <th className="px-4 py-3 font-medium">人员</th>
+                      <th className="px-4 py-3 font-medium">收光</th>
+                      <th className="px-4 py-3 font-medium">麦序</th>
+                      <th className="px-4 py-3 font-medium">全麦</th>
+                      <th className="px-4 py-3 font-medium">总福利</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {monthRanking.map((r) => (
+                      <tr
+                        key={`${r.branchId}-${r.personnelId}`}
+                        className="border-b border-border last:border-0 hover:bg-surface transition-colors duration-200"
+                      >
+                        <td className="px-4 py-3 text-textPrimary font-mono">
+                          {r.rank <= 3 ? (
+                            <span
+                              className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-semibold ${
+                                r.rank === 1
+                                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                                  : r.rank === 2
+                                  ? 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                                  : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
+                              }`}
+                            >
+                              {r.rank}
+                            </span>
+                          ) : (
+                            r.rank
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-textPrimary">
+                          {r.personnelName}
+                        </td>
+                        <td className="px-4 py-3 text-textPrimary font-mono">{r.sg}</td>
+                        <td className="px-4 py-3 text-textPrimary font-mono">{r.mx}</td>
+                        <td className="px-4 py-3 text-textPrimary font-mono">{r.qm}</td>
+                        <td className="px-4 py-3 text-textPrimary font-mono">
+                          {r.totalWelfare}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 本周录入明细：weekStart/effectiveBranchId 变化时重新触发入场动画 */}
+      {isMonthCycle && (
+        <div className="text-sm font-medium text-textSecondary px-1">
+          本周录入明细（{getWeekRangeText(weekStart)}）
+        </div>
+      )}
       <AnimatePresence mode="wait">
       <motion.div
         key={`${formatDate(weekStart)}-${effectiveBranchId ?? 'all'}`}
@@ -457,7 +643,7 @@ export default function DataEntry() {
               <thead className="bg-surface border-b border-border">
                 <tr className="text-left text-textSecondary">
                   <th className="px-4 py-3 font-medium">人员</th>
-                  <th className="px-4 py-3 font-medium">分部</th>
+                  <th className="px-4 py-3 font-medium">厅</th>
                   <th className="px-4 py-3 font-medium">收光</th>
                   <th className="px-4 py-3 font-medium">麦序</th>
                   <th className="px-4 py-3 font-medium">全麦</th>
@@ -467,17 +653,17 @@ export default function DataEntry() {
                 </tr>
               </thead>
               <tbody>
-                {records.length === 0 ? (
+                {filteredRecords.length === 0 ? (
                   <tr>
                     <td
                       colSpan={8}
                       className="px-4 py-12 text-center text-textMuted"
                     >
-                      暂无数据
+                      {form.personnelId ? '该人员本周暂无数据' : '暂无数据'}
                     </td>
                   </tr>
                 ) : (
-                  records.map((r) => (
+                  filteredRecords.map((r) => (
                     <tr
                       key={r.id}
                       className="border-b border-border last:border-0 hover:bg-surface transition-colors duration-200"
@@ -612,6 +798,90 @@ export default function DataEntry() {
               </p>
             </div>
           )}
+        </div>
+      </Modal>
+
+      {/* 编辑记录弹窗 */}
+      <Modal
+        open={editModalOpen}
+        title="编辑数据"
+        onClose={() => {
+          setEditModalOpen(false)
+          setEditingId(null)
+        }}
+        footer={
+          <>
+            <button
+              onClick={() => {
+                setEditModalOpen(false)
+                setEditingId(null)
+              }}
+              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleEditSubmit}
+              disabled={editSubmitting}
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+            >
+              {editSubmitting && <Spinner className="h-4 w-4" />}
+              {editSubmitting ? '保存中...' : '保存'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          {/* 人员 */}
+          <div>
+            <label className="block text-xs text-textSecondary mb-1">人员</label>
+            <SearchableSelect
+              value={editForm.personnelId}
+              onChange={(val) => setEditForm({ ...editForm, personnelId: val })}
+              options={personnelOptions}
+              placeholder="搜索人员姓名"
+              emptyText="无匹配人员"
+            />
+          </div>
+          {/* 收光 / 麦序 / 全麦 */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs text-textSecondary mb-1">收光</label>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={editForm.sg}
+                onChange={(e) => setEditForm({ ...editForm, sg: e.target.value })}
+                placeholder="0"
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-textSecondary mb-1">麦序</label>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={editForm.mx}
+                onChange={(e) => setEditForm({ ...editForm, mx: e.target.value })}
+                placeholder="0"
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-textSecondary mb-1">全麦</label>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={editForm.qm}
+                onChange={(e) => setEditForm({ ...editForm, qm: e.target.value })}
+                placeholder="0"
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+              />
+            </div>
+          </div>
         </div>
       </Modal>
     </div>

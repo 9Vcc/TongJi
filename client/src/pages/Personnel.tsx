@@ -67,7 +67,7 @@ export default function Personnel() {
   const handleAdd = async () => {
     const targetBranchId = isHuizhang ? addBranchId : user?.branchId
     if (!targetBranchId) {
-      toast.error(isHuizhang ? '请选择分部' : '当前账户未关联分部')
+      toast.error(isHuizhang ? '请选择厅' : '当前账户未关联厅')
       return
     }
     if (!name.trim()) {
@@ -90,7 +90,7 @@ export default function Personnel() {
   const handleDelete = async (p: PersonnelType) => {
     const targetBranchId = effectiveBranchId ?? p.branches?.[0]?.id
     if (!targetBranchId) {
-      toast.error('无法确定人员所属分部')
+      toast.error('无法确定人员所属厅')
       return
     }
     if (!window.confirm(`确认移除人员「${p.name}」？`)) return
@@ -120,7 +120,7 @@ export default function Personnel() {
               }
               className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer"
             >
-              <option value="">全部分部</option>
+              <option value="">全部厅</option>
               {branches.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}
@@ -147,7 +147,7 @@ export default function Personnel() {
               <tr className="text-left text-textSecondary">
                 <th className="px-4 py-3 font-medium">序号</th>
                 <th className="px-4 py-3 font-medium">姓名</th>
-                <th className="px-4 py-3 font-medium">所属分部</th>
+                <th className="px-4 py-3 font-medium">所属厅</th>
                 <th className="px-4 py-3 font-medium">本周数据状态</th>
                 {canDelete && (
                   <th className="px-4 py-3 font-medium text-right">操作</th>
@@ -260,7 +260,7 @@ export default function Personnel() {
           {isHuizhang ? (
             <div>
               <label className="block text-xs text-textSecondary mb-1">
-                所属分部
+                所属厅
               </label>
               <select
                 value={addBranchId ?? ''}
@@ -271,7 +271,7 @@ export default function Personnel() {
                 }
                 className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer"
               >
-                <option value="">请选择分部</option>
+                <option value="">请选择厅</option>
                 {branches.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name}
@@ -281,7 +281,7 @@ export default function Personnel() {
             </div>
           ) : (
             <p className="text-xs text-textMuted">
-              人员将添加到当前账户所属分部
+              人员将添加到当前账户所属厅
             </p>
           )}
         </div>

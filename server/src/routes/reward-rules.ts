@@ -12,10 +12,20 @@ interface RewardRuleInput {
   rank3Reward?: number
   maixuThreshold?: number
   maixuReward?: number
+  maixuMinStandard?: number
+  sgEnabled?: boolean
+  qmEnabled?: boolean
+  rankEnabled?: boolean
+  maixuEnabled?: boolean
+  maixuMinEnabled?: boolean
 }
 
 function isNonNegInt(v: unknown): boolean {
   return typeof v === 'number' && Number.isInteger(v) && v >= 0
+}
+
+function isBool(v: unknown): boolean {
+  return typeof v === 'boolean'
 }
 
 export default async function rewardRuleRoutes(fastify: FastifyInstance) {
@@ -76,8 +86,8 @@ export default async function rewardRuleRoutes(fastify: FastifyInstance) {
         }
       }
 
-      // 校验字段
-      const fields: (keyof RewardRuleInput)[] = [
+      // 校验数值字段
+      const numFields: (keyof RewardRuleInput)[] = [
         'sgRatio',
         'qmRatio',
         'rank1Reward',
@@ -85,14 +95,32 @@ export default async function rewardRuleRoutes(fastify: FastifyInstance) {
         'rank3Reward',
         'maixuThreshold',
         'maixuReward',
+        'maixuMinStandard',
       ]
-      const data: Record<string, number> = {}
-      for (const f of fields) {
+      // 校验布尔开关字段
+      const boolFields: (keyof RewardRuleInput)[] = [
+        'sgEnabled',
+        'qmEnabled',
+        'rankEnabled',
+        'maixuEnabled',
+        'maixuMinEnabled',
+      ]
+
+      const data: Record<string, number | boolean> = {}
+      for (const f of numFields) {
         if (body[f] !== undefined) {
           if (!isNonNegInt(body[f])) {
             return reply.code(400).send({ error: `${f} 必须为非负整数` })
           }
           data[f] = body[f] as number
+        }
+      }
+      for (const f of boolFields) {
+        if (body[f] !== undefined) {
+          if (!isBool(body[f])) {
+            return reply.code(400).send({ error: `${f} 必须为布尔值` })
+          }
+          data[f] = body[f] as boolean
         }
       }
 

@@ -9,14 +9,24 @@ interface RewardRuleLike {
   qmRatio: number
   maixuThreshold: number
   maixuReward: number
+  maixuMinStandard: number
+  maixuMinEnabled: boolean
+  sgEnabled: boolean
+  qmEnabled: boolean
+  maixuEnabled: boolean
 }
 
 /**
  * 福利计算：收光*收光系数 + 全麦*全麦系数 + 麦序达标奖励
+ * 麦序最低标准门控：启用且麦序未达标则福利为0
  */
 function calcWelfare(sg: number, mx: number, qm: number, rule: RewardRuleLike): number {
-  const base = sg * rule.sgRatio + qm * rule.qmRatio
-  const maixuBonus = mx >= rule.maixuThreshold ? rule.maixuReward : 0
+  if (rule.maixuMinEnabled && mx < rule.maixuMinStandard) return 0
+  const sgPart = rule.sgEnabled ? sg * rule.sgRatio : 0
+  const qmPart = rule.qmEnabled ? qm * rule.qmRatio : 0
+  const base = sgPart + qmPart
+  const maixuBonus =
+    rule.maixuEnabled && mx >= rule.maixuThreshold ? rule.maixuReward : 0
   return base + maixuBonus
 }
 
