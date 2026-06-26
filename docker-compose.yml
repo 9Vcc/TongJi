@@ -21,11 +21,12 @@ services:
     restart: unless-stopped
     environment:
       # 直接使用外部 MariaDB 连接串，格式：
-      #   mariadb://用户名:密码@主机:端口/数据库名
+      #   mysql://用户名:密码@主机:端口/数据库名
+      # 注意：必须使用 mysql:// 协议（Prisma CLI 不识别 mariadb://）
       # 主机填写 Docker 宿主机可访问的 MariaDB 地址：
       #   - 同宿主机 MariaDB：host.docker.internal（Docker Desktop）或 172.17.0.1（Linux）
       #   - 远程 MariaDB：填写远程服务器 IP
-      DATABASE_URL: ${DATABASE_URL:-mariadb://tongji:tongji123@host.docker.internal:3306/tongji}
+      DATABASE_URL: ${DATABASE_URL:-mysql://tongji:tongji123@host.docker.internal:3306/tongji}
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-strong-random-secret}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       NODE_ENV: production

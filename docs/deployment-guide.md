@@ -74,7 +74,8 @@ docker compose -f docker-compose.dev.yml up -d
 环境变量配置文件 `server/.env`：
 
 ```env
-DATABASE_URL="mariadb://tongji:tongji123@127.0.0.1:3306/tongji"
+DATABASE_URL="mysql://tongji:tongji123@127.0.0.1:3306/tongji"
+
 JWT_SECRET="dev-secret-change-me-in-production-2026"
 ```
 
@@ -245,11 +246,12 @@ nano .env
 
 ```env
 # ---------- MariaDB 数据库连接 ----------
-# 完整连接串，格式：mariadb://用户名:密码@主机:端口/数据库名
+# 完整连接串，格式：mysql://用户名:密码@主机:端口/数据库名
+# 注意：必须使用 mysql:// 协议（Prisma CLI 不识别 mariadb://，MariaDB 兼容 MySQL 协议）
 # 主机地址根据 MariaDB 位置选择：
 #   - 同宿主机：host.docker.internal（推荐）
 #   - 远程服务器：填写 IP，如 192.168.1.100
-DATABASE_URL=mariadb://tongji:tongji123@host.docker.internal:3306/tongji
+DATABASE_URL=mysql://tongji:tongji123@host.docker.internal:3306/tongji
 
 # ---------- 应用配置 ----------
 APP_PORT=80
@@ -645,10 +647,11 @@ git clone <项目仓库地址> .
 
 ```env
 # ---------- MariaDB 数据库连接 ----------
+# 注意：必须使用 mysql:// 协议（Prisma CLI 不识别 mariadb://）
 # 主机地址根据 MariaDB 位置选择：
 #   - 同宿主机：host.docker.internal
 #   - 远程服务器：填写 IP，如 192.168.1.100
-DATABASE_URL=mariadb://tongji:tongji123@host.docker.internal:3306/tongji
+DATABASE_URL=mysql://tongji:tongji123@host.docker.internal:3306/tongji
 
 # ---------- 应用配置 ----------
 APP_PORT=80
@@ -874,7 +877,7 @@ nano .env
 `.env` 配置内容：
 
 ```env
-DATABASE_URL="mariadb://tongji:tongji123@127.0.0.1:3306/tongji"
+DATABASE_URL="mysql://tongji:tongji123@127.0.0.1:3306/tongji"
 JWT_SECRET="your-strong-random-secret"
 JWT_EXPIRES_IN="7d"
 NODE_ENV="production"
@@ -1145,7 +1148,7 @@ npm run build
 
 | 配置项 | 位置 | 说明 |
 |--------|------|------|
-| 数据库连接 | `server/.env` 的 `DATABASE_URL` | MariaDB 连接串 `mariadb://user:pass@host:3306/db` |
+| 数据库连接 | `server/.env` 的 `DATABASE_URL` | MariaDB 连接串 `mysql://user:pass@host:3306/db`（必须 mysql:// 协议） |
 | 后端监听 | [server/src/index.ts](file:///e:/1Xiangmu/tongji/server/src/index.ts) `host: '::'` | IPv4/IPv6 双栈监听 |
 | 后端端口 | [server/src/index.ts](file:///e:/1Xiangmu/tongji/server/src/index.ts) `port: 3001` | 仅需对 Nginx 暴露，无需公网开放 |
 | CORS | [server/src/index.ts](file:///e:/1Xiangmu/tongji/server/src/index.ts) `origin: true` | 允许所有来源，生产由 Nginx 同源代理兜底 |
