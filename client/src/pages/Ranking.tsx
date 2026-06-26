@@ -84,9 +84,10 @@ export default function Ranking() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekStart, branchId])
 
-  // 合并本周与已选周到下拉列表
+  // 合并本周与已选周到下拉列表（统一格式化为 YYYY-MM-DD 避免重复）
   const allWeeks = useMemo(() => {
-    const set = new Set(weeks)
+    const set = new Set<string>()
+    weeks.forEach((w) => set.add(formatDate(new Date(w))))
     set.add(formatDate(getWeekStart()))
     set.add(weekStart)
     return Array.from(set).sort().reverse()
@@ -94,11 +95,12 @@ export default function Ranking() {
 
   // 按月统计时：从周列表提取不重复月份，每月取最早周一作为参考日
   const allMonths = useMemo(() => {
-    const monthMap = new Map<string, string>() // YYYY-MM -> refDate
+    const monthMap = new Map<string, string>() // YYYY-MM -> refDate(YYYY-MM-DD)
     const addMonth = (dateStr: string) => {
-      const d = new Date(dateStr)
+      const formatted = formatDate(new Date(dateStr))
+      const d = new Date(formatted)
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      if (!monthMap.has(key)) monthMap.set(key, dateStr)
+      if (!monthMap.has(key)) monthMap.set(key, formatted)
     }
     weeks.forEach(addMonth)
     addMonth(formatDate(getWeekStart()))
@@ -117,6 +119,30 @@ export default function Ranking() {
   }, [weekStart, allMonths])
 
   const currentRule = rules[0]
+
+  // 是否为全部厅模式
+  const isAllBranches = !branchId
+
+  // 全部厅时：按 branchId 分组，每组仅取前 10 名
+  const rankingByBranch = useMemo(() => {
+    const map = new Map<number, { branchName: string; items: RankingItem[] }>()
+    for (const item of ranking) {
+      let group = map.get(item.branchId)
+      if (!group) {
+        group = { branchName: item.branchName, items: [] }
+        map.set(item.branchId, group)
+      }
+      group.items.push(item)
+    }
+    return Array.from(map.entries()).map(([bid, g]) => ({
+      branchId: bid,
+      branchName: g.branchName,
+      items: g.items.slice(0, 10),
+    }))
+  }, [ranking])
+
+  // 单厅模式：仅取前 10 名
+  const top10Ranking = useMemo(() => ranking.slice(0, 10), [ranking])
 
   return (
     <div className="space-y-5">
@@ -196,98 +222,34 @@ export default function Ranking() {
         transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
         className="space-y-5"
       >
-      {/* 排名表格 */}
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
-        <div className="flex items-center gap-2 px-5 py-4 border-b border-border">
-          <Trophy size={18} className="text-warning" />
-          <h3 className="text-base font-semibold text-textPrimary">
-            {isMonthCycle ? '本月排名' : '本周排名'}
-          </h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-surface border-b border-border">
-              <tr className="text-left text-textSecondary">
-                <th className="px-4 py-3 font-medium">排名</th>
-                <th className="px-4 py-3 font-medium">人员</th>
-                <th className="px-4 py-3 font-medium">收光</th>
-                <th className="px-4 py-3 font-medium">麦序</th>
-                <th className="px-4 py-3 font-medium">全麦</th>
-                <th className="px-4 py-3 font-medium">基础福利</th>
-                <th className="px-4 py-3 font-medium">排名奖励</th>
-                <th className="px-4 py-3 font-medium">总福利</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ranking.length === 0 && !loading ? (
-                <tr>
-                  <td
-                    colSpan={8}
-                    className="px-4 py-12 text-center text-textMuted"
-                  >
-                    暂无排名数据
-                  </td>
-                </tr>
-              ) : ranking.length === 0 ? (
-                Array.from({ length: 6 }).map((_, i) => (
-                  <tr key={i} className="border-b border-border last:border-0">
-                    {Array.from({ length: 8 }).map((_, j) => (
-                      <td key={j} className="px-4 py-3">
-                        <Skeleton className="h-5 w-full" />
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              ) : (
-                ranking.map((item) => {
-                  const isTop3 = item.rank <= 3
-                  const rowBg = isTop3 ? rankRowBg[item.rank - 1] : ''
-                  const badgeColor = isTop3
-                    ? rankBadgeColors[item.rank - 1]
-                    : '#94A3B8'
-                  return (
-                    <tr
-                      key={`${item.personnelId}-${item.branchId}`}
-                      className={`border-b border-border last:border-0 ${rowBg} hover:bg-surface dark:hover:bg-surface/50 transition-colors duration-200`}
-                    >
-                      <td className="px-4 py-3">
-                        <div
-                          className="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-semibold font-mono shadow-sm"
-                          style={{ backgroundColor: badgeColor }}
-                        >
-                          {item.rank}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="text-textPrimary font-medium">
-                          {item.personnelName}
-                        </div>
-                        {isHuizhang && (
-                          <div className="text-xs text-textMuted">
-                            {item.branchName}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-textPrimary font-mono">{item.sg}</td>
-                      <td className="px-4 py-3 text-textPrimary font-mono">{item.mx}</td>
-                      <td className="px-4 py-3 text-textPrimary font-mono">{item.qm}</td>
-                      <td className="px-4 py-3 text-textPrimary font-mono">
-                        {item.baseWelfare}
-                      </td>
-                      <td className="px-4 py-3 text-textPrimary font-mono">
-                        {item.rankReward}
-                      </td>
-                      <td className="px-4 py-3 text-textPrimary font-semibold font-mono">
-                        {item.totalWelfare}
-                      </td>
-                    </tr>
-                  )
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      {/* 排名表格：全部厅时按厅分卡片，单厅时单卡片 */}
+      {isAllBranches ? (
+        loading ? (
+          <RankingCardSkeleton />
+        ) : rankingByBranch.length === 0 ? (
+          <div className="bg-card border border-border rounded-xl px-5 py-12 text-center text-sm text-textMuted">
+            暂无排名数据
+          </div>
+        ) : (
+          <div className="grid gap-5 lg:grid-cols-2">
+            {rankingByBranch.map((group) => (
+              <RankingCard
+                key={group.branchId}
+                title={group.branchName}
+                items={group.items}
+                isMonthCycle={isMonthCycle}
+              />
+            ))}
+          </div>
+        )
+      ) : (
+        <RankingCard
+          title={isMonthCycle ? '本月排名' : '本周排名'}
+          items={top10Ranking}
+          isMonthCycle={isMonthCycle}
+          loading={loading}
+        />
+      )}
 
       {/* 福利计算说明：仅在选择具体厅时显示（全部厅时不显示） */}
       {branchId && (
@@ -423,6 +385,129 @@ function RuleCard({
         {value}
       </div>
       <div className="text-xs text-textMuted mt-1">{desc}</div>
+    </div>
+  )
+}
+
+/**
+ * 排名卡片：单厅或分组后的厅排名
+ */
+function RankingCard({
+  title,
+  items,
+  isMonthCycle,
+  loading = false,
+}: {
+  title: string
+  items: RankingItem[]
+  isMonthCycle: boolean
+  loading?: boolean
+}) {
+  return (
+    <div className="bg-card border border-border rounded-xl overflow-hidden">
+      <div className="flex items-center gap-2 px-5 py-4 border-b border-border">
+        <Trophy size={18} className="text-warning" />
+        <h3 className="text-base font-semibold text-textPrimary">{title}</h3>
+        <span className="text-xs text-textMuted ml-auto">
+          {isMonthCycle ? '本月排名' : '本周排名'}
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-surface border-b border-border">
+            <tr className="text-left text-textSecondary">
+              <th className="px-3 py-2 font-medium">排名</th>
+              <th className="px-3 py-2 font-medium">人员</th>
+              <th className="px-3 py-2 font-medium">收光</th>
+              <th className="px-3 py-2 font-medium">麦序</th>
+              <th className="px-3 py-2 font-medium">全麦</th>
+              <th className="px-3 py-2 font-medium">总福利</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.length === 0 && !loading ? (
+              <tr>
+                <td colSpan={6} className="px-3 py-8 text-center text-textMuted">
+                  暂无数据
+                </td>
+              </tr>
+            ) : items.length === 0 ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <tr key={i} className="border-b border-border last:border-0">
+                  {Array.from({ length: 6 }).map((_, j) => (
+                    <td key={j} className="px-3 py-2">
+                      <Skeleton className="h-5 w-full" />
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : (
+              items.map((item) => {
+                const isTop3 = item.rank <= 3
+                const rowBg = isTop3 ? rankRowBg[item.rank - 1] : ''
+                const badgeColor = isTop3
+                  ? rankBadgeColors[item.rank - 1]
+                  : '#94A3B8'
+                return (
+                  <tr
+                    key={`${item.branchId}-${item.personnelId}`}
+                    className={`border-b border-border last:border-0 ${rowBg} hover:bg-surface dark:hover:bg-surface/50 transition-colors duration-200`}
+                  >
+                    <td className="px-3 py-2">
+                      <div
+                        className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-semibold font-mono shadow-sm"
+                        style={{ backgroundColor: badgeColor }}
+                      >
+                        {item.rank}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-textPrimary font-medium">
+                      {item.personnelName}
+                    </td>
+                    <td className="px-3 py-2 text-textPrimary font-mono">{item.sg}</td>
+                    <td className="px-3 py-2 text-textPrimary font-mono">{item.mx}</td>
+                    <td className="px-3 py-2 text-textPrimary font-mono">{item.qm}</td>
+                    <td className="px-3 py-2 text-textPrimary font-semibold font-mono">
+                      {item.totalWelfare}
+                    </td>
+                  </tr>
+                )
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 排名卡片骨架屏（全部厅加载中）
+ */
+function RankingCardSkeleton() {
+  return (
+    <div className="grid gap-5 lg:grid-cols-2">
+      {Array.from({ length: 2 }).map((_, i) => (
+        <div
+          key={i}
+          className="bg-card border border-border rounded-xl overflow-hidden"
+        >
+          <div className="flex items-center gap-2 px-5 py-4 border-b border-border">
+            <Skeleton className="h-5 w-32" />
+          </div>
+          <div className="p-0">
+            {Array.from({ length: 5 }).map((_, j) => (
+              <div key={j} className="border-b border-border last:border-0 px-3 py-2">
+                <div className="flex gap-2">
+                  {Array.from({ length: 6 }).map((_, k) => (
+                    <Skeleton key={k} className="h-5 flex-1" />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   )
 }

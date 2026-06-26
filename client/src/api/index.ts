@@ -20,6 +20,7 @@ import type {
   UpdateRewardRuleInput,
   WeekCompareItem,
   DataLogItem,
+  LoginRecord,
 } from '../types'
 
 const request = axios.create({
@@ -250,15 +251,15 @@ export const dashboardApi = {
 
 // ============ 导出 ============
 export const exportApi = {
-  exportExcel(weekStart?: string, branchId?: number) {
+  exportExcel(weekStart?: string, branchId?: number, cycle?: 'WEEK' | 'MONTH') {
     return request.get<unknown, Blob>('/export/excel', {
-      params: { weekStart, branchId },
+      params: { weekStart, branchId, cycle },
       responseType: 'blob',
     })
   },
-  exportCSV(weekStart?: string, branchId?: number) {
+  exportCSV(weekStart?: string, branchId?: number, cycle?: 'WEEK' | 'MONTH') {
     return request.get<unknown, Blob>('/export/csv', {
-      params: { weekStart, branchId },
+      params: { weekStart, branchId, cycle },
       responseType: 'blob',
     })
   },
@@ -276,6 +277,13 @@ export const dataHistoryApi = {
     limit?: number
   }) {
     return request.get<unknown, DataLogItem[]>('/data-history', { params })
+  },
+}
+
+// ============ 登录记录 ============
+export const loginRecordsApi = {
+  list(params?: { accountId?: number; date?: string; limit?: number }) {
+    return request.get<unknown, LoginRecord[]>('/login-records', { params })
   },
 }
 

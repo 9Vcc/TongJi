@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { authenticate } from '../middleware/auth'
+import { StatCycle } from '../../generated/prisma/client'
 import { getWeekStart } from '../utils/week'
 import { computeRanking, resolveQueryBranchId } from '../utils/welfare'
 import * as xlsx from 'xlsx'
@@ -14,22 +15,28 @@ function formatDate(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
+/**
+ * 解析导出周期参数：MONTH=按月，其他默认按周
+ */
+function resolveCycleParam(cycleParam: string | undefined): StatCycle {
+  return cycleParam === 'MONTH' ? StatCycle.MONTH : StatCycle.WEEK
+}
+
 export default async function exportRoutes(fastify: FastifyInstance) {
-  // GET /api/export/excel - 导出Excel
+  // GET /api/export/excel - 导出Excel（支持按周/按月）
   fastify.get(
     '/api/export/excel',
     { preHandler: [authenticate] },
     async (request, reply) => {
       const currentUser = request.user
-      const { weekStart: weekStartParam, branchId: branchIdParam } =
-        request.query as { weekStart?: string; branchId?: string }
+      const { weekStart: weekStartParam, branchId: branchIdParam, cycle: cycleParam } =
+        request.query as { weekStart?: string; branchId?: string; cycle?: string }
 
-      const weekStart = weekStartParam
-        ? getWeekStart(new Date(weekStartParam))
-        : getWeekStart()
+      const cycle = resolveCycleParam(cycleParam)
+      const refDate = weekStartParam ? new Date(weekStartParam) : new Date()
 
       const branchFilter = resolveQueryBranchId(currentUser, branchIdParam)
-      const ranking = await computeRanking(weekStart, branchFilter)
+      const ranking = await computeRanking(refDate, branchFilter, cycle)
 
       const data = ranking.map((r) => ({
         排名: r.rank,
@@ -43,15 +50,17 @@ export default async function exportRoutes(fastify: FastifyInstance) {
         总福利: r.totalWelfare,
       }))
 
+      const sheetName = cycle === StatCycle.MONTH ? '月排名' : '周排名'
+      const prefix = cycle === StatCycle.MONTH ? '月排名' : '周排名'
       const worksheet = xlsx.utils.json_to_sheet(data)
       const workbook = xlsx.utils.book_new()
-      xlsx.utils.book_append_sheet(workbook, worksheet, '周排名')
+      xlsx.utils.book_append_sheet(workbook, worksheet, sheetName)
       const buffer = xlsx.write(workbook, {
         type: 'buffer',
         bookType: 'xlsx',
       })
 
-      const filename = `周排名_${formatDate(weekStart)}.xlsx`
+      const filename = `${prefix}_${formatDate(refDate)}.xlsx`
       reply.header(
         'Content-Type',
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -64,21 +73,20 @@ export default async function exportRoutes(fastify: FastifyInstance) {
     }
   )
 
-  // GET /api/export/csv - 导出CSV
+  // GET /api/export/csv - 导出CSV（支持按周/按月）
   fastify.get(
     '/api/export/csv',
     { preHandler: [authenticate] },
     async (request, reply) => {
       const currentUser = request.user
-      const { weekStart: weekStartParam, branchId: branchIdParam } =
-        request.query as { weekStart?: string; branchId?: string }
+      const { weekStart: weekStartParam, branchId: branchIdParam, cycle: cycleParam } =
+        request.query as { weekStart?: string; branchId?: string; cycle?: string }
 
-      const weekStart = weekStartParam
-        ? getWeekStart(new Date(weekStartParam))
-        : getWeekStart()
+      const cycle = resolveCycleParam(cycleParam)
+      const refDate = weekStartParam ? new Date(weekStartParam) : new Date()
 
       const branchFilter = resolveQueryBranchId(currentUser, branchIdParam)
-      const ranking = await computeRanking(weekStart, branchFilter)
+      const ranking = await computeRanking(refDate, branchFilter, cycle)
 
       const fields = [
         { label: '排名', value: 'rank' },
@@ -97,7 +105,8 @@ export default async function exportRoutes(fastify: FastifyInstance) {
 
       // 添加 BOM 以便 Excel 正确识别 UTF-8 编码
       const bom = '\uFEFF'
-      const filename = `周排名_${formatDate(weekStart)}.csv`
+      const prefix = cycle === StatCycle.MONTH ? '月排名' : '周排名'
+      const filename = `${prefix}_${formatDate(refDate)}.csv`
       reply.header('Content-Type', 'text/csv; charset=utf-8')
       reply.header(
         'Content-Disposition',

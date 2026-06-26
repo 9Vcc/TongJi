@@ -60,7 +60,9 @@ export default function Personnel() {
 
   const openAdd = () => {
     setName('')
-    setAddBranchId(isHuizhang ? branches[0]?.id : user?.branchId ?? undefined)
+    // 会长：默认不选中任何厅（提示"请选择厅"），强制手动选择
+    // 超管/管理：使用其所属厅
+    setAddBranchId(isHuizhang ? undefined : user?.branchId ?? undefined)
     setAddOpen(true)
   }
 

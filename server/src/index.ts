@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
@@ -19,6 +20,7 @@ import dashboardRoutes from './routes/dashboard';
 import exportRoutes from './routes/export';
 import notificationRoutes from './routes/notifications';
 import dataHistoryRoutes from './routes/data-history';
+import loginRecordRoutes from './routes/login-records';
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -74,9 +76,9 @@ fastify.register(cors, {
   credentials: true,
 });
 
-// 注册 JWT 插件
+// 注册 JWT 插件（密钥从环境变量读取，与 utils/jwt.ts 保持一致）
 fastify.register(jwt, {
-  secret: 'tongji-secret-key-2026',
+  secret: process.env.JWT_SECRET || 'tongji-secret-key-2026',
 });
 
 // 注册 multipart 插件（用于文件上传/Excel导入）
@@ -119,6 +121,9 @@ fastify.register(notificationRoutes);
 
 // 注册录入历史记录路由（会长、超管可见）
 fastify.register(dataHistoryRoutes);
+
+// 注册登录记录路由（仅会长可见）
+fastify.register(loginRecordRoutes);
 
 // 健康检查路由
 fastify.get('/health', async () => {

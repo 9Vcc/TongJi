@@ -40,6 +40,18 @@ export default async function authRoutes(fastify: FastifyInstance) {
 
     const token = signToken(payload)
 
+    // 记录登录信息（User-Agent），失败不阻塞登录流程
+    try {
+      await prisma.loginRecord.create({
+        data: {
+          accountId: account.id,
+          userAgent: request.headers['user-agent'] ?? null,
+        },
+      })
+    } catch {
+      // 记录失败不影响登录
+    }
+
     return reply.send({
       token,
       user: {

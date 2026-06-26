@@ -13,6 +13,7 @@ import AccountsPage from './pages/settings/Accounts'
 import BranchesPage from './pages/settings/Branches'
 import NotificationsPage from './pages/settings/Notifications'
 import DataHistoryPage from './pages/settings/DataHistory'
+import LoginRecordsPage from './pages/settings/LoginRecords'
 
 /**
  * 受保护的布局路由：负责认证校验 + 渲染常驻 Layout
@@ -60,6 +61,7 @@ function AppRoutes() {
         <Route path="/settings/branches" element={<BranchesPage />} />
         <Route path="/settings/notifications" element={<NotificationsPage />} />
         <Route path="/settings/history" element={<DataHistoryPage />} />
+        <Route path="/settings/login-records" element={<LoginRecordsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

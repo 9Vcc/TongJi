@@ -7,7 +7,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "mysql"
 }
 
 // ============ 枚举定义 ============
@@ -59,6 +59,7 @@ model Account {
   branch             Branch?       @relation(fields: [branchId], references: [id])
   createdDataRecords DataRecord[]  @relation("DataRecordCreatedBy")
   modifiedHistories  DataHistory[] @relation("DataHistoryModifier")
+  loginRecords       LoginRecord[] @relation("AccountLoginRecords")
 
   @@index([branchId])
 }
@@ -196,4 +197,18 @@ model Notification {
   branch Branch @relation(fields: [branchId], references: [id])
 
   @@index([branchId])
+}
+
+// ============ 登录记录表 ============
+
+model LoginRecord {
+  id        Int      @id @default(autoincrement())
+  accountId Int
+  loginTime DateTime @default(now())
+  userAgent String?
+
+  account Account @relation("AccountLoginRecords", fields: [accountId], references: [id])
+
+  @@index([accountId])
+  @@index([loginTime])
 }

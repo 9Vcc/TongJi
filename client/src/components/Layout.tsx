@@ -49,6 +49,7 @@ const pageTitleMap: Record<string, string> = {
   '/settings/branches': '厅管理',
   '/settings/notifications': '通知列表',
   '/settings/history': '录入历史记录',
+  '/settings/login-records': '登录记录',
 }
 
 export default function Layout({ children }: LayoutProps) {

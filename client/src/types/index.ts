@@ -279,3 +279,17 @@ export interface DataLogItem {
   mx?: number
   qm?: number
 }
+
+// 登录记录
+export interface LoginRecord {
+  id: number
+  accountId: number
+  loginTime: string
+  userAgent: string | null
+  account: {
+    id: number
+    username: string
+    role: Role
+    branchId: number | null
+  }
+}

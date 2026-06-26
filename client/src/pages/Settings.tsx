@@ -6,6 +6,7 @@ import {
   Bell,
   ChevronRight,
   History,
+  LogIn,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 
@@ -52,6 +53,13 @@ export default function Settings() {
       desc: '查看谁录入了数据、谁修改了数据，追溯每次操作',
       icon: History,
       visible: canViewHistory,
+    },
+    {
+      to: '/settings/login-records',
+      label: '登录记录',
+      desc: '查看账户登录的设备与时间，仅会长可见',
+      icon: LogIn,
+      visible: isHuizhang,
     },
   ]
 

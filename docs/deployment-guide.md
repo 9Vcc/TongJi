@@ -6,15 +6,18 @@
 |------|----------|----------|------|
 | Node.js | 18.0+ | 20.x LTS | 后端运行环境 |
 | npm | 9.0+ | 10.x | 包管理工具 |
-| Nginx | 1.18+ | 1.24+ | 反向代理与静态资源服务（生产） |
-| PM2 | 5.0+ | 5.3+ | Node 进程守护（生产） |
+| MariaDB | 10.5+ | 11.x | 数据库（Docker 部署已内置） |
+| Nginx | 1.18+ | 1.24+ | 反向代理与静态资源服务（生产，手动部署） |
+| PM2 | 5.0+ | 5.3+ | Node 进程守护（生产，手动部署） |
+| Docker | 24.0+ | 最新 | 容器部署（推荐，见第 3 节） |
 | 操作系统 | — | Linux（Arch Linux / 通用发行版） | 推荐生产部署 |
 
 ### 技术栈
 
-- **后端**：Fastify 5.x + Prisma 7.x + SQLite (better-sqlite3)
+- **后端**：Fastify 5.x + Prisma 7.x + MariaDB (@prisma/adapter-mariadb)
 - **前端**：React 19 + Vite 8 + TailwindCSS 3
-- **定时任务**：node-cron（数据库自动备份）
+- **数据库**：MariaDB 11.x（支持 Docker 部署）
+- **定时任务**：node-cron（数据库自动备份，mysqldump）
 
 ### 生产架构
 
@@ -22,7 +25,7 @@
 公网用户 ──→ Nginx (80/443) ──┬─→ 静态文件 client/dist (前端)
                               └─→ 反向代理 /api → 127.0.0.1:3001 (后端 Node)
                                                        │
-                                                       └─→ SQLite 文件 prod.db
+                                                       └─→ MariaDB (3306)
 PM2 守护: server (node dist/src/index.js)
 ```
 
@@ -51,17 +54,30 @@ cd ../client
 npm install
 ```
 
-### 2.3 配置数据库
+### 2.3 配置数据库（MariaDB）
 
-后端使用 SQLite，无需额外安装数据库服务。默认数据库文件为 `server/dev.db`。
+项目使用 MariaDB 作为数据库。本地开发推荐使用 Docker 启动 MariaDB：
+
+```bash
+# 在项目根目录启动 MariaDB（仅数据库，不启动应用）
+docker compose -f docker-compose.dev.yml up -d
+```
+
+启动后，MariaDB 连接信息：
+- 主机：`127.0.0.1`
+- 端口：`3306`
+- 数据库：`tongji`
+- 用户名：`tongji` / 密码：`tongji123`
+- root密码：`root123`（用于测试创建/删除测试库）
 
 环境变量配置文件 `server/.env`：
 
 ```env
-DATABASE_URL="file:./dev.db"
+DATABASE_URL="mariadb://tongji:tongji123@127.0.0.1:3306/tongji"
+JWT_SECRET="dev-secret-change-me-in-production-2026"
 ```
 
-> SQLite 数据库文件会在首次运行迁移时自动创建。
+> 也可复制 `server/.env.example` 为 `server/.env` 并按需修改。
 
 ### 2.4 运行数据库迁移
 
@@ -71,8 +87,8 @@ cd server
 # 生成 Prisma Client
 npx prisma generate
 
-# 创建数据库并应用迁移（开发环境）
-npx prisma migrate dev
+# 应用迁移到 MariaDB
+npx prisma migrate deploy
 ```
 
 ### 2.5 启动开发服务
@@ -143,9 +159,188 @@ curl -X POST http://localhost:3001/api/seed
 
 ---
 
-## 3. Linux 服务器生产部署
+## 3. Docker 部署（推荐）
 
-### 3.1 环境准备
+### 3.1 前置要求
+
+| 软件 | 最低版本 | 说明 |
+|------|----------|------|
+| Docker | 24.0+ | 容器引擎 |
+| Docker Compose | 2.20+ | 容器编排（已内置在 Docker 中） |
+
+```bash
+# Arch Linux 安装 Docker
+sudo pacman -S --needed docker docker-compose
+
+# 启动 Docker 并设置开机自启
+sudo systemctl enable --now docker
+
+# 验证
+docker --version
+docker compose version
+```
+
+### 3.2 配置环境变量
+
+在项目根目录复制环境变量模板并修改：
+
+```bash
+cp .env.example .env
+```
+
+编辑 `.env` 文件，**务必修改 JWT_SECRET**：
+
+```env
+# MariaDB 配置
+MARIADB_ROOT_PASSWORD=root123
+MARIADB_DATABASE=tongji
+MARIADB_USER=tongji
+MARIADB_PASSWORD=tongji123
+
+# 应用配置
+APP_PORT=80
+JWT_SECRET=your-strong-random-secret-here
+JWT_EXPIRES_IN=7d
+```
+
+> 生成强随机密钥：`openssl rand -base64 48`
+
+### 3.3 构建并启动
+
+```bash
+# 构建镜像并启动所有服务（首次构建约 3-5 分钟）
+docker compose up -d --build
+
+# 查看启动日志
+docker compose logs -f app
+
+# 看到以下输出表示启动成功：
+#   [1/4] 等待 MariaDB 就绪...
+#   [2/4] 执行数据库迁移...
+#   [3/4] 启动 Nginx + Node.js...
+#   [4/4] 初始化会长账户...
+#   服务已启动
+```
+
+### 3.4 验证部署
+
+```bash
+# 检查容器状态
+docker compose ps
+
+# 测试访问
+curl http://localhost/health
+# 返回 {"status":"ok","timestamp":"..."}
+
+# 浏览器访问
+# http://localhost  （前端页面）
+```
+
+默认会长账户：
+- 用户名：`admin`
+- 密码：`admin123`
+
+> 首次登录后请立即修改密码。
+
+### 3.5 架构说明
+
+```
+                    ┌─────────────────────────────────┐
+公网用户 ──→ :80 ──→│  tongji-app 容器                │
+                    │  ┌──────────────────────────┐   │
+                    │  │ Nginx (:80)              │   │
+                    │  │  ├─ / → 前端静态文件      │   │
+                    │  │  └─ /api → :3001 代理     │   │
+                    │  └──────────────────────────┘   │
+                    │  ┌──────────────────────────┐   │
+                    │  │ Node.js (:3001)          │   │
+                    │  │  └─ Fastify 后端 API     │   │
+                    │  └──────────────────────────┘   │
+                    └──────────┬──────────────────────┘
+                               │
+                    ┌──────────▼──────────────────────┐
+                    │  tongji-mariadb 容器             │
+                    │  MariaDB 11 (:3306)              │
+                    │  数据卷: mariadb-data            │
+                    └─────────────────────────────────┘
+```
+
+Docker 架构特点：
+- **单容器**：Nginx + Node.js 运行在同一容器，由 `entrypoint.sh` 管理
+- **数据持久化**：MariaDB 数据通过 Docker Volume 持久化，备份文件通过 Volume 挂载
+- **自动迁移**：容器启动时自动执行 `prisma migrate deploy`
+- **自动初始化**：启动后自动调用 `/api/seed` 创建会长账户（如不存在）
+- **健康检查**：MariaDB 容器配置了 healthcheck，应用容器等待数据库就绪后启动
+
+### 3.6 常用运维命令
+
+```bash
+# 查看日志
+docker compose logs -f app          # 应用日志
+docker compose logs -f mariadb      # 数据库日志
+
+# 重启服务
+docker compose restart app          # 仅重启应用
+docker compose restart              # 重启所有服务
+
+# 停止/启动
+docker compose down                 # 停止并删除容器（保留数据）
+docker compose down -v              # 停止并删除容器和数据卷（谨慎！）
+docker compose up -d                # 重新启动
+
+# 进入容器
+docker compose exec app sh          # 进入应用容器
+docker compose exec mariadb mariadb -u tongji -p  # 进入 MariaDB
+
+# 查看数据库备份
+docker compose exec app ls -la /app/backups/
+```
+
+### 3.7 更新部署
+
+```bash
+# 拉取最新代码后重新构建
+git pull
+docker compose up -d --build
+
+# 仅重启（代码无变化时）
+docker compose restart app
+```
+
+### 3.8 数据备份与恢复
+
+```bash
+# 手动备份数据库
+docker compose exec app sh -c 'cd /app && npx tsx scripts/backup.ts'
+# 或直接用 mysqldump
+docker compose exec mariadb mysqldump -u tongji -ptongji123 tongji > backup.sql
+
+# 恢复数据库
+docker compose exec -T mariadb mariadb -u tongji -ptongji123 tongji < backup.sql
+
+# 备份数据卷
+docker run --rm -v tongji_mariadb-data:/data -v $(pwd):/backup alpine \
+  tar czf /backup/mariadb-data-$(date +%Y%m%d).tar.gz /data
+```
+
+### 3.9 自定义端口
+
+修改 `.env` 文件中的 `APP_PORT`：
+
+```env
+# 使用 8080 端口
+APP_PORT=8080
+```
+
+```bash
+docker compose up -d
+```
+
+---
+
+## 4. Linux 服务器生产部署（手动）
+
+### 4.1 环境准备
 
 Arch Linux 使用 pacman 作为包管理器：
 
@@ -163,11 +358,14 @@ npm -v    # 10.x.x 或更高
 # 安装 PM2 进程守护
 sudo npm install -g pm2
 
-# 安装 Nginx + git
-sudo pacman -S --needed nginx git
+# 安装 Nginx + git + MariaDB
+sudo pacman -S --needed nginx git mariadb mariadb-clients
 
-# 构建 better-sqlite3 原生模块所需工具
-sudo pacman -S --needed python make gcc
+# 启动 MariaDB 并设置开机自启
+sudo systemctl enable --now mariadb
+
+# 初始化 MariaDB（设置 root 密码，移除测试数据库）
+sudo mysql_secure_installation
 ```
 
 > **备选**：如需特定 Node 版本，可安装 nvm：
@@ -179,7 +377,7 @@ sudo pacman -S --needed python make gcc
 > nvm use 20
 > ```
 
-### 3.2 获取代码并安装依赖
+### 4.2 获取代码并安装依赖
 
 ```bash
 sudo mkdir -p /opt/tongji
@@ -188,7 +386,7 @@ sudo chown $USER:$USER /opt/tongji
 git clone <项目仓库地址> /opt/tongji
 cd /opt/tongji
 
-# 后端依赖（会编译 better-sqlite3 原生模块）
+# 后端依赖
 cd server
 npm install
 
@@ -197,17 +395,35 @@ cd ../client
 npm install
 ```
 
-### 3.3 配置后端环境
+### 4.3 配置后端环境
 
 ```bash
-cd /opt/tongji/server
-
-# 配置生产数据库路径（建议放固定位置，避免相对路径漂移）
-mkdir -p data
-cat > .env << 'EOF'
-DATABASE_URL="file:/opt/tongji/server/data/prod.db"
+# 创建数据库和用户
+sudo mariadb << 'EOF'
+CREATE DATABASE tongji CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'tongji'@'localhost' IDENTIFIED BY 'tongji123';
+GRANT ALL PRIVILEGES ON tongji.* TO 'tongji'@'localhost';
+FLUSH PRIVILEGES;
 EOF
 
+cd /opt/tongji/server
+
+# 配置环境变量
+cp .env.example .env
+# 编辑 .env，设置 DATABASE_URL 和 JWT_SECRET
+nano .env
+```
+
+`.env` 配置内容：
+
+```env
+DATABASE_URL="mariadb://tongji:tongji123@127.0.0.1:3306/tongji"
+JWT_SECRET="your-strong-random-secret"
+JWT_EXPIRES_IN="7d"
+NODE_ENV="production"
+```
+
+```bash
 # 生成 Prisma Client
 npx prisma generate
 
@@ -215,7 +431,7 @@ npx prisma generate
 npx prisma migrate deploy
 ```
 
-### 3.4 构建后端
+### 4.4 构建后端
 
 ```bash
 cd /opt/tongji/server
@@ -223,7 +439,7 @@ npm run build
 # 构建产物位于 server/dist/ 目录
 ```
 
-### 3.5 构建前端
+### 4.5 构建前端
 
 ```bash
 cd /opt/tongji/client
@@ -231,7 +447,7 @@ npm run build
 # 构建产物位于 client/dist/ 目录
 ```
 
-### 3.6 初始化会长账户
+### 4.6 初始化会长账户
 
 首次部署需要创建默认会长账户：
 
@@ -251,7 +467,7 @@ kill %1
 
 默认账户 `admin / admin123`，首次登录后请立即修改密码。
 
-### 3.7 使用 PM2 管理后端进程
+### 4.7 使用 PM2 管理后端进程
 
 ```bash
 cd /opt/tongji/server
@@ -276,7 +492,7 @@ pm2 stop tongji-server    # 停止
 pm2 delete tongji-server  # 删除
 ```
 
-### 3.8 配置 Nginx 反向代理
+### 4.8 配置 Nginx 反向代理
 
 ```bash
 sudo vim /etc/nginx/sites-available/tongji.conf
@@ -337,7 +553,7 @@ sudo systemctl enable --now nginx
 sudo systemctl reload nginx
 ```
 
-### 3.9 配置 HTTPS（推荐）
+### 4.9 配置 HTTPS（推荐）
 
 使用 Let's Encrypt 免费证书：
 
@@ -353,7 +569,7 @@ sudo systemctl enable --now certbot-renew.timer
 sudo certbot renew --dry-run
 ```
 
-### 3.10 防火墙配置
+### 4.10 防火墙配置
 
 Arch Linux 推荐 `firewalld` 或 `ufw`：
 
@@ -378,7 +594,7 @@ sudo ufw enable
 
 ---
 
-## 4. 更新部署
+## 5. 更新部署
 
 代码更新后的标准流程：
 
@@ -402,40 +618,44 @@ npm run build            # Nginx 直接读 dist，无需重启
 
 ---
 
-## 5. 数据库备份
+## 6. 数据库备份
 
-### 5.1 自动备份
+### 6.1 自动备份
 
 系统已内置自动备份功能，后端服务启动时会自动注册定时任务：
 
 - **执行时间**：每天凌晨 3:00
-- **备份目录**：`server/backups/`
-- **文件名格式**：`backup-YYYY-MM-DD-HH-mm-ss.db`
+- **备份方式**：`mysqldump` 导出 SQL 文件
+- **备份目录**：`server/backups/`（Docker 环境为 `/app/backups/`）
+- **文件名格式**：`backup-YYYY-MM-DD-HH-mm-ss.sql`
 - **保留策略**：自动清理超过 30 天的旧备份
 
 无需额外配置，定时任务在后端启动时自动注册。
 
-### 5.2 手动备份
+> **依赖**：系统需安装 `mysqldump` 命令。Docker 镜像已内置；手动部署需安装 `mariadb-clients`（Arch）或 `default-mysql-client`（Debian）。
+
+### 6.2 手动备份
 
 ```bash
+# 手动部署环境
 cd /opt/tongji/server
 npx tsx scripts/backup.ts
+
+# 或直接使用 mysqldump
+mysqldump -u tongji -p tongji > backup-$(date +%Y%m%d).sql
 ```
 
-### 5.3 数据恢复
+### 6.3 数据恢复
 
 ```bash
-# 停止后端
-pm2 stop tongji-server
+# 恢复 SQL 备份到 MariaDB
+mariadb -u tongji -p tongji < /opt/tongji/server/backups/backup-YYYY-MM-DD-HH-mm-ss.sql
 
-# 用备份文件替换当前数据库
-cp /opt/tongji/server/backups/backup-YYYY-MM-DD-HH-mm-ss.db /opt/tongji/server/data/prod.db
-
-# 重启后端
-pm2 start tongji-server
+# 或在 Docker 环境中
+docker compose exec -T mariadb mariadb -u tongji -ptongji123 tongji < backup.sql
 ```
 
-### 5.4 异地备份（推荐）
+### 6.4 异地备份（推荐）
 
 将备份目录定期同步到异地或对象存储：
 
@@ -446,18 +666,20 @@ echo "0 4 * * * rsync -az /opt/tongji/server/backups/ user@backup-server:/backup
 
 ---
 
-## 6. 运行测试
+## 7. 运行测试
 
-### 6.1 后端单元测试
+### 7.1 后端单元测试
 
 ```bash
 cd server
 npm test
 ```
 
-测试使用 Vitest 框架，使用独立的 `test.db` 数据库，不影响开发/生产数据。
+测试使用 Vitest 框架，使用独立的 MariaDB 测试数据库 `tongji_test`，不影响开发/生产数据。
 
-### 6.2 前端构建检查
+> 前置条件：本地 MariaDB 服务已启动（`docker compose -f docker-compose.dev.yml up -d`）。
+
+### 7.2 前端构建检查
 
 ```bash
 cd client
@@ -466,48 +688,61 @@ npm run build
 
 ---
 
-## 7. 关键配置说明
+## 8. 关键配置说明
 
 | 配置项 | 位置 | 说明 |
 |--------|------|------|
-| 数据库路径 | `server/.env` 的 `DATABASE_URL` | 生产建议绝对路径 `file:/opt/tongji/server/data/prod.db` |
+| 数据库连接 | `server/.env` 的 `DATABASE_URL` | MariaDB 连接串 `mariadb://user:pass@host:3306/db` |
 | 后端监听 | [server/src/index.ts](file:///e:/1Xiangmu/tongji/server/src/index.ts) `host: '::'` | IPv4/IPv6 双栈监听 |
 | 后端端口 | [server/src/index.ts](file:///e:/1Xiangmu/tongji/server/src/index.ts) `port: 3001` | 仅需对 Nginx 暴露，无需公网开放 |
 | CORS | [server/src/index.ts](file:///e:/1Xiangmu/tongji/server/src/index.ts) `origin: true` | 允许所有来源，生产由 Nginx 同源代理兜底 |
-| JWT 密钥 | [server/src/utils/jwt.ts](file:///e:/1Xiangmu/tongji/server/src/utils/jwt.ts) `JWT_SECRET` | 生产环境务必修改为复杂值 |
-| JWT 有效期 | [server/src/utils/jwt.ts](file:///e:/1Xiangmu/tongji/server/src/utils/jwt.ts) `JWT_EXPIRES_IN` | 默认 7 天 |
+| JWT 密钥 | `server/.env` 的 `JWT_SECRET` | 生产环境务必修改为复杂值，至少 32 字节 |
+| JWT 有效期 | `server/.env` 的 `JWT_EXPIRES_IN` | 默认 7 天 |
 | 前端 API 路径 | [client/src/api/index.ts](file:///e:/1Xiangmu/tongji/client/src/api/index.ts) `baseURL: '/api'` | 相对路径，由 Nginx/Vite proxy 转发 |
 | 文件上传限制 | [server/src/index.ts](file:///e:/1Xiangmu/tongji/server/src/index.ts) `limits.fileSize` | 默认 10MB |
 
 ---
 
-## 8. 常见问题
+## 9. 常见问题
 
-### Q1: 启动后端报错 "Cannot find module 'better-sqlite3"？
+### Q1: 启动后端报错 "Can't reach database server"？
 
-better-sqlite3 是原生模块，需编译。确保系统已安装编译工具：
+MariaDB 服务未启动或连接信息错误：
 
 ```bash
-sudo pacman -S --needed python make gcc
-cd /opt/tongji/server
-npm rebuild better-sqlite3
+# 检查 MariaDB 服务状态
+sudo systemctl status mariadb
+
+# 启动 MariaDB
+sudo systemctl start mariadb
+
+# 验证连接
+mariadb -u tongji -p -h 127.0.0.1 tongji
+
+# 检查 server/.env 中 DATABASE_URL 是否正确
 ```
 
-若 Node 版本升级，需重新编译：`npm rebuild`。
+Docker 环境：`docker compose ps` 检查 MariaDB 容器是否健康。
 
 ### Q2: Prisma 迁移报错 "Migration failed"？
 
-可能是数据库文件被锁定或损坏。备份后重置：
+可能是数据库状态不一致。备份后重置：
 
 ```bash
+# 手动部署环境
 cd /opt/tongji/server
 pm2 stop tongji-server
-cp data/prod.db data/prod.db.bak  # 先备份
-rm -f data/prod.db data/prod.db-journal
+
+# 备份后重新创建数据库
+mysqldump -u tongji -p tongji > backup.sql
+sudo mariadb -e "DROP DATABASE tongji; CREATE DATABASE tongji CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
+
 npx prisma migrate deploy
 pm2 start tongji-server
-# 重新初始化：curl -X POST http://localhost:3001/api/seed
+curl -X POST http://localhost:3001/api/seed
 ```
+
+Docker 环境：`docker compose down -v && docker compose up -d --build`（会删除数据，谨慎操作）。
 
 ### Q3: 前端页面空白 / API 报 404？
 
@@ -519,7 +754,15 @@ pm2 start tongji-server
 
 ### Q4: 如何修改 JWT 密钥？
 
-修改 [server/src/utils/jwt.ts](file:///e:/1Xiangmu/tongji/server/src/utils/jwt.ts) 的 `JWT_SECRET` 值，重新构建并重启后端。修改后所有已登录用户的 token 将失效，需重新登录。
+修改 `server/.env` 文件中的 `JWT_SECRET` 值，重启后端即可。修改后所有已登录用户的 token 将失效，需重新登录。
+
+```bash
+# 生成强随机密钥
+openssl rand -base64 48
+
+# 编辑 .env，修改 JWT_SECRET 后重启
+pm2 restart tongji-server
+```
 
 ### Q5: 如何修改后端端口？
 
@@ -528,15 +771,17 @@ pm2 start tongji-server
 - Nginx 配置中 `proxy_pass http://127.0.0.1:新端口`
 - 开发环境还需更新 [client/vite.config.ts](file:///e:/1Xiangmu/tongji/client/vite.config.ts) 中 `proxy['/api'].target`
 
-### Q6: 数据库文件越来越大怎么办？
+### Q6: 数据库越来越大怎么办？
 
-SQLite 删除数据后不会自动释放空间。执行 VACUUM 压缩：
+MariaDB 删除数据后可通过 OPTIMIZE TABLE 回收空间：
 
 ```bash
-cd /opt/tongji/server
-pm2 stop tongji-server
-sqlite3 data/prod.db "VACUUM;"
-pm2 start tongji-server
+# 手动优化所有表
+mariadb -u tongji -p tongji -e "OPTIMIZE TABLE Account, Branch, Personnel, PersonnelBranch, DataRecord, DataHistory, RewardRule, Notification;"
+
+# 或在 Docker 中
+docker compose exec mariadb mariadb -u tongji -ptongji123 tongji \
+  -e "OPTIMIZE TABLE Account, Branch, Personnel, PersonnelBranch, DataRecord, DataHistory, RewardRule, Notification;"
 ```
 
 ### Q7: 如何查看数据库内容？

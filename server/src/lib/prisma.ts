@@ -1,11 +1,22 @@
 import { PrismaClient } from '../../generated/prisma/client'
-import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3'
+import { PrismaMariaDb } from '@prisma/adapter-mariadb'
 
-// 支持通过环境变量配置数据库路径（测试时使用独立 test.db）
-// DATABASE_URL 格式如 "file:./dev.db"，需去掉 "file:" 前缀
-const rawUrl = process.env.DATABASE_URL || 'file:./dev.db'
-const dbUrl = rawUrl.replace(/^file:/, '')
-const adapter = new PrismaBetterSqlite3({ url: dbUrl })
+// 解析 DATABASE_URL（支持 mariadb:// 和 mysql:// 两种协议格式）
+// Prisma CLI 使用 mysql://，应用运行时通过 MariaDB 适配器连接
+const dbUrl = process.env.DATABASE_URL || 'mysql://root:root@localhost:3306/tongji'
+
+function parseDbUrl(url: string) {
+  const match = url.match(/^(?:mariadb|mysql):\/\/([^:]+):([^@]*)@([^:]+):(\d+)\/(.+)$/)
+  if (match) {
+    const [, user, password, host, port, database] = match
+    return { host, user, password: decodeURIComponent(password), port: Number(port), database }
+  }
+  // 回退：使用默认本地连接
+  return { host: 'localhost', user: 'root', password: 'root', port: 3306, database: 'tongji' }
+}
+
+const config = parseDbUrl(dbUrl)
+const adapter = new PrismaMariaDb(config)
 const prisma = new PrismaClient({ adapter })
 
 export default prisma
