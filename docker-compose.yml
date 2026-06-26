@@ -26,7 +26,7 @@ services:
       # 主机填写 Docker 宿主机可访问的 MariaDB 地址：
       #   - 同宿主机 MariaDB：host.docker.internal（Docker Desktop）或 172.17.0.1（Linux）
       #   - 远程 MariaDB：填写远程服务器 IP
-      DATABASE_URL: ${DATABASE_URL:-mysql://tongji:tongji123@host.docker.internal:3306/tongji}
+      DATABASE_URL: ${DATABASE_URL:-mysql://TONGji:wenny8888.@192.168.2.145:3306/TONGji}
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-strong-random-secret}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       NODE_ENV: production
