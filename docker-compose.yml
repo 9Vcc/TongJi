@@ -1,37 +1,17 @@
 # ============================================
 # 统计系统 Docker Compose 编排
 # ============================================
+# 本编排仅启动应用容器（前端 + 后端 + Nginx）
+# 数据库（MariaDB）请使用已独立搭建的实例
+#
 # 使用方法：
-#   1. 复制 .env.example 为 .env 并修改配置
-#   2. docker compose up -d          启动
-#   3. docker compose logs -f app     查看日志
-#   4. docker compose down            停止
+#   1. 复制 .env.example 为 .env 并配置外部 MariaDB 连接信息
+#   2. docker compose up -d --build   构建并启动
+#   3. docker compose logs -f app      查看日志
+#   4. docker compose down             停止
 # ============================================
 
 services:
-  # ---------- MariaDB 数据库 ----------
-  mariadb:
-    image: mariadb:11
-    container_name: tongji-mariadb
-    restart: unless-stopped
-    environment:
-      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root123}
-      MARIADB_DATABASE: ${MARIADB_DATABASE:-tongji}
-      MARIADB_USER: ${MARIADB_USER:-tongji}
-      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-tongji123}
-    volumes:
-      - mariadb-data:/var/lib/mysql
-    ports:
-      - "${MARIADB_PORT:-3306}:3306"
-    healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 30s
-    networks:
-      - tongji-net
-
   # ---------- 应用服务（前端 + 后端 + Nginx）----------
   app:
     build:
@@ -39,11 +19,13 @@ services:
       dockerfile: Dockerfile
     container_name: tongji-app
     restart: unless-stopped
-    depends_on:
-      mariadb:
-        condition: service_healthy
     environment:
-      DATABASE_URL: mariadb://${MARIADB_USER:-tongji}:${MARIADB_PASSWORD:-tongji123}@mariadb:3306/${MARIADB_DATABASE:-tongji}
+      # 直接使用外部 MariaDB 连接串，格式：
+      #   mariadb://用户名:密码@主机:端口/数据库名
+      # 主机填写 Docker 宿主机可访问的 MariaDB 地址：
+      #   - 同宿主机 MariaDB：host.docker.internal（Docker Desktop）或 172.17.0.1（Linux）
+      #   - 远程 MariaDB：填写远程服务器 IP
+      DATABASE_URL: ${DATABASE_URL:-mariadb://tongji:tongji123@host.docker.internal:3306/tongji}
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-strong-random-secret}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
       NODE_ENV: production
@@ -52,15 +34,11 @@ services:
     volumes:
       # 持久化数据库备份
       - app-backups:/app/backups
-    networks:
-      - tongji-net
+    # 如需访问宿主机的 MariaDB，添加 extra_hosts 解析 host.docker.internal
+    # Linux 上 Docker 默认不支持 host.docker.internal，需通过此配置启用
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
-  mariadb-data:
-    driver: local
   app-backups:
     driver: local
-
-networks:
-  tongji-net:
-    driver: bridge

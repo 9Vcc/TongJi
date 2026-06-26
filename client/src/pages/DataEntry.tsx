@@ -1032,15 +1032,17 @@ export default function DataEntry() {
             <Upload size={16} />
             导入
           </button>
-          <button
-            onClick={handleOpenExport}
-            disabled={!effectiveBranchId}
-            className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
-            title={!effectiveBranchId ? '请先选择厅' : undefined}
-          >
-            <Download size={16} />
-            导出
-          </button>
+          {canDelete && (
+            <button
+              onClick={handleOpenExport}
+              disabled={!effectiveBranchId}
+              className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+              title={!effectiveBranchId ? '请先选择厅' : undefined}
+            >
+              <Download size={16} />
+              导出
+            </button>
+          )}
         </div>
       </div>
 

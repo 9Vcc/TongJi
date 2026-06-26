@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
-import { authenticate } from '../middleware/auth'
-import { StatCycle } from '../../generated/prisma/client'
+import { authenticate, requireRole } from '../middleware/auth'
+import { StatCycle, Role } from '../../generated/prisma/client'
 import { getWeekStart } from '../utils/week'
 import { computeRanking, resolveQueryBranchId } from '../utils/welfare'
 import * as xlsx from 'xlsx'
@@ -23,10 +23,10 @@ function resolveCycleParam(cycleParam: string | undefined): StatCycle {
 }
 
 export default async function exportRoutes(fastify: FastifyInstance) {
-  // GET /api/export/excel - 导出Excel（支持按周/按月）
+  // GET /api/export/excel - 导出Excel（支持按周/按月，仅超管及以上可访问）
   fastify.get(
     '/api/export/excel',
-    { preHandler: [authenticate] },
+    { preHandler: [authenticate, requireRole(Role.CHAOGUAN)] },
     async (request, reply) => {
       const currentUser = request.user
       const { weekStart: weekStartParam, branchId: branchIdParam, cycle: cycleParam } =
@@ -73,10 +73,10 @@ export default async function exportRoutes(fastify: FastifyInstance) {
     }
   )
 
-  // GET /api/export/csv - 导出CSV（支持按周/按月）
+  // GET /api/export/csv - 导出CSV（支持按周/按月，仅超管及以上可访问）
   fastify.get(
     '/api/export/csv',
-    { preHandler: [authenticate] },
+    { preHandler: [authenticate, requireRole(Role.CHAOGUAN)] },
     async (request, reply) => {
       const currentUser = request.user
       const { weekStart: weekStartParam, branchId: branchIdParam, cycle: cycleParam } =

@@ -57,6 +57,10 @@ export default function Ranking() {
         const randomBranch = list[Math.floor(Math.random() * list.length)]
         setBranchId(randomBranch.id)
       }
+      // 超管/管理：初始锁定到本厅，默认显示本厅统计数据
+      if (!isHuizhang && !initBranchRef.current && user?.branchId) {
+        setBranchId(user.branchId)
+      }
       initBranchRef.current = true
     }).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
