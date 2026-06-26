@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   Shield,
-  Plus,
   Trash2,
   Ban,
   CheckCircle,
@@ -117,7 +116,7 @@ export default function AccountsPage() {
       ? accountForm.branchId
         ? Number(accountForm.branchId)
         : undefined
-      : user?.branchId
+      : user?.branchId ?? undefined
 
     if (accountForm.role !== 'HUIZHANG' && !targetBranchId) {
       toast.error(isHuizhang ? '请选择厅' : '当前账户未关联厅')
