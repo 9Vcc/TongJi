@@ -3,12 +3,17 @@ node_modules/
 
 # 构建产物
 dist/
-client/dist/
+
+# TypeScript 增量编译缓存
+*.tsbuildinfo
 
 # 环境变量（包含敏感信息，勿提交）
 .env
-.env.local
-.env.production
+.env.*
+!.env.example
+
+# 本地配置（Vite 推荐）
+*.local
 
 # 数据库文件（旧 SQLite 残留）
 *.db
@@ -26,11 +31,24 @@ server/generated/
 *.log
 logs/
 
+# 测试覆盖率
+coverage/
+
+# 包管理器缓存
+.npm/
+.pnpm-store/
+
+# Vite 缓存
+.vite/
+
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+
+# 编辑器 / AI 工具
+.trae/
 
 # 系统
 .DS_Store
@@ -38,6 +56,3 @@ Thumbs.db
 
 # Docker
 docker/data/
-
-# Docker
-.trae/
