@@ -20,7 +20,51 @@ import exportRoutes from './routes/export';
 import notificationRoutes from './routes/notifications';
 import dataHistoryRoutes from './routes/data-history';
 
-const fastify = Fastify({ logger: true });
+const isDev = process.env.NODE_ENV !== 'production';
+
+const fastify = Fastify({
+  logger: {
+    // 开发环境彩色单行输出，生产环境标准 JSON
+    transport: isDev
+      ? {
+          target: 'pino-pretty',
+          options: {
+            colorize: true,
+            translateTime: 'HH:MM:ss',
+            ignore: 'pid,hostname',
+            singleLine: true,
+            messageFormat: '{msg}',
+          },
+        }
+      : undefined,
+    level: isDev ? 'info' : 'info',
+  },
+  // 禁用默认的双行请求日志（incoming + completed），改用自定义简洁日志
+  disableRequestLogging: true,
+});
+
+// 静默路径：频繁轮询的请求不输出日志，避免刷屏
+const SILENT_PATHS = new Set(['/health', '/']);
+const requestTimings = new WeakMap<object, bigint>();
+
+fastify.addHook('onRequest', (request, _reply, done) => {
+  if (SILENT_PATHS.has(request.url)) return done();
+  requestTimings.set(request, process.hrtime.bigint());
+  done();
+});
+
+fastify.addHook('onResponse', (request, reply, done) => {
+  if (SILENT_PATHS.has(request.url)) return done();
+  const start = requestTimings.get(request);
+  if (!start) return done();
+  const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+  const status = reply.statusCode;
+  const level = status >= 500 ? 'error' : status >= 400 ? 'warn' : 'info';
+  request.log[level](
+    `${request.method} ${request.url} ${status} ${durationMs.toFixed(0)}ms`,
+  );
+  done();
+});
 
 // 配置 CORS：允许所有来源（任意域名/IP/端口），便于内网穿透与公网访问
 fastify.register(cors, {
