@@ -125,6 +125,24 @@ fastify.register(dataHistoryRoutes);
 // 注册登录记录路由（仅会长可见）
 fastify.register(loginRecordRoutes);
 
+// 全局错误处理：打印完整错误堆栈便于排查
+fastify.setErrorHandler((error: Error & { validation?: unknown }, request, reply) => {
+  request.log.error(
+    {
+      err: {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+      },
+    },
+    `处理请求出错 ${request.method} ${request.url}`
+  );
+  if (error.validation) {
+    return reply.code(400).send({ error: error.message });
+  }
+  return reply.code(500).send({ error: '服务器内部错误' });
+});
+
 // 健康检查路由
 fastify.get('/health', async () => {
   return { status: 'ok', timestamp: new Date().toISOString() };

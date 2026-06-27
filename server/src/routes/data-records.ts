@@ -112,6 +112,37 @@ async function findPersonnelInBranch(name: string, branchId: number) {
   return pb?.personnelId ?? null
 }
 
+/**
+ * 确保人员属于指定分部，不存在则自动创建并关联
+ * 返回 { personnelId, created }，created 标识是否为本次新建
+ */
+async function ensurePersonnelInBranch(
+  name: string,
+  branchId: number
+): Promise<{ personnelId: number; created: boolean }> {
+  const existingId = await findPersonnelInBranch(name, branchId)
+  if (existingId !== null) {
+    return { personnelId: existingId, created: false }
+  }
+  // 事务内创建人员 + 分部关联
+  const personnel = await prismaClient.$transaction(async (tx) => {
+    // 全局查找同名人员（可能已属于其他分部）
+    const existing = await tx.personnel.findFirst({ where: { name } })
+    if (existing) {
+      await tx.personnelBranch.create({
+        data: { personnelId: existing.id, branchId },
+      })
+      return existing
+    }
+    const p = await tx.personnel.create({ data: { name } })
+    await tx.personnelBranch.create({
+      data: { personnelId: p.id, branchId },
+    })
+    return p
+  })
+  return { personnelId: personnel.id, created: true }
+}
+
 export default async function dataRecordRoutes(fastify: FastifyInstance) {
   // POST /api/data-records - 手动录入（单条和批量）
   fastify.post(
@@ -264,14 +295,16 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
       let success = 0
       let failed = 0
       const failures: { row: number; name: string; reason: string }[] = []
+      const createdPersons: string[] = []
 
       for (let i = 1; i < rows.length; i++) {
         const row = rows[i] as unknown[]
         const name = String(row[0] ?? '').trim()
         if (!name) continue
-        const sg = toNonNegInt(row[1])
-        const mx = toNonNegInt(row[2])
-        const qm = toNonNegInt(row[3])
+        // 数据列缺失时默认为 0（支持仅导入人员名单）
+        const sg = row[1] === undefined || row[1] === '' ? 0 : toNonNegInt(row[1])
+        const mx = row[2] === undefined || row[2] === '' ? 0 : toNonNegInt(row[2])
+        const qm = row[3] === undefined || row[3] === '' ? 0 : toNonNegInt(row[3])
 
         if (Number.isNaN(sg) || Number.isNaN(mx) || Number.isNaN(qm)) {
           failed++
@@ -279,10 +312,15 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
           continue
         }
 
-        const personnelId = await findPersonnelInBranch(name, branchId)
-        if (!personnelId) {
+        // 人员不存在则自动创建并关联到当前厅
+        let personnelId: number
+        try {
+          const result = await ensurePersonnelInBranch(name, branchId)
+          personnelId = result.personnelId
+          if (result.created) createdPersons.push(name)
+        } catch {
           failed++
-          failures.push({ row: i + 1, name, reason: '分部内未找到该人员' })
+          failures.push({ row: i + 1, name, reason: '人员创建失败' })
           continue
         }
 
@@ -300,7 +338,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         }
       }
 
-      return reply.send({ success, failed, failures })
+      return reply.send({ success, failed, failures, createdPersons })
     }
   )
 
@@ -332,6 +370,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
       let success = 0
       let failed = 0
       const failures: { row: number; name: string; reason: string }[] = []
+      const createdPersons: string[] = []
 
       const lines = data
         .split(/\r?\n/)
@@ -346,9 +385,10 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         const parts = line.includes('\t') ? line.split('\t') : line.split(',')
         const name = (parts[0] ?? '').trim()
         if (!name) continue
-        const sg = toNonNegInt(parts[1])
-        const mx = toNonNegInt(parts[2])
-        const qm = toNonNegInt(parts[3])
+        // 数据列缺失时默认为 0（支持仅导入人员名单）
+        const sg = parts[1] === undefined || parts[1].trim() === '' ? 0 : toNonNegInt(parts[1])
+        const mx = parts[2] === undefined || parts[2].trim() === '' ? 0 : toNonNegInt(parts[2])
+        const qm = parts[3] === undefined || parts[3].trim() === '' ? 0 : toNonNegInt(parts[3])
 
         if (Number.isNaN(sg) || Number.isNaN(mx) || Number.isNaN(qm)) {
           failed++
@@ -356,10 +396,15 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
           continue
         }
 
-        const personnelId = await findPersonnelInBranch(name, branchId)
-        if (!personnelId) {
+        // 人员不存在则自动创建并关联到当前厅
+        let personnelId: number
+        try {
+          const result = await ensurePersonnelInBranch(name, branchId)
+          personnelId = result.personnelId
+          if (result.created) createdPersons.push(name)
+        } catch {
           failed++
-          failures.push({ row: i + 1, name, reason: '分部内未找到该人员' })
+          failures.push({ row: i + 1, name, reason: '人员创建失败' })
           continue
         }
 
@@ -377,7 +422,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         }
       }
 
-      return reply.send({ success, failed, failures })
+      return reply.send({ success, failed, failures, createdPersons })
     }
   )
 

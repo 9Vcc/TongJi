@@ -479,6 +479,9 @@ export default function DataEntry() {
         result = await dataRecordsApi.importPaste(pasteData, effectiveBranchId)
       }
       toast.success(`导入完成：成功 ${result.success} 条，失败 ${result.failed} 条`)
+      if (result.createdPersons && result.createdPersons.length > 0) {
+        toast.info(`已自动创建 ${result.createdPersons.length} 名人员：${result.createdPersons.join('、')}`)
+      }
       if (result.failures.length > 0) {
         console.warn('导入失败详情：', result.failures)
       }
@@ -1336,7 +1339,7 @@ export default function DataEntry() {
                 </p>
               )}
               <p className="mt-3 text-xs text-textMuted">
-                Excel 格式：第一列为姓名，第二列收光，第三列麦序，第四列全麦。第一行为表头将被跳过。
+                Excel 格式：第一列为姓名，第二列收光，第三列麦序，第四列全麦。第一行为表头将被跳过。数据列可留空（仅导入人员名单）。
               </p>
             </div>
           ) : (

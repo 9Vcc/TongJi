@@ -196,6 +196,8 @@ export interface ImportResult {
   success: number
   failed: number
   failures: { row: number; name: string; reason: string }[]
+  // 导入时自动创建的人员姓名列表
+  createdPersons?: string[]
 }
 
 // 创建账户入参
