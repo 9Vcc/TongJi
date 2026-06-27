@@ -328,13 +328,36 @@ export const loginRecordsApi = {
 
 // ============ 通知 ============
 export const notificationsApi = {
-  list(branchId?: number) {
+  list(params?: {
+    branchId?: number
+    type?: 'RANK_PUBLISH' | 'RULE_CHANGE' | 'DATA_CHANGE'
+    isRead?: boolean
+    limit?: number
+  }) {
     return request.get<unknown, Notification[]>('/notifications', {
-      params: branchId ? { branchId } : undefined,
+      params: {
+        ...params,
+        isRead: params?.isRead === undefined ? undefined : String(params.isRead),
+      },
     })
   },
   markRead(id: number) {
     return request.patch<unknown, Notification>(`/notifications/${id}/read`)
+  },
+  markAllRead(branchId?: number) {
+    return request.patch<unknown, { message: string; count: number }>(
+      '/notifications/read-all',
+      { params: branchId ? { branchId } : undefined }
+    )
+  },
+  remove(id: number) {
+    return request.delete<unknown, { message: string }>(`/notifications/${id}`)
+  },
+  clearRead(branchId?: number) {
+    return request.delete<unknown, { message: string; count: number }>(
+      '/notifications',
+      { params: branchId ? { branchId } : undefined }
+    )
   },
 }
 

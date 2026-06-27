@@ -583,29 +583,21 @@ export default function DataEntry() {
     isRecorded: boolean
     namings?: NamingItem[]
   }
-  const filteredRecords = useMemo<DisplayRow[]>(() => {
-    // 搜索框过滤：支持中文、拼音（全拼）、拼音首字母
-    const term = searchTerm.trim()
-    const matchName = (name: string) => matchNamePinyin(name, term)
-    // 已录入的记录
-    const filtered = records.filter((r) =>
-      matchName(r.personnelName || r.personnel?.name || '')
-    )
+  // 全部行（不受搜索框过滤）：用于批量编辑/添加弹窗内显示所有已勾选人员
+  const allRows = useMemo<DisplayRow[]>(() => {
     // 已录入的人员标识集合：用 `${branchId}:${personnelId}` 区分多厅
     const recordedKeys = new Set(
       records.map((r) => `${r.branchId}:${r.personnelId}`)
     )
-    // 未录入的人员（按搜索词过滤）
-    const targetPersonnel = personnel.filter((p) => matchName(p.name))
     // 未录入：单厅模式匹配该厅，全部厅模式只要任一厅有记录就不算未录入
-    const unrecorded = targetPersonnel.filter((p) => {
+    const unrecorded = personnel.filter((p) => {
       if (effectiveBranchId) {
         return !recordedKeys.has(`${effectiveBranchId}:${p.id}`)
       }
       return !records.some((r) => r.personnelId === p.id)
     })
     return [
-      ...filtered.map((r) => ({
+      ...records.map((r) => ({
         key: `rec-${r.id}`,
         id: r.id,
         personnelId: r.personnelId,
@@ -638,7 +630,14 @@ export default function DataEntry() {
         namings: undefined,
       })),
     ]
-  }, [records, personnel, searchTerm, effectiveBranchId])
+  }, [records, personnel, effectiveBranchId])
+
+  // 受搜索框过滤的行：用于表格列表显示
+  const filteredRecords = useMemo<DisplayRow[]>(() => {
+    const term = searchTerm.trim()
+    if (!term) return allRows
+    return allRows.filter((r) => matchNamePinyin(r.personnelName, term))
+  }, [allRows, searchTerm])
 
   // 全选/取消全选（仅当前可见行，按行 key 区分多厅）
   const handleToggleSelectAll = () => {
@@ -676,7 +675,7 @@ export default function DataEntry() {
       return
     }
     const forms: Record<string, { sg: string; mx: string; qm: string }> = {}
-    filteredRecords.forEach((r) => {
+    allRows.forEach((r) => {
       const key = rowKey(r.branchId, r.personnelId)
       if (selectedKeys.has(key)) {
         // 值为 0 时显示空字符串，便于用户直接输入新值
@@ -744,7 +743,7 @@ export default function DataEntry() {
         toast.error('收光/麦序/全麦必须为非负整数')
         return
       }
-      const row = filteredRecords.find(
+      const row = allRows.find(
         (r) => r.personnelId === personnelId && r.branchId === branchId
       )
       parsed.push({
@@ -812,7 +811,7 @@ export default function DataEntry() {
       return
     }
     const forms: Record<string, { sg: string; mx: string; qm: string }> = {}
-    filteredRecords.forEach((r) => {
+    allRows.forEach((r) => {
       const key = rowKey(r.branchId, r.personnelId)
       if (selectedKeys.has(key)) {
         // 输入框初始为空，输入的是要累加的数值
@@ -1514,7 +1513,7 @@ export default function DataEntry() {
             每行可独立编辑收光/麦序/全麦，未录入的行填写后将自动创建记录。同一人员在多个厅的数据互不影响。
           </p>
           <div className="max-h-[60vh] overflow-y-auto scrollbar-thin space-y-2">
-            {filteredRecords
+            {allRows
               .filter((r) => selectedKeys.has(rowKey(r.branchId, r.personnelId)))
               .map((r) => {
                 const k = rowKey(r.branchId, r.personnelId)
@@ -1647,7 +1646,7 @@ export default function DataEntry() {
                 </tr>
               </thead>
               <tbody>
-                {filteredRecords
+                {allRows
                   .filter((r) => selectedKeys.has(rowKey(r.branchId, r.personnelId)))
                   .map((r) => {
                     const k = rowKey(r.branchId, r.personnelId)

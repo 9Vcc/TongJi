@@ -4,8 +4,8 @@ export type Role = 'HUIZHANG' | 'CHAOGUAN' | 'GUANLI'
 // 账户状态
 export type AccountStatus = 'ACTIVE' | 'DISABLED'
 
-// 通知类型
-export type NotificationType = 'RULE_CHANGE' | 'DATA_UPDATE' | 'SYSTEM'
+// 通知类型（与后端 NotificationType 枚举一致）
+export type NotificationType = 'RANK_PUBLISH' | 'RULE_CHANGE' | 'DATA_CHANGE'
 
 // 历史操作类型
 export type HistoryAction = 'UPDATE' | 'DELETE'

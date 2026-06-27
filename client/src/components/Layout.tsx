@@ -14,11 +14,13 @@ import {
   BarChart3,
   ChevronLeft,
   ChevronRight,
+  CheckCheck,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
-import { notificationsApi } from '../api'
+import { notificationsApi, getErrorMessage } from '../api'
+import { useToast } from '../hooks/useToast'
 import type { Notification } from '../types'
-import { getRoleText } from '../utils'
+import { getRoleText, formatDateTime } from '../utils'
 import ThemeToggle from './ThemeToggle'
 
 interface LayoutProps {
@@ -56,6 +58,7 @@ export default function Layout({ children }: LayoutProps) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
+  const toast = useToast()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
@@ -103,6 +106,17 @@ export default function Layout({ children }: LayoutProps) {
       )
     } catch {
       // ignore
+    }
+  }
+
+  const handleMarkAllRead = async () => {
+    if (unreadCount === 0) return
+    try {
+      const result = await notificationsApi.markAllRead()
+      toast.success(`已标记 ${result.count} 条为已读`)
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
+    } catch (err) {
+      toast.error(getErrorMessage(err))
     }
   }
 
@@ -313,7 +327,22 @@ export default function Layout({ children }: LayoutProps) {
                       transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
                       style={{ transformOrigin: 'top right' }}
                     >
-                    <div className="max-h-96 overflow-y-auto scrollbar-thin">
+                    {/* 头部：标题 + 全部已读 */}
+                    <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-surface">
+                      <span className="text-xs font-medium text-textSecondary">
+                        通知{unreadCount > 0 && `（${unreadCount} 条未读）`}
+                      </span>
+                      {unreadCount > 0 && (
+                        <button
+                          onClick={handleMarkAllRead}
+                          className="flex items-center gap-1 text-xs text-primary hover:text-primary-hover transition-colors duration-200 cursor-pointer"
+                        >
+                          <CheckCheck size={12} />
+                          全部已读
+                        </button>
+                      )}
+                    </div>
+                    <div className="max-h-80 overflow-y-auto scrollbar-thin">
                       {notifications.length === 0 ? (
                         <div className="px-4 py-8 text-center text-sm text-textMuted">
                           暂无通知
@@ -331,12 +360,24 @@ export default function Layout({ children }: LayoutProps) {
                               {n.content}
                             </div>
                             <div className="text-xs text-textMuted mt-1">
-                              {new Date(n.createdAt).toLocaleString('zh-CN')}
+                              {formatDateTime(n.createdAt)}
                             </div>
                           </button>
                         ))
                       )}
                     </div>
+                    {/* 底部：查看全部 */}
+                    {notifications.length > 0 && (
+                      <button
+                        onClick={() => {
+                          setNotifOpen(false)
+                          navigate('/settings/notifications')
+                        }}
+                        className="block w-full text-center px-4 py-2 border-t border-border text-xs text-textSecondary hover:text-textPrimary hover:bg-surface transition-colors duration-200 cursor-pointer"
+                      >
+                        查看全部通知
+                      </button>
+                    )}
                     </motion.div>
                   </>
                 )}
