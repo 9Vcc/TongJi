@@ -311,14 +311,18 @@ export const dataHistoryApi = {
     type?: 'create' | 'update' | 'delete'
     limit?: number
   }) {
-    return request.get<unknown, DataLogItem[]>('/data-history', { params })
+    return request.get<unknown, DataLogItem[]>('/data-history', {
+      params: { ...params, limit: params?.limit ?? 50 },
+    })
   },
 }
 
 // ============ 登录记录 ============
 export const loginRecordsApi = {
   list(params?: { accountId?: number; date?: string; limit?: number }) {
-    return request.get<unknown, LoginRecord[]>('/login-records', { params })
+    return request.get<unknown, LoginRecord[]>('/login-records', {
+      params: { ...params, limit: params?.limit ?? 50 },
+    })
   },
 }
 

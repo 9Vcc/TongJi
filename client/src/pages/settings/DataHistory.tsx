@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion'
-import { History, Filter, RefreshCw, Plus, Pencil, Trash2 } from 'lucide-react'
+import { History, Filter, RefreshCw, Plus, Pencil, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 import {
   dataHistoryApi,
   branchesApi,
@@ -63,6 +63,10 @@ export default function DataHistoryPage() {
   const [filterBranchId, setFilterBranchId] = useState('')
   const [filterPersonnelId, setFilterPersonnelId] = useState('')
 
+  // 分页：每页 50 条
+  const [currentPage, setCurrentPage] = useState(1)
+  const pageSize = 50
+
   // 标记：人员选中时自动设置的 branchId，避免触发清空 personnelId
   const autoBranchRef = useRef(false)
 
@@ -74,9 +78,12 @@ export default function DataHistoryPage() {
       if (filterDate) params.date = filterDate
       if (filterBranchId) params.branchId = Number(filterBranchId)
       if (filterPersonnelId) params.personnelId = Number(filterPersonnelId)
-      params.limit = 200
+      // 拉取最多 500 条用于前端分页（后端上限 500）
+      params.limit = 500
       const list = await dataHistoryApi.list(params)
       setLogs(list)
+      // 数据刷新后重置到第 1 页
+      setCurrentPage(1)
     } catch (err) {
       toast.error(getErrorMessage(err))
     } finally {
@@ -162,6 +169,14 @@ export default function DataHistoryPage() {
         label: p.name,
       })),
     [personnel]
+  )
+
+  // 分页切片：当前页应显示的记录
+  const totalPages = Math.max(1, Math.ceil(logs.length / pageSize))
+  const safePage = Math.min(currentPage, totalPages)
+  const pagedLogs = useMemo(
+    () => logs.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [logs, safePage]
   )
 
   // 渲染详情文本
@@ -349,7 +364,7 @@ export default function DataHistoryPage() {
                     ))}
                   </tr>
                 ))
-              ) : logs.length === 0 ? (
+              ) : pagedLogs.length === 0 ? (
                 <tr>
                   <td
                     colSpan={7}
@@ -359,7 +374,7 @@ export default function DataHistoryPage() {
                   </td>
                 </tr>
               ) : (
-                logs.map((log) => {
+                pagedLogs.map((log) => {
                   const typeInfo = TYPE_MAP[log.type]
                   const TypeIcon = typeInfo.icon
                   const detail = renderDetail(log)
@@ -401,6 +416,35 @@ export default function DataHistoryPage() {
             </tbody>
           </table>
         </div>
+        {/* 分页控件：每页 50 条 */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-border text-sm">
+            <span className="text-textSecondary">
+              第 {safePage} / {totalPages} 页（共 {logs.length} 条）
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={safePage <= 1}
+                className="p-1.5 text-textSecondary hover:text-textPrimary hover:bg-surface rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+                title="上一页"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <span className="px-3 text-textPrimary font-mono">
+                {safePage} / {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={safePage >= totalPages}
+                className="p-1.5 text-textSecondary hover:text-textPrimary hover:bg-surface rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+                title="下一页"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
       </motion.div>
     </div>
   )

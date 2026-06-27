@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { LogIn, Filter, RefreshCw } from 'lucide-react'
+import { LogIn, Filter, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
 import {
   loginRecordsApi,
   accountsApi,
@@ -50,15 +50,22 @@ export default function LoginRecordsPage() {
   const [filterAccountId, setFilterAccountId] = useState('')
   const [filterDate, setFilterDate] = useState('')
 
+  // 分页：每页 50 条
+  const [currentPage, setCurrentPage] = useState(1)
+  const pageSize = 50
+
   const loadRecords = async () => {
     setLoading(true)
     try {
       const params: Parameters<typeof loginRecordsApi.list>[0] = {}
       if (filterAccountId) params.accountId = Number(filterAccountId)
       if (filterDate) params.date = filterDate
-      params.limit = 200
+      // 拉取最多 500 条用于前端分页（后端上限 500）
+      params.limit = 500
       const list = await loginRecordsApi.list(params)
       setRecords(list)
+      // 数据刷新后重置到第 1 页
+      setCurrentPage(1)
     } catch (err) {
       toast.error(getErrorMessage(err))
     } finally {
@@ -102,6 +109,14 @@ export default function LoginRecordsPage() {
   }
 
   const hasFilter = filterAccountId || filterDate
+
+  // 分页切片：当前页应显示的记录
+  const totalPages = Math.max(1, Math.ceil(records.length / pageSize))
+  const safePage = Math.min(currentPage, totalPages)
+  const pagedRecords = useMemo(
+    () => records.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [records, safePage]
+  )
 
   return (
     <div className="space-y-5">
@@ -213,7 +228,7 @@ export default function LoginRecordsPage() {
                     ))}
                   </tr>
                 ))
-              ) : records.length === 0 ? (
+              ) : pagedRecords.length === 0 ? (
                 <tr>
                   <td
                     colSpan={4}
@@ -223,7 +238,7 @@ export default function LoginRecordsPage() {
                   </td>
                 </tr>
               ) : (
-                records.map((record) => (
+                pagedRecords.map((record) => (
                   <tr
                     key={record.id}
                     className="border-b border-border last:border-0 hover:bg-surface transition-colors duration-200"
@@ -246,6 +261,35 @@ export default function LoginRecordsPage() {
             </tbody>
           </table>
         </div>
+        {/* 分页控件：每页 50 条 */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-border text-sm">
+            <span className="text-textSecondary">
+              第 {safePage} / {totalPages} 页（共 {records.length} 条）
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={safePage <= 1}
+                className="p-1.5 text-textSecondary hover:text-textPrimary hover:bg-surface rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+                title="上一页"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <span className="px-3 text-textPrimary font-mono">
+                {safePage} / {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={safePage >= totalPages}
+                className="p-1.5 text-textSecondary hover:text-textPrimary hover:bg-surface rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+                title="下一页"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
       </motion.div>
     </div>
   )

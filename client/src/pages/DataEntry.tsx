@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Upload,
   Download,
-  Plus,
   Pencil,
   Trash2,
   ChevronLeft,
@@ -13,6 +12,7 @@ import {
   CheckSquare,
   Save,
   UserPlus,
+  Search,
 } from 'lucide-react'
 import {
   dataRecordsApi,
@@ -35,6 +35,7 @@ import {
   getPreviousWeekStart,
   getWeekRangeText,
   getMonthRangeText,
+  matchNamePinyin,
 } from '../utils'
 import type {
   DataRecord,
@@ -106,8 +107,11 @@ export default function DataEntry() {
   // 视图周期：用户可切换本周/本月查看
   const [viewCycle, setViewCycle] = useState<'WEEK' | 'MONTH'>('WEEK')
 
-  const [form, setForm] = useState<RecordForm>(emptyForm)
-  const [submitting, setSubmitting] = useState(false)
+  // 人员搜索框（用于过滤列表，替代原手动录入卡片的人员选择）
+  const [searchTerm, setSearchTerm] = useState('')
+  // 分页：每页最多 30 人
+  const [currentPage, setCurrentPage] = useState(1)
+  const pageSize = 30
 
   // 编辑弹窗独立状态
   const [editModalOpen, setEditModalOpen] = useState(false)
@@ -317,59 +321,15 @@ export default function DataEntry() {
     }
   }
 
-  const resetForm = () => {
-    setForm(emptyForm)
-  }
-
-  // 新建录入提交（仅 create 模式）
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!effectiveBranchId) {
-      toast.error(isHuizhang ? '请选择厅' : '当前账户未关联厅')
-      return
-    }
-    if (!form.personnelId) {
-      toast.error('请选择人员')
-      return
-    }
-    // 厅规则关闭收光/全麦转换时，对应字段强制为 0 不参与录入
-    const sg = sgInputEnabled ? Number(form.sg) : 0
-    const mx = Number(form.mx)
-    const qm = qmInputEnabled ? Number(form.qm) : 0
-    if (
-      (sgInputEnabled && (!Number.isInteger(sg) || sg < 0)) ||
-      !Number.isInteger(mx) ||
-      mx < 0 ||
-      (qmInputEnabled && (!Number.isInteger(qm) || qm < 0))
-    ) {
-      toast.error('收光/麦序/全麦必须为非负整数')
-      return
-    }
-
-    setSubmitting(true)
-    try {
-      // 判断是否为累加录入（该人员本周已有记录，按厅匹配避免多厅串号）
-      const existing = records.find(
-        (r) =>
-          r.personnelId === Number(form.personnelId) &&
-          (!effectiveBranchId || r.branchId === effectiveBranchId)
-      )
-      await dataRecordsApi.create({
-        personnelId: Number(form.personnelId),
-        branchId: effectiveBranchId,
-        sg,
-        mx,
-        qm,
-      })
-      toast.success(existing ? '已累加到现有记录' : '录入成功')
-      resetForm()
-      await loadData()
-    } catch (err) {
-      toast.error(getErrorMessage(err))
-    } finally {
-      setSubmitting(false)
-    }
-  }
+  // 编辑弹窗人员下拉选项（由当前厅人员列表派生）
+  const personnelOptions = useMemo(
+    () =>
+      personnel.map((p) => ({
+        value: String(p.id),
+        label: p.name,
+      })),
+    [personnel]
+  )
 
   // 打开编辑弹窗
   const handleEdit = (record: DataRecord) => {
@@ -576,14 +536,6 @@ export default function DataEntry() {
     }
   }
 
-  // 人员选项（仅显示名称）
-  const personnelOptions = useMemo(() => {
-    return personnel.map((p) => ({
-      value: String(p.id),
-      label: p.name,
-    }))
-  }, [personnel])
-
   // 导出弹窗：从历史周次提取不重复月份（每月取最早周一作为参考日）
   const exportMonths = useMemo(() => {
     const monthMap = new Map<string, string>() // YYYY-MM -> refDate(YYYY-MM-DD)
@@ -602,18 +554,6 @@ export default function DataEntry() {
       .map(([key, ref]) => ({ key, ref }))
       .sort((a, b) => b.key.localeCompare(a.key))
   }, [exportWeeks])
-
-  // 人员选中：自动切换到其所在厅（会长模式），表格同步过滤只显示其数据
-  const handlePersonnelSelect = (val: string) => {
-    setForm({ ...form, personnelId: val })
-    if (val && isHuizhang) {
-      const p = personnel.find((x) => x.id === Number(val))
-      const firstBranch = p?.branches?.[0]
-      if (firstBranch && firstBranch.id !== branchId) {
-        setBranchId(firstBranch.id)
-      }
-    }
-  }
 
   // 多选：切换某行选中状态（按 `${branchId}:${personnelId}` 区分多厅下的同一人员）
   const handleToggleSelect = (branchId: number | undefined, personnelId: number) => {
@@ -644,18 +584,19 @@ export default function DataEntry() {
     namings?: NamingItem[]
   }
   const filteredRecords = useMemo<DisplayRow[]>(() => {
-    // 已录入的记录（按筛选条件过滤）
-    const filtered = form.personnelId
-      ? records.filter((r) => r.personnelId === Number(form.personnelId))
-      : records
+    // 搜索框过滤：支持中文、拼音（全拼）、拼音首字母
+    const term = searchTerm.trim()
+    const matchName = (name: string) => matchNamePinyin(name, term)
+    // 已录入的记录
+    const filtered = records.filter((r) =>
+      matchName(r.personnelName || r.personnel?.name || '')
+    )
     // 已录入的人员标识集合：用 `${branchId}:${personnelId}` 区分多厅
     const recordedKeys = new Set(
       records.map((r) => `${r.branchId}:${r.personnelId}`)
     )
-    // 未录入的人员（未选中筛选时显示所有，选中时仅显示该人员）
-    const targetPersonnel = form.personnelId
-      ? personnel.filter((p) => p.id === Number(form.personnelId))
-      : personnel
+    // 未录入的人员（按搜索词过滤）
+    const targetPersonnel = personnel.filter((p) => matchName(p.name))
     // 未录入：单厅模式匹配该厅，全部厅模式只要任一厅有记录就不算未录入
     const unrecorded = targetPersonnel.filter((p) => {
       if (effectiveBranchId) {
@@ -697,12 +638,12 @@ export default function DataEntry() {
         namings: undefined,
       })),
     ]
-  }, [records, personnel, form.personnelId, effectiveBranchId])
+  }, [records, personnel, searchTerm, effectiveBranchId])
 
   // 全选/取消全选（仅当前可见行，按行 key 区分多厅）
   const handleToggleSelectAll = () => {
     setSelectedKeys((prev) => {
-      const visibleKeys = filteredRecords.map((r) => rowKey(r.branchId, r.personnelId))
+      const visibleKeys = pagedRecords.map((r) => rowKey(r.branchId, r.personnelId))
       if (visibleKeys.every((k) => prev.has(k))) {
         // 全部已选中：取消选中当前可见行
         const next = new Set(prev)
@@ -715,6 +656,18 @@ export default function DataEntry() {
       return next
     })
   }
+
+  // 分页切片：当前页应显示的记录
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / pageSize))
+  const safePage = Math.min(currentPage, totalPages)
+  const pagedRecords = useMemo(
+    () => filteredRecords.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [filteredRecords, safePage]
+  )
+  // 搜索或切换厅时重置到第 1 页
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchTerm, effectiveBranchId])
 
   // 打开批量编辑弹窗：初始化每个选中行的表单数据
   const handleOpenBatchEdit = () => {
@@ -1075,7 +1028,7 @@ export default function DataEntry() {
               className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors duration-200 cursor-pointer"
             >
               <CheckSquare size={16} />
-              批量编辑（{selectedKeys.size}）
+              编辑（{selectedKeys.size}）
             </button>
           )}
           {selectedKeys.size > 0 && (
@@ -1084,7 +1037,7 @@ export default function DataEntry() {
               className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors duration-200 cursor-pointer"
             >
               <UserPlus size={16} />
-              批量添加（{selectedKeys.size}）
+              添加（{selectedKeys.size}）
             </button>
           )}
           <button
@@ -1109,89 +1062,23 @@ export default function DataEntry() {
         </div>
       </div>
 
-      {/* 录入表单 */}
-      <div className="bg-card border border-border rounded-xl p-5">
-        <h3 className="text-base font-semibold text-textPrimary mb-4">
-          手动录入
-        </h3>
-        <form
-          onSubmit={handleSubmit}
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 items-end"
-        >
-          <div className="lg:col-span-1">
-            <label className="block text-xs text-textSecondary mb-1">人员</label>
-            <SearchableSelect
-              value={form.personnelId}
-              onChange={handlePersonnelSelect}
-              options={personnelOptions}
+      {/* 人员搜索框（用于过滤下方列表，录入请使用勾选行后的"添加"按钮） */}
+      <div className="bg-card border border-border rounded-xl p-3">
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 max-w-xs">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-textMuted" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="搜索人员姓名"
-              emptyText="无匹配人员"
+              className="w-full pl-9 pr-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
             />
           </div>
-          <div>
-            <label className="block text-xs text-textSecondary mb-1">
-              收光
-              {!sgInputEnabled && (
-                <span className="ml-1 text-[10px] text-textMuted">（已关闭）</span>
-              )}
-            </label>
-            <input
-              type="number"
-              min={0}
-              step={1}
-              value={sgInputEnabled ? form.sg : ''}
-              onChange={(e) => setForm({ ...form, sg: e.target.value })}
-              placeholder={sgInputEnabled ? '0' : '已关闭'}
-              disabled={!sgInputEnabled}
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-textSecondary mb-1">麦序</label>
-            <input
-              type="number"
-              min={0}
-              step={1}
-              value={form.mx}
-              onChange={(e) => setForm({ ...form, mx: e.target.value })}
-              placeholder="0"
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-textSecondary mb-1">
-              全麦
-              {!qmInputEnabled && (
-                <span className="ml-1 text-[10px] text-textMuted">（已关闭）</span>
-              )}
-            </label>
-            <input
-              type="number"
-              min={0}
-              step={1}
-              value={qmInputEnabled ? form.qm : ''}
-              onChange={(e) => setForm({ ...form, qm: e.target.value })}
-              placeholder={qmInputEnabled ? '0' : '已关闭'}
-              disabled={!qmInputEnabled}
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-            />
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="submit"
-              disabled={submitting || !effectiveBranchId}
-              className="flex items-center justify-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
-              title={!effectiveBranchId ? '请先选择厅' : undefined}
-            >
-              {submitting ? (
-                <Spinner className="h-4 w-4" />
-              ) : (
-                <Plus size={16} />
-              )}
-              添加
-            </button>
-          </div>
-        </form>
+          <span className="text-xs text-textSecondary">
+            共 {filteredRecords.length} 人
+          </span>
+        </div>
       </div>
 
       {/* 录入明细：weekStart/effectiveBranchId 变化时重新触发入场动画 */}
@@ -1215,14 +1102,14 @@ export default function DataEntry() {
                     <input
                       type="checkbox"
                       checked={
-                        filteredRecords.length > 0 &&
-                        filteredRecords.every((r) =>
+                        pagedRecords.length > 0 &&
+                        pagedRecords.every((r) =>
                           selectedKeys.has(rowKey(r.branchId, r.personnelId))
                         )
                       }
                       onChange={handleToggleSelectAll}
                       className="w-4 h-4 cursor-pointer accent-primary"
-                      title="全选/取消全选"
+                      title="全选/取消全选（当前页）"
                     />
                   </th>
                   <th className="px-4 py-3 font-medium">人员</th>
@@ -1239,7 +1126,7 @@ export default function DataEntry() {
                 </tr>
               </thead>
               <tbody>
-                {filteredRecords.length === 0 ? (
+                {pagedRecords.length === 0 ? (
                   <tr>
                     <td
                       colSpan={
@@ -1252,13 +1139,13 @@ export default function DataEntry() {
                     >
                       {!effectiveBranchId
                         ? '请选择厅后查看数据'
-                        : form.personnelId
-                        ? '该人员本周暂无数据'
+                        : searchTerm
+                        ? '未找到匹配的人员'
                         : '暂无数据'}
                     </td>
                   </tr>
                 ) : (
-                  filteredRecords.map((r) => (
+                  pagedRecords.map((r) => (
                     <tr
                       key={r.key}
                       className={`border-b border-border last:border-0 hover:bg-surface transition-colors duration-200 ${
@@ -1339,6 +1226,35 @@ export default function DataEntry() {
               </tbody>
             </table>
           </div>
+          {/* 分页控件：每页最多 30 人 */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-border text-sm">
+              <span className="text-textSecondary">
+                第 {safePage} / {totalPages} 页（共 {filteredRecords.length} 人）
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={safePage <= 1}
+                  className="p-1.5 text-textSecondary hover:text-textPrimary hover:bg-surface rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+                  title="上一页"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <span className="px-3 text-textPrimary font-mono">
+                  {safePage} / {totalPages}
+                </span>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={safePage >= totalPages}
+                  className="p-1.5 text-textSecondary hover:text-textPrimary hover:bg-surface rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+                  title="下一页"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
       </motion.div>
@@ -1572,7 +1488,7 @@ export default function DataEntry() {
       {/* 批量编辑弹窗：每行独立编辑（按厅区分同一人员） */}
       <Modal
         open={batchEditOpen}
-        title={`批量编辑（${selectedKeys.size} 项）`}
+        title={`编辑（${selectedKeys.size} 项）`}
         onClose={() => setBatchEditOpen(false)}
         footer={
           <>
@@ -1694,7 +1610,7 @@ export default function DataEntry() {
       {/* 批量添加弹窗：表格化累加录入勾选行数据（按厅区分同一人员） */}
       <Modal
         open={batchAddOpen}
-        title={`批量添加（${selectedKeys.size} 项）`}
+        title={`添加（${selectedKeys.size} 项）`}
         onClose={() => setBatchAddOpen(false)}
         footer={
           <>

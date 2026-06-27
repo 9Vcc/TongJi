@@ -1,3 +1,5 @@
+import { pinyin } from 'pinyin-pro'
+
 /**
  * 获取本周一 00:00:00 作为周起始时间
  */
@@ -82,4 +84,44 @@ export function getRoleText(role: string): string {
     GUANLI: '管理',
   }
   return map[role] || role
+}
+
+/**
+ * 姓名拼音缓存：避免对同一姓名重复计算
+ */
+const pinyinCache = new Map<string, { full: string; initial: string }>()
+
+/**
+ * 计算姓名的完整拼音和首字母（结果缓存）
+ * - full: 如 "张三" → "zhangsan"
+ * - initial: 如 "张三" → "zs"
+ */
+function getPinyinKeys(name: string): { full: string; initial: string } {
+  const cached = pinyinCache.get(name)
+  if (cached) return cached
+  const full = pinyin(name, { toneType: 'none', type: 'array' }).join('').toLowerCase()
+  const initial = pinyin(name, { pattern: 'first', toneType: 'none', type: 'array' }).join('').toLowerCase()
+  const result = { full, initial }
+  pinyinCache.set(name, result)
+  return result
+}
+
+/**
+ * 姓名模糊匹配：支持中文、拼音（全拼）、拼音首字母
+ * 例如姓名"张三"可被 "张"、"张三"、"zhang"、"zhangsan"、"zs"、"zhangs" 匹配
+ * @param name 人员姓名
+ * @param term 搜索词（已 trim）
+ */
+export function matchNamePinyin(name: string, term: string): boolean {
+  if (!term) return true
+  if (!name) return false
+  const lowerName = name.toLowerCase()
+  const lowerTerm = term.toLowerCase()
+  // 1. 中文原值匹配
+  if (lowerName.includes(lowerTerm)) return true
+  // 2. 拼音匹配（全拼 + 首字母）
+  const { full, initial } = getPinyinKeys(name)
+  if (full.includes(lowerTerm)) return true
+  if (initial.includes(lowerTerm)) return true
+  return false
 }
