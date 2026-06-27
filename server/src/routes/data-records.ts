@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify'
 import prisma, { prisma as prismaClient } from '../lib/prisma'
 import { authenticate, requireRole } from '../middleware/auth'
-import { Role, HistoryAction, Prisma } from '../../generated/prisma/client'
+import { Role, HistoryAction, Prisma, StatCycle } from '../../generated/prisma/client'
 import { getWeekStart } from '../utils/week'
+import { convertNaming, getBranchNamingLevels } from '../utils/naming'
 import * as xlsx from 'xlsx'
 
 interface RecordInput {
@@ -64,13 +65,24 @@ function resolveBranchId(
 
 /**
  * 同一人员同一周同一分部只能有一条记录，已存在则累加
+ * 若厅为按月统计且配置了冠名等级，录入收光时按阈值整除转换为冠名，余数计入收光
  */
 async function upsertRecord(
   client: Prisma.TransactionClient,
   input: RecordInput,
   createdBy: number,
-  weekStart: Date
+  weekStart: Date,
+  namingLevels: { id: number; threshold: number }[] = []
 ) {
+  // 冠名转换：对本次录入的收光进行逐级扣减转换
+  let sgToStore = input.sg
+  let namingsToApply: { levelId: number; count: number }[] = []
+  if (namingLevels.length > 0) {
+    const converted = convertNaming(input.sg, namingLevels)
+    sgToStore = converted.remainingSg
+    namingsToApply = converted.namings
+  }
+
   const existing = await client.dataRecord.findFirst({
     where: {
       personnelId: input.personnelId,
@@ -79,26 +91,42 @@ async function upsertRecord(
     },
   })
   if (existing) {
-    return client.dataRecord.update({
+    const updated = await client.dataRecord.update({
       where: { id: existing.id },
       data: {
-        sg: existing.sg + input.sg,
+        sg: existing.sg + sgToStore,
         mx: existing.mx + input.mx,
         qm: existing.qm + input.qm,
       },
     })
+    // 累加冠名数量到关联表
+    for (const n of namingsToApply) {
+      await client.dataRecordNaming.upsert({
+        where: { recordId_levelId: { recordId: existing.id, levelId: n.levelId } },
+        update: { count: { increment: n.count } },
+        create: { recordId: existing.id, levelId: n.levelId, count: n.count },
+      })
+    }
+    return updated
   }
-  return client.dataRecord.create({
+  const created = await client.dataRecord.create({
     data: {
       personnelId: input.personnelId,
       branchId: input.branchId,
       weekStart,
-      sg: input.sg,
+      sg: sgToStore,
       mx: input.mx,
       qm: input.qm,
       createdBy,
     },
   })
+  // 新建冠名记录
+  for (const n of namingsToApply) {
+    await client.dataRecordNaming.create({
+      data: { recordId: created.id, levelId: n.levelId, count: n.count },
+    })
+  }
+  return created
 }
 
 /**
@@ -169,6 +197,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         }
 
         // 校验分部权限与人员归属
+        const branchLevelsMap = new Map<number, { id: number; threshold: number }[]>()
         for (let i = 0; i < inputs.length; i++) {
           const input = inputs[i] as RecordInput
           const resolved = resolveBranchId(currentUser, input.branchId)
@@ -193,12 +222,26 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
               .code(400)
               .send({ error: `第${i + 1}条记录：人员不属于该分部` })
           }
+
+          // 缓存各厅冠名等级（仅按月统计厅）
+          if (!branchLevelsMap.has(input.branchId)) {
+            const branch = await prisma.branch.findUnique({
+              where: { id: input.branchId },
+              select: { statCycle: true },
+            })
+            if (branch?.statCycle === StatCycle.MONTH) {
+              branchLevelsMap.set(input.branchId, await getBranchNamingLevels(input.branchId))
+            } else {
+              branchLevelsMap.set(input.branchId, [])
+            }
+          }
         }
 
         const created = await prismaClient.$transaction(async (tx) => {
           const results = []
           for (const input of inputs as RecordInput[]) {
-            const rec = await upsertRecord(tx, input, currentUser.id, weekStart)
+            const levels = branchLevelsMap.get(input.branchId) ?? []
+            const rec = await upsertRecord(tx, input, currentUser.id, weekStart, levels)
             results.push(rec)
           }
           return results
@@ -235,11 +278,21 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: '人员不属于该分部' })
       }
 
+      // 获取冠名等级（仅按月统计厅）
+      const branch = await prisma.branch.findUnique({
+        where: { id: input.branchId },
+        select: { statCycle: true },
+      })
+      const namingLevels = branch?.statCycle === StatCycle.MONTH
+        ? await getBranchNamingLevels(input.branchId)
+        : []
+
       const record = await upsertRecord(
         prismaClient as unknown as Prisma.TransactionClient,
         input as RecordInput,
         currentUser.id,
-        weekStart
+        weekStart,
+        namingLevels
       )
       return reply.code(201).send(record)
     }
@@ -297,6 +350,15 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
       const failures: { row: number; name: string; reason: string }[] = []
       const createdPersons: string[] = []
 
+      // 获取冠名等级（仅按月统计厅）
+      const branch = await prisma.branch.findUnique({
+        where: { id: branchId },
+        select: { statCycle: true },
+      })
+      const namingLevels = branch?.statCycle === StatCycle.MONTH
+        ? await getBranchNamingLevels(branchId)
+        : []
+
       for (let i = 1; i < rows.length; i++) {
         const row = rows[i] as unknown[]
         const name = String(row[0] ?? '').trim()
@@ -329,7 +391,8 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
             prismaClient as unknown as Prisma.TransactionClient,
             { personnelId, branchId, sg, mx, qm },
             currentUser.id,
-            weekStart
+            weekStart,
+            namingLevels
           )
           success++
         } catch {
@@ -372,6 +435,15 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
       const failures: { row: number; name: string; reason: string }[] = []
       const createdPersons: string[] = []
 
+      // 获取冠名等级（仅按月统计厅）
+      const branch = await prisma.branch.findUnique({
+        where: { id: branchId },
+        select: { statCycle: true },
+      })
+      const namingLevels = branch?.statCycle === StatCycle.MONTH
+        ? await getBranchNamingLevels(branchId)
+        : []
+
       const lines = data
         .split(/\r?\n/)
         .map((l) => l.trim())
@@ -413,7 +485,8 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
             prismaClient as unknown as Prisma.TransactionClient,
             { personnelId, branchId, sg, mx, qm },
             currentUser.id,
-            weekStart
+            weekStart,
+            namingLevels
           )
           success++
         } catch {
@@ -438,6 +511,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         mx?: number
         qm?: number
         personnelId?: number
+        namings?: { levelId: number; count: number }[]
       }
 
       const recordId = Number(id)
@@ -495,7 +569,44 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         }
       }
 
-      if (updates.length === 0 && !personnelChanged) {
+      // 校验 namings（覆盖语义：传入即覆盖该记录的所有冠名数量）
+      let namingsToUpdate: { levelId: number; count: number }[] | null = null
+      if (body.namings !== undefined) {
+        if (!Array.isArray(body.namings)) {
+          return reply.code(400).send({ error: 'namings 必须为数组' })
+        }
+        for (const n of body.namings) {
+          if (
+            !n ||
+            typeof n.levelId !== 'number' ||
+            typeof n.count !== 'number' ||
+            !Number.isInteger(n.levelId) ||
+            !Number.isInteger(n.count) ||
+            n.count < 0
+          ) {
+            return reply
+              .code(400)
+              .send({ error: '冠名 levelId/count 必须为非负整数' })
+          }
+        }
+        // 校验 levelId 均属于该厅的冠名等级
+        const branchLevels = await prisma.namingLevel.findMany({
+          where: { branchId: record.branchId },
+          select: { id: true },
+        })
+        const validLevelIds = new Set(branchLevels.map((l) => l.id))
+        for (const n of body.namings) {
+          if (!validLevelIds.has(n.levelId)) {
+            return reply
+              .code(400)
+              .send({ error: `冠名等级 ${n.levelId} 不属于该厅` })
+          }
+        }
+        // 仅保留 count > 0 的项
+        namingsToUpdate = body.namings.filter((n) => n.count > 0)
+      }
+
+      if (updates.length === 0 && !personnelChanged && namingsToUpdate === null) {
         return reply.code(400).send({ error: '没有需要更新的字段' })
       }
 
@@ -515,6 +626,17 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
               newValue: String(value),
             },
           })
+        }
+
+        // 先在当前记录上应用 namings 覆盖（删除原有冠名，写入新的）
+        // 后续若发生人员变更合并，会把这些 namings 累加到目标记录
+        if (namingsToUpdate !== null) {
+          await tx.dataRecordNaming.deleteMany({ where: { recordId: record.id } })
+          for (const n of namingsToUpdate) {
+            await tx.dataRecordNaming.create({
+              data: { recordId: record.id, levelId: n.levelId, count: n.count },
+            })
+          }
         }
 
         // 人员变更：合并到目标人员本周记录
@@ -545,6 +667,15 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
           const newMx = body.mx ?? record.mx
           const newQm = body.qm ?? record.qm
 
+          // 获取当前记录最新的冠名（已覆盖更新或保留原有）
+          const currentNamings =
+            namingsToUpdate !== null
+              ? namingsToUpdate
+              : await tx.dataRecordNaming.findMany({
+                  where: { recordId: record.id },
+                  select: { levelId: true, count: true },
+                })
+
           if (target) {
             // 目标人员本周已有记录：累加并删除当前记录
             const merged = await tx.dataRecord.update({
@@ -555,10 +686,20 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
                 qm: target.qm + newQm,
               },
             })
+            // 冠名数量累加到目标记录
+            for (const n of currentNamings) {
+              await tx.dataRecordNaming.upsert({
+                where: {
+                  recordId_levelId: { recordId: target.id, levelId: n.levelId },
+                },
+                update: { count: { increment: n.count } },
+                create: { recordId: target.id, levelId: n.levelId, count: n.count },
+              })
+            }
             await tx.dataRecord.delete({ where: { id: record.id } })
             return merged
           } else {
-            // 目标人员本周无记录：直接更新当前记录的 personnelId
+            // 目标人员本周无记录：直接更新当前记录的 personnelId（namings 已更新）
             return tx.dataRecord.update({
               where: { id: record.id },
               data: {

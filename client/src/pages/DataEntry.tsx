@@ -21,6 +21,7 @@ import {
   branchesApi,
   exportApi,
   rewardRulesApi,
+  namingLevelsApi,
   getErrorMessage,
 } from '../api'
 import { useAuth } from '../hooks/useAuth'
@@ -30,7 +31,6 @@ import SearchableSelect from '../components/SearchableSelect'
 import { TableSkeleton, Spinner } from '../components/Skeleton'
 import {
   formatDate,
-  formatDateTime,
   getWeekStart,
   getPreviousWeekStart,
   getWeekRangeText,
@@ -43,6 +43,8 @@ import type {
   ImportResult,
   StatCycle,
   RewardRule,
+  NamingItem,
+  NamingLevel,
 } from '../types'
 
 type RecordForm = {
@@ -50,6 +52,8 @@ type RecordForm = {
   sg: string
   mx: string
   qm: string
+  // 冠名数量：levelId -> count（字符串便于输入控制）
+  namings: Record<string, string>
 }
 
 const emptyForm: RecordForm = {
@@ -57,6 +61,33 @@ const emptyForm: RecordForm = {
   sg: '',
   mx: '',
   qm: '',
+  namings: {},
+}
+
+// 冠名展示格式：如 "周冠×2 月冠×1"，无则返回 '-'
+function formatNamings(namings?: NamingItem[]): string {
+  if (!namings || namings.length === 0) return '-'
+  return namings
+    .filter((n) => n.count > 0)
+    .map((n) => `${n.levelName}×${n.count}`)
+    .join(' ') || '-'
+}
+
+// 累加两个 namings 数组（按 levelId 合并 count，reward 取首次出现的值）
+function mergeNamings(a?: NamingItem[], b?: NamingItem[]): NamingItem[] | undefined {
+  if (!a || a.length === 0) return b
+  if (!b || b.length === 0) return a
+  const map = new Map<number, NamingItem>()
+  for (const n of a) map.set(n.levelId, { ...n })
+  for (const n of b) {
+    const cur = map.get(n.levelId)
+    if (cur) {
+      cur.count += n.count
+    } else {
+      map.set(n.levelId, { ...n })
+    }
+  }
+  return Array.from(map.values())
 }
 
 export default function DataEntry() {
@@ -126,6 +157,9 @@ export default function DataEntry() {
   const sgInputEnabled = rewardRule ? rewardRule.sgEnabled : true
   const qmInputEnabled = rewardRule ? rewardRule.qmEnabled : true
 
+  // 当前厅的冠名等级（仅按月统计厅有配置时加载）
+  const [namingLevels, setNamingLevels] = useState<NamingLevel[]>([])
+
   // 当前厅的统计周期（仅用于显示标签）
   const branchCycle: StatCycle = useMemo(() => {
     const branch = branches.find((b) => b.id === effectiveBranchId)
@@ -133,6 +167,8 @@ export default function DataEntry() {
   }, [branches, effectiveBranchId])
   // 视图周期由用户切换决定，不再绑定厅配置
   const isMonthCycle = viewCycle === 'MONTH'
+  // 是否在编辑弹窗中显示冠名输入：仅按月统计厅且已配置冠名等级
+  const editNamingsEnabled = branchCycle === 'MONTH' && namingLevels.length > 0
 
   const loadData = async () => {
     // 会长未选择厅时不加载任何数据（数据录入页面仅支持独立厅显示）
@@ -179,6 +215,8 @@ export default function DataEntry() {
               existing.sg += r.sg
               existing.mx += r.mx
               existing.qm += r.qm
+              // 月视图聚合：累加各等级冠名数
+              existing.namings = mergeNamings(existing.namings, r.namings)
             } else {
               mergedMap.set(key, { ...r })
             }
@@ -237,6 +275,18 @@ export default function DataEntry() {
       setRewardRule(null)
     }
   }, [effectiveBranchId])
+
+  // 加载当前厅的冠名等级（用于编辑弹窗显示冠名输入框）
+  useEffect(() => {
+    if (effectiveBranchId !== undefined && branchCycle === 'MONTH') {
+      namingLevelsApi
+        .get(effectiveBranchId)
+        .then(setNamingLevels)
+        .catch(() => setNamingLevels([]))
+    } else {
+      setNamingLevels([])
+    }
+  }, [effectiveBranchId, branchCycle])
 
   useEffect(() => {
     loadData()
@@ -324,11 +374,24 @@ export default function DataEntry() {
   // 打开编辑弹窗
   const handleEdit = (record: DataRecord) => {
     setEditingId(record.id)
+    // 填充现有冠名数量：基于当前厅的冠名等级初始化（值为 0 时显示空字符串便于输入）
+    const namingMap: Record<string, string> = {}
+    if (editNamingsEnabled) {
+      const existingMap = new Map<number, number>()
+      for (const n of record.namings ?? []) {
+        existingMap.set(n.levelId, n.count)
+      }
+      for (const lv of namingLevels) {
+        const cnt = existingMap.get(lv.id) ?? 0
+        namingMap[String(lv.id)] = cnt ? String(cnt) : ''
+      }
+    }
     setEditForm({
       personnelId: String(record.personnelId),
-      sg: String(record.sg),
-      mx: String(record.mx),
-      qm: String(record.qm),
+      sg: record.sg ? String(record.sg) : '',
+      mx: record.mx ? String(record.mx) : '',
+      qm: record.qm ? String(record.qm) : '',
+      namings: namingMap,
     })
     setEditModalOpen(true)
   }
@@ -354,6 +417,21 @@ export default function DataEntry() {
       return
     }
 
+    // 校验并构造冠名数量数组（仅按月统计厅启用）
+    let namings: { levelId: number; count: number }[] | undefined
+    if (editNamingsEnabled) {
+      namings = []
+      for (const lv of namingLevels) {
+        const raw = editForm.namings[String(lv.id)] ?? '0'
+        const cnt = Number(raw)
+        if (!Number.isInteger(cnt) || cnt < 0) {
+          toast.error(`冠名「${lv.name}」必须为非负整数`)
+          return
+        }
+        namings.push({ levelId: lv.id, count: cnt })
+      }
+    }
+
     setEditSubmitting(true)
     try {
       const payload: {
@@ -361,7 +439,9 @@ export default function DataEntry() {
         mx: number
         qm: number
         personnelId?: number
+        namings?: { levelId: number; count: number }[]
       } = { sg, mx, qm }
+      if (namings) payload.namings = namings
       const original = records.find((r) => r.id === editingId)
       if (original && original.personnelId !== Number(editForm.personnelId)) {
         payload.personnelId = Number(editForm.personnelId)
@@ -561,6 +641,7 @@ export default function DataEntry() {
     welfare?: number
     createdAt?: string
     isRecorded: boolean
+    namings?: NamingItem[]
   }
   const filteredRecords = useMemo<DisplayRow[]>(() => {
     // 已录入的记录（按筛选条件过滤）
@@ -596,6 +677,7 @@ export default function DataEntry() {
         welfare: r.welfare,
         createdAt: r.createdAt,
         isRecorded: true,
+        namings: r.namings,
       })),
       ...unrecorded.map((p) => ({
         key: `empty-${p.id}`,
@@ -612,6 +694,7 @@ export default function DataEntry() {
         welfare: undefined,
         createdAt: undefined,
         isRecorded: false,
+        namings: undefined,
       })),
     ]
   }, [records, personnel, form.personnelId, effectiveBranchId])
@@ -643,10 +726,11 @@ export default function DataEntry() {
     filteredRecords.forEach((r) => {
       const key = rowKey(r.branchId, r.personnelId)
       if (selectedKeys.has(key)) {
+        // 值为 0 时显示空字符串，便于用户直接输入新值
         forms[key] = {
-          sg: r.isRecorded ? String(r.sg) : '',
-          mx: r.isRecorded ? String(r.mx) : '',
-          qm: r.isRecorded ? String(r.qm) : '',
+          sg: r.isRecorded && r.sg ? String(r.sg) : '',
+          mx: r.isRecorded && r.mx ? String(r.mx) : '',
+          qm: r.isRecorded && r.qm ? String(r.qm) : '',
         }
       }
     })
@@ -816,14 +900,10 @@ export default function DataEntry() {
     const parsed: Array<{
       personnelId: number
       branchId: number
+      // 本次要累加的增量值
       sg: number
       mx: number
       qm: number
-      recordId: number
-      // 累加后的最终值
-      finalSg: number
-      finalMx: number
-      finalQm: number
     }> = []
     for (const [key, f] of entries) {
       const [bidStr, pidStr] = key.split(':')
@@ -842,25 +922,14 @@ export default function DataEntry() {
         toast.error('收光/麦序/全麦必须为非负整数')
         return
       }
-      const rec = records.find(
-        (r) => r.personnelId === personnelId && r.branchId === branchId
-      )
-      // 累加：已有记录则原值+输入值，未录入则 0+输入值
-      const finalSg = (rec?.sg ?? 0) + addSg
-      const finalMx = (rec?.mx ?? 0) + addMx
-      const finalQm = (rec?.qm ?? 0) + addQm
-      // 跳过未录入且无输入的（避免创建全 0 的空记录）
-      if (!rec && addSg === 0 && addMx === 0 && addQm === 0) continue
+      // 跳过无输入的（避免创建全 0 的空记录）
+      if (addSg === 0 && addMx === 0 && addQm === 0) continue
       parsed.push({
         personnelId,
-        branchId: rec?.branchId ?? branchId,
+        branchId,
         sg: addSg,
         mx: addMx,
         qm: addQm,
-        recordId: rec?.id ?? 0,
-        finalSg,
-        finalMx,
-        finalQm,
       })
     }
 
@@ -873,25 +942,16 @@ export default function DataEntry() {
     let successCount = 0
     let failCount = 0
     try {
+      // 统一使用 create（增量语义）：后端 upsertRecord 会自动累加并触发冠名转换
       for (const item of parsed) {
         try {
-          if (item.recordId > 0) {
-            // 已有记录：累加更新
-            await dataRecordsApi.update(item.recordId, {
-              sg: item.finalSg,
-              mx: item.finalMx,
-              qm: item.finalQm,
-            })
-          } else {
-            // 未录入：新建为累加值（按行匹配的 branchId）
-            await dataRecordsApi.create({
-              personnelId: item.personnelId,
-              branchId: item.branchId,
-              sg: item.finalSg,
-              mx: item.finalMx,
-              qm: item.finalQm,
-            })
-          }
+          await dataRecordsApi.create({
+            personnelId: item.personnelId,
+            branchId: item.branchId,
+            sg: item.sg,
+            mx: item.mx,
+            qm: item.qm,
+          })
           successCount++
         } catch {
           failCount++
@@ -1166,12 +1226,15 @@ export default function DataEntry() {
                     />
                   </th>
                   <th className="px-4 py-3 font-medium">人员</th>
-                  <th className="px-4 py-3 font-medium">厅</th>
                   <th className="px-4 py-3 font-medium">收光</th>
                   <th className="px-4 py-3 font-medium">麦序</th>
-                  <th className="px-4 py-3 font-medium">全麦</th>
+                  {qmInputEnabled && (
+                    <th className="px-4 py-3 font-medium">全麦</th>
+                  )}
+                  {branchCycle === 'MONTH' && (
+                    <th className="px-4 py-3 font-medium">冠名</th>
+                  )}
                   <th className="px-4 py-3 font-medium">福利</th>
-                  <th className="px-4 py-3 font-medium">录入时间</th>
                   <th className="px-4 py-3 font-medium text-right">操作</th>
                 </tr>
               </thead>
@@ -1179,7 +1242,12 @@ export default function DataEntry() {
                 {filteredRecords.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={9}
+                      colSpan={
+                        // 勾选框 + 人员 + 收光 + 麦序 + (全麦) + (冠名) + 福利 + 操作
+                        5 +
+                        (qmInputEnabled ? 1 : 0) +
+                        (branchCycle === 'MONTH' ? 1 : 0)
+                      }
                       className="px-4 py-12 text-center text-textMuted"
                     >
                       {!effectiveBranchId
@@ -1215,23 +1283,24 @@ export default function DataEntry() {
                           )}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-textSecondary">
-                        {r.branchName || '-'}
-                      </td>
                       <td className="px-4 py-3 text-textPrimary font-mono">
                         {r.isRecorded ? r.sg : '-'}
                       </td>
                       <td className="px-4 py-3 text-textPrimary font-mono">
                         {r.isRecorded ? r.mx : '-'}
                       </td>
-                      <td className="px-4 py-3 text-textPrimary font-mono">
-                        {r.isRecorded ? r.qm : '-'}
-                      </td>
+                      {qmInputEnabled && (
+                        <td className="px-4 py-3 text-textPrimary font-mono">
+                          {r.isRecorded ? r.qm : '-'}
+                        </td>
+                      )}
+                      {branchCycle === 'MONTH' && (
+                        <td className="px-4 py-3 text-textPrimary text-xs whitespace-nowrap">
+                          {r.isRecorded ? formatNamings(r.namings) : '-'}
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-textPrimary font-mono">
                         {r.welfare ?? '-'}
-                      </td>
-                      <td className="px-4 py-3 text-textMuted text-xs">
-                        {r.createdAt ? formatDateTime(r.createdAt) : '-'}
                       </td>
                       <td className="px-4 py-3 text-right">
                         {r.isRecorded ? (
@@ -1243,6 +1312,7 @@ export default function DataEntry() {
                                 sg: r.sg,
                                 mx: r.mx,
                                 qm: r.qm,
+                                namings: r.namings,
                               } as DataRecord)}
                               className="p-1.5 text-textSecondary hover:text-primary hover:bg-primary/10 rounded transition-colors duration-200 cursor-pointer"
                               title="编辑"
@@ -1454,6 +1524,48 @@ export default function DataEntry() {
               />
             </div>
           </div>
+
+          {/* 冠名数量：仅按月统计厅且已配置冠名等级时显示 */}
+          {editNamingsEnabled && (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs text-textSecondary">冠名数量</label>
+                <span className="text-[10px] text-textMuted">
+                  阈值 = 该等级每达到一次需要的收光数
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {namingLevels.map((lv) => (
+                  <div key={lv.id}>
+                    <label className="block text-[11px] text-textSecondary mb-0.5">
+                      {lv.name}
+                      <span className="ml-1 text-textMuted">（阈值{lv.threshold}）</span>
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={editForm.namings[String(lv.id)] ?? ''}
+                      onChange={(e) =>
+                        setEditForm({
+                          ...editForm,
+                          namings: {
+                            ...editForm.namings,
+                            [String(lv.id)]: e.target.value,
+                          },
+                        })
+                      }
+                      placeholder="0"
+                      className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+                    />
+                  </div>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[11px] text-textMuted">
+                提示：编辑冠名数量为覆盖模式，将直接保存为该记录当前的冠名总数。
+              </p>
+            </div>
+          )}
         </div>
       </Modal>
 

@@ -21,6 +21,7 @@ import type {
   WeekCompareItem,
   DataLogItem,
   LoginRecord,
+  NamingLevel,
 } from '../types'
 
 const request = axios.create({
@@ -113,8 +114,10 @@ export const branchesApi = {
   update(id: number, data: { name?: string; statCycle?: 'WEEK' | 'MONTH' }) {
     return request.put<unknown, Branch>(`/branches/${id}`, data)
   },
-  delete(id: number) {
-    return request.delete<unknown, { message: string }>(`/branches/${id}`)
+  delete(id: number, password: string) {
+    return request.delete<unknown, { message: string }>(`/branches/${id}`, {
+      data: { password },
+    })
   },
 }
 
@@ -198,6 +201,38 @@ export const rewardRulesApi = {
   },
   update(branchId: number, data: UpdateRewardRuleInput) {
     return request.put<unknown, RewardRule>(`/reward-rules/${branchId}`, data)
+  },
+}
+
+// ============ 冠名等级 ============
+export const namingLevelsApi = {
+  get(branchId?: number) {
+    return request.get<unknown, NamingLevel[]>('/naming-levels', {
+      params: branchId ? { branchId } : undefined,
+    })
+  },
+  create(data: {
+    branchId: number
+    name: string
+    threshold: number
+    reward?: number
+    sortOrder?: number
+  }) {
+    return request.post<unknown, NamingLevel>('/naming-levels', data)
+  },
+  update(
+    id: number,
+    data: {
+      name?: string
+      threshold?: number
+      reward?: number
+      sortOrder?: number
+    }
+  ) {
+    return request.put<unknown, NamingLevel>(`/naming-levels/${id}`, data)
+  },
+  remove(id: number) {
+    return request.delete<unknown, { message: string }>(`/naming-levels/${id}`)
   },
 }
 

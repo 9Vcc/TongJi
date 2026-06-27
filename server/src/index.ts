@@ -21,6 +21,7 @@ import exportRoutes from './routes/export';
 import notificationRoutes from './routes/notifications';
 import dataHistoryRoutes from './routes/data-history';
 import loginRecordRoutes from './routes/login-records';
+import namingLevelRoutes from './routes/naming-levels';
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -124,6 +125,9 @@ fastify.register(dataHistoryRoutes);
 
 // 注册登录记录路由（仅会长可见）
 fastify.register(loginRecordRoutes);
+
+// 冠名等级管理路由
+fastify.register(namingLevelRoutes);
 
 // 全局错误处理：打印完整错误堆栈便于排查
 fastify.setErrorHandler((error: Error & { validation?: unknown }, request, reply) => {

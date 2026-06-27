@@ -76,7 +76,27 @@ model Branch {
   personnelBranches PersonnelBranch[]
   dataRecords       DataRecord[]
   rewardRules       RewardRule?
+  namingLevels      NamingLevel[]
   notifications     Notification[]
+}
+
+// ============ 冠名等级表（每厅独立配置）============
+// 仅按月统计的厅启用冠名，录入收光时按阈值整除转换为冠名，余数计入收光
+// 多等级时按 threshold 降序逐级扣减转换
+
+model NamingLevel {
+  id        Int    @id @default(autoincrement())
+  branchId  Int
+  name      String // 等级名称，如"周冠"、"月冠"
+  threshold Int    // 收光阈值（达到此值转换1个冠名）
+  reward    Int    @default(0) // 每个冠名的福利金额
+  sortOrder Int    @default(0) // 排序值（大在前，用于逐级扣减顺序）
+  createdAt DateTime @default(now())
+
+  branch  Branch             @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  records DataRecordNaming[]
+
+  @@index([branchId])
 }
 
 // ============ 人员表 ============
@@ -123,6 +143,7 @@ model DataRecord {
   branch    Branch        @relation(fields: [branchId], references: [id])
   creator   Account       @relation("DataRecordCreatedBy", fields: [createdBy], references: [id])
   histories DataHistory[]
+  namings   DataRecordNaming[]
 
   // 单字段索引
   @@index([personnelId])
@@ -152,6 +173,23 @@ model DataHistory {
 
   @@index([recordId])
   @@index([modifierId])
+}
+
+// ============ 数据记录-冠名关联表 ============
+// 存储每条 DataRecord 各等级冠名数量（累加）
+
+model DataRecordNaming {
+  id        Int @id @default(autoincrement())
+  recordId  Int
+  levelId   Int
+  count     Int @default(0)
+
+  record DataRecord  @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  level  NamingLevel @relation(fields: [levelId], references: [id], onDelete: Cascade)
+
+  @@unique([recordId, levelId])
+  @@index([recordId])
+  @@index([levelId])
 }
 
 // ============ 奖励规则表 ============

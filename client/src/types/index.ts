@@ -78,6 +78,28 @@ export interface DataRecord {
   personnelName?: string
   branchName?: string
   welfare?: number
+  // 冠名明细（按月统计厅返回）
+  namings?: NamingItem[]
+}
+
+// 冠名等级
+export interface NamingLevel {
+  id: number
+  branchId: number
+  name: string
+  threshold: number
+  reward: number
+  sortOrder: number
+  createdAt: string
+  branch?: { id: number; name: string }
+}
+
+// 冠名明细项（数据记录 / 排名项通用）
+export interface NamingItem {
+  levelId: number
+  levelName: string
+  count: number
+  reward: number
 }
 
 // 数据修改历史
@@ -138,6 +160,10 @@ export interface RankingItem {
   baseWelfare: number
   rankReward: number
   totalWelfare: number
+  // 冠名福利总额
+  namingWelfare: number
+  // 冠名明细
+  namings: NamingItem[]
 }
 
 // 看板汇总
@@ -237,6 +263,8 @@ export interface UpdateRecordInput {
   mx?: number
   qm?: number
   personnelId?: number
+  // 冠名数量（覆盖语义）：传入即覆盖该记录所有等级的冠名数量
+  namings?: { levelId: number; count: number }[]
 }
 
 // 更新奖励规则入参

@@ -16,7 +16,9 @@ export interface RankingItem {
   qm: number
   baseWelfare: number
   rankReward: number
+  namingWelfare: number
   totalWelfare: number
+  namings: { levelId: number; levelName: string; count: number; reward: number }[]
 }
 
 interface RewardRuleLike {
@@ -165,6 +167,7 @@ export async function computeRanking(
     include: {
       personnel: { select: { id: true, name: true } },
       branch: { select: { id: true, name: true } },
+      namings: { include: { level: true } },
     },
   })
 
@@ -176,6 +179,12 @@ export async function computeRanking(
     where: { branchId: { in: branchIds } },
   })
   const ruleMap = new Map(rules.map((r) => [r.branchId, r]))
+
+  // 获取各厅冠名等级（构建 levelId -> { name, reward } 映射）
+  const namingLevels = await prisma.namingLevel.findMany({
+    where: { branchId: { in: branchIds } },
+  })
+  const levelInfoMap = new Map(namingLevels.map((l) => [l.id, { name: l.name, reward: l.reward }]))
 
   // 月模式：按 (branchId, personnelId) 聚合求和
   // 周模式：每条记录已是单人员单周，无需聚合（用 Map 统一处理也兼容）
@@ -189,6 +198,7 @@ export async function computeRanking(
         sg: number
         mx: number
         qm: number
+        namings: Map<number, number> // levelId -> count
       }
     >
   >()
@@ -204,13 +214,21 @@ export async function computeRanking(
       existing.sg += r.sg
       existing.mx += r.mx
       existing.qm += r.qm
+      for (const n of r.namings) {
+        existing.namings.set(n.levelId, (existing.namings.get(n.levelId) ?? 0) + n.count)
+      }
     } else {
+      const namingsMap = new Map<number, number>()
+      for (const n of r.namings) {
+        namingsMap.set(n.levelId, (namingsMap.get(n.levelId) ?? 0) + n.count)
+      }
       branchMap.set(r.personnelId, {
         personnelName: r.personnel.name,
         branchName: r.branch.name,
         sg: r.sg,
         mx: r.mx,
         qm: r.qm,
+        namings: namingsMap,
       })
     }
   }
@@ -241,6 +259,17 @@ export async function computeRanking(
         ? 0
         : computeRankReward(rank, p.mx, rule)
 
+      // 冠名福利：各等级冠名数 × 对应等级福利
+      const namings: { levelId: number; levelName: string; count: number; reward: number }[] = []
+      let namingWelfare = 0
+      for (const [levelId, count] of p.namings) {
+        if (count <= 0) continue
+        const info = levelInfoMap.get(levelId)
+        if (!info) continue
+        namings.push({ levelId, levelName: info.name, count, reward: info.reward })
+        namingWelfare += count * info.reward
+      }
+
       result.push({
         rank,
         personnelId: p.personnelId,
@@ -252,7 +281,9 @@ export async function computeRanking(
         qm: p.qm,
         baseWelfare,
         rankReward,
-        totalWelfare: baseWelfare + rankReward,
+        namingWelfare,
+        totalWelfare: baseWelfare + rankReward + namingWelfare,
+        namings,
       })
     })
   }

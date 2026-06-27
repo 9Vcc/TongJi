@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Building2, Plus, Trash2, Pencil, Gift } from 'lucide-react'
+import { Building2, Plus, Trash2, Pencil, Gift, Crown } from 'lucide-react'
 import {
   branchesApi,
   rewardRulesApi,
+  namingLevelsApi,
   getErrorMessage,
 } from '../../api'
 import { useAuth } from '../../hooks/useAuth'
@@ -11,7 +12,12 @@ import { useToast } from '../../hooks/useToast'
 import Modal from '../../components/Modal'
 import { Skeleton, Spinner } from '../../components/Skeleton'
 import SubPageHeader from '../../components/SubPageHeader'
-import type { Branch, RewardRule, UpdateRewardRuleInput } from '../../types'
+import type {
+  Branch,
+  RewardRule,
+  UpdateRewardRuleInput,
+  NamingLevel,
+} from '../../types'
 
 // 奖励规则表单结构
 type RuleForm = {
@@ -100,7 +106,7 @@ function NumberInput({
       <label className="block text-xs text-textSecondary mb-1">{label}</label>
       <input
         type="number"
-        value={value}
+        value={value ? value : ''}
         disabled={disabled}
         onChange={(e) => {
           const v = e.target.value
@@ -129,12 +135,32 @@ export default function BranchesPage() {
   const [branchCycle, setBranchCycle] = useState<'WEEK' | 'MONTH'>('WEEK')
   const [branchSubmitting, setBranchSubmitting] = useState(false)
 
+  // 删除厅确认弹窗（需输入登录密码）
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Branch | null>(null)
+  const [deletePassword, setDeletePassword] = useState('')
+  const [deleting, setDeleting] = useState(false)
+
   // 奖励规则弹窗
   const [ruleModalOpen, setRuleModalOpen] = useState(false)
   const [ruleBranch, setRuleBranch] = useState<Branch | null>(null)
   const [ruleForm, setRuleForm] = useState<RuleForm>(defaultRuleForm)
   const [ruleLoading, setRuleLoading] = useState(false)
   const [ruleSaving, setRuleSaving] = useState(false)
+
+  // 冠名等级弹窗
+  const [namingModalOpen, setNamingModalOpen] = useState(false)
+  const [namingBranch, setNamingBranch] = useState<Branch | null>(null)
+  const [namingLevels, setNamingLevels] = useState<NamingLevel[]>([])
+  const [namingLoading, setNamingLoading] = useState(false)
+  // 新增/编辑表单：editingId 为 null 表示新增模式
+  const [namingFormId, setNamingFormId] = useState<number | null>(null)
+  const [namingForm, setNamingForm] = useState({
+    name: '',
+    threshold: 0,
+    reward: 0,
+  })
+  const [namingSubmitting, setNamingSubmitting] = useState(false)
 
   const loadBranches = async () => {
     setBranchesLoading(true)
@@ -195,14 +221,32 @@ export default function BranchesPage() {
     }
   }
 
-  const handleDeleteBranch = async (branch: Branch) => {
-    if (!window.confirm(`确认删除厅「${branch.name}」？`)) return
+  // 打开删除确认弹窗
+  const openDeleteModal = (branch: Branch) => {
+    setDeleteTarget(branch)
+    setDeletePassword('')
+    setDeleteModalOpen(true)
+  }
+
+  // 确认删除厅（携带登录密码）
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return
+    if (!deletePassword) {
+      toast.error('请输入登录密码')
+      return
+    }
+    setDeleting(true)
     try {
-      await branchesApi.delete(branch.id)
-      toast.success('删除成功')
+      await branchesApi.delete(deleteTarget.id, deletePassword)
+      toast.success('厅及关联数据已删除')
+      setDeleteModalOpen(false)
+      setDeleteTarget(null)
+      setDeletePassword('')
       await loadBranches()
     } catch (err) {
       toast.error(getErrorMessage(err))
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -252,6 +296,103 @@ export default function BranchesPage() {
       toast.error(getErrorMessage(err))
     } finally {
       setRuleSaving(false)
+    }
+  }
+
+  // 打开冠名等级弹窗
+  const openNamingModal = async (branch: Branch) => {
+    setNamingBranch(branch)
+    setNamingFormId(null)
+    setNamingForm({ name: '', threshold: 0, reward: 0 })
+    setNamingLevels([])
+    setNamingModalOpen(true)
+    setNamingLoading(true)
+    try {
+      const list = await namingLevelsApi.get(branch.id)
+      // 按 threshold 降序展示（高等级优先）
+      list.sort((a, b) => b.threshold - a.threshold)
+      setNamingLevels(list)
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setNamingLoading(false)
+    }
+  }
+
+  // 重置冠名等级表单
+  const resetNamingForm = () => {
+    setNamingFormId(null)
+    setNamingForm({ name: '', threshold: 0, reward: 0 })
+  }
+
+  // 编辑某等级：载入到表单
+  const handleEditNaming = (level: NamingLevel) => {
+    setNamingFormId(level.id)
+    setNamingForm({
+      name: level.name,
+      threshold: level.threshold,
+      reward: level.reward,
+    })
+  }
+
+  // 提交新增/编辑
+  const handleNamingSubmit = async () => {
+    if (!namingBranch) return
+    if (!namingForm.name.trim()) {
+      toast.error('请输入等级名称')
+      return
+    }
+    if (
+      !Number.isInteger(namingForm.threshold) ||
+      namingForm.threshold <= 0
+    ) {
+      toast.error('阈值必须为正整数')
+      return
+    }
+    setNamingSubmitting(true)
+    try {
+      if (namingFormId) {
+        await namingLevelsApi.update(namingFormId, {
+          name: namingForm.name.trim(),
+          threshold: namingForm.threshold,
+          reward: namingForm.reward,
+        })
+        toast.success('等级更新成功')
+      } else {
+        await namingLevelsApi.create({
+          branchId: namingBranch.id,
+          name: namingForm.name.trim(),
+          threshold: namingForm.threshold,
+          reward: namingForm.reward,
+        })
+        toast.success('等级创建成功')
+      }
+      resetNamingForm()
+      // 重新拉取列表
+      const list = await namingLevelsApi.get(namingBranch.id)
+      list.sort((a, b) => b.threshold - a.threshold)
+      setNamingLevels(list)
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setNamingSubmitting(false)
+    }
+  }
+
+  // 删除等级
+  const handleDeleteNaming = async (level: NamingLevel) => {
+    if (!namingBranch) return
+    if (!window.confirm(`确认删除冠名等级「${level.name}」？`)) return
+    try {
+      await namingLevelsApi.remove(level.id)
+      toast.success('删除成功')
+      // 若删除的项正在编辑，重置表单
+      if (namingFormId === level.id) resetNamingForm()
+      const list = await namingLevelsApi.get(namingBranch.id)
+      list.sort((a, b) => b.threshold - a.threshold)
+      setNamingLevels(list)
+    } catch (err) {
+      toast.error(getErrorMessage(err))
     }
   }
 
@@ -325,7 +466,6 @@ export default function BranchesPage() {
                 </tr>
               ) : (
                 branches.map((b) => {
-                  const hasData = (b.dataRecordCount ?? 0) > 0
                   return (
                     <tr
                       key={b.id}
@@ -354,6 +494,15 @@ export default function BranchesPage() {
                           >
                             <Gift size={16} />
                           </button>
+                          {b.statCycle === 'MONTH' && (
+                            <button
+                              onClick={() => openNamingModal(b)}
+                              className="p-1.5 text-textSecondary hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded transition-colors duration-200 cursor-pointer"
+                              title="冠名等级"
+                            >
+                              <Crown size={16} />
+                            </button>
+                          )}
                           <button
                             onClick={() => openEditBranchModal(b)}
                             className="p-1.5 text-textSecondary hover:text-primary hover:bg-primary/10 rounded transition-colors duration-200 cursor-pointer"
@@ -363,14 +512,9 @@ export default function BranchesPage() {
                           </button>
                           {isHuizhang && (
                             <button
-                              onClick={() => handleDeleteBranch(b)}
-                              disabled={hasData}
-                              className="p-1.5 text-textSecondary hover:text-danger hover:bg-danger/10 rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
-                              title={
-                                hasData
-                                  ? '存在数据记录，无法删除'
-                                  : '删除厅'
-                              }
+                              onClick={() => openDeleteModal(b)}
+                              className="p-1.5 text-textSecondary hover:text-danger hover:bg-danger/10 rounded transition-colors duration-200 cursor-pointer"
+                              title="删除厅"
                             >
                               <Trash2 size={16} />
                             </button>
@@ -624,6 +768,242 @@ export default function BranchesPage() {
             />
           </div>
         )}
+      </Modal>
+
+      {/* 冠名等级弹窗 */}
+      <Modal
+        open={namingModalOpen}
+        title={`冠名等级 - ${namingBranch?.name ?? ''}`}
+        onClose={() => setNamingModalOpen(false)}
+        width="max-w-2xl"
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-textMuted leading-relaxed">
+            仅按月统计厅支持冠名。录入收光时按阈值整除转换为冠名（逐级扣减，高等级优先），余数计入收光。冠名数 × 等级福利累加到总福利。等级数量可调，等级名称可自定义。
+          </p>
+
+          {/* 等级列表 */}
+          <div className="overflow-x-auto border border-border rounded-lg">
+            <table className="w-full text-sm">
+              <thead className="bg-surface border-b border-border">
+                <tr className="text-left text-textSecondary">
+                  <th className="px-3 py-2 font-medium">名称</th>
+                  <th className="px-3 py-2 font-medium">阈值(收光)</th>
+                  <th className="px-3 py-2 font-medium">福利</th>
+                  <th className="px-3 py-2 font-medium text-right">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {namingLoading ? (
+                  Array.from({ length: 2 }).map((_, i) => (
+                    <tr key={i} className="border-b border-border last:border-0">
+                      {Array.from({ length: 4 }).map((_, j) => (
+                        <td key={j} className="px-3 py-2">
+                          <Skeleton className="h-5 w-full" />
+                        </td>
+                      ))}
+                    </tr>
+                  ))
+                ) : namingLevels.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="px-3 py-8 text-center text-textMuted"
+                    >
+                      暂无冠名等级，请在下方新增
+                    </td>
+                  </tr>
+                ) : (
+                  namingLevels.map((level) => (
+                    <tr
+                      key={level.id}
+                      className={`border-b border-border last:border-0 hover:bg-surface transition-colors duration-200 ${
+                        namingFormId === level.id ? 'bg-primary/5' : ''
+                      }`}
+                    >
+                      <td className="px-3 py-2 text-textPrimary font-medium">
+                        <span className="inline-flex items-center gap-1">
+                          <Crown size={13} className="text-amber-500" />
+                          {level.name}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-textPrimary font-mono">
+                        {level.threshold}
+                      </td>
+                      <td className="px-3 py-2 text-textPrimary font-mono">
+                        {level.reward}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => handleEditNaming(level)}
+                            className="p-1.5 text-textSecondary hover:text-primary hover:bg-primary/10 rounded transition-colors duration-200 cursor-pointer"
+                            title="编辑"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteNaming(level)}
+                            className="p-1.5 text-textSecondary hover:text-danger hover:bg-danger/10 rounded transition-colors duration-200 cursor-pointer"
+                            title="删除"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 新增/编辑表单 */}
+          <div className="border-t border-border pt-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Plus size={16} className="text-primary" />
+              <h4 className="text-sm font-semibold text-textPrimary">
+                {namingFormId ? '编辑等级' : '新增等级'}
+              </h4>
+            </div>
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs text-textSecondary mb-1">
+                  等级名称
+                </label>
+                <input
+                  type="text"
+                  value={namingForm.name}
+                  onChange={(e) =>
+                    setNamingForm({ ...namingForm, name: e.target.value })
+                  }
+                  placeholder="如：周冠、月冠"
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-textSecondary mb-1">
+                  阈值(收光)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={namingForm.threshold ? namingForm.threshold : ''}
+                  onChange={(e) =>
+                    setNamingForm({
+                      ...namingForm,
+                      threshold: e.target.value === '' ? 0 : Number(e.target.value),
+                    })
+                  }
+                  placeholder="如：100"
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-textSecondary mb-1">
+                  等级福利
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={namingForm.reward ? namingForm.reward : ''}
+                  onChange={(e) =>
+                    setNamingForm({
+                      ...namingForm,
+                      reward: e.target.value === '' ? 0 : Number(e.target.value),
+                    })
+                  }
+                  placeholder="如：50"
+                  className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2 mt-3">
+              <button
+                onClick={handleNamingSubmit}
+                disabled={namingSubmitting}
+                className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+              >
+                {namingSubmitting ? <Spinner className="h-4 w-4" /> : <Plus size={16} />}
+                {namingFormId ? '保存修改' : '添加等级'}
+              </button>
+              {namingFormId && (
+                <button
+                  onClick={resetNamingForm}
+                  className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+                >
+                  取消编辑
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* 删除厅确认弹窗（需输入登录密码） */}
+      <Modal
+        open={deleteModalOpen}
+        title="删除厅确认"
+        onClose={() => {
+          setDeleteModalOpen(false)
+          setDeleteTarget(null)
+          setDeletePassword('')
+        }}
+        footer={
+          <>
+            <button
+              onClick={() => {
+                setDeleteModalOpen(false)
+                setDeleteTarget(null)
+                setDeletePassword('')
+              }}
+              disabled={deleting}
+              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer disabled:opacity-60"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleConfirmDelete}
+              disabled={deleting || !deletePassword}
+              className="flex items-center gap-1.5 px-4 py-2 bg-danger text-white rounded-lg text-sm font-medium hover:bg-danger/90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+            >
+              {deleting ? <Spinner className="h-4 w-4" /> : <Trash2 size={16} />}
+              {deleting ? '删除中...' : '确认删除'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div className="p-3 rounded-lg bg-danger/10 border border-danger/20">
+            <p className="text-sm text-danger font-medium">
+              危险操作：删除厅「{deleteTarget?.name}」
+            </p>
+            <p className="text-xs text-textSecondary mt-1 leading-relaxed">
+              删除后，该厅下的所有数据记录、人员（仅属于该厅的）、奖励规则、冠名等级、通知等将被永久删除，且无法恢复。
+              请谨慎操作。
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs text-textSecondary mb-1">
+              请输入您的登录密码以确认删除
+            </label>
+            <input
+              type="password"
+              value={deletePassword}
+              onChange={(e) => setDeletePassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && deletePassword && !deleting) {
+                  handleConfirmDelete()
+                }
+              }}
+              placeholder="登录密码"
+              autoFocus
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-danger focus:ring-1 focus:ring-danger transition-colors duration-200"
+            />
+          </div>
+        </div>
       </Modal>
     </div>
   )

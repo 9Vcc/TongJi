@@ -17,7 +17,13 @@ import {
   getMonthRangeText,
 } from '../utils'
 import { Skeleton } from '../components/Skeleton'
-import type { RankingItem, RewardRule, Branch, StatCycle } from '../types'
+import type {
+  RankingItem,
+  RewardRule,
+  Branch,
+  StatCycle,
+  NamingItem,
+} from '../types'
 
 const rankBadgeColors = ['#F59E0B', '#94A3B8', '#CD7F32']
 const rankRowBg = [
@@ -25,6 +31,17 @@ const rankRowBg = [
   'bg-slate-50 dark:bg-slate-700/30',
   'bg-orange-50 dark:bg-orange-900/20',
 ]
+
+// 冠名展示格式：如 "周冠×2 月冠×1"，无则返回 '-'
+function formatNamings(namings?: NamingItem[]): string {
+  if (!namings || namings.length === 0) return '-'
+  return (
+    namings
+      .filter((n) => n.count > 0)
+      .map((n) => `${n.levelName}×${n.count}`)
+      .join(' ') || '-'
+  )
+}
 
 export default function Ranking() {
   const { user } = useAuth()
@@ -425,20 +442,26 @@ function RankingCard({
               <th className="px-3 py-2 font-medium">收光</th>
               <th className="px-3 py-2 font-medium">麦序</th>
               <th className="px-3 py-2 font-medium">全麦</th>
+              {isMonthCycle && (
+                <th className="px-3 py-2 font-medium">冠名</th>
+              )}
               <th className="px-3 py-2 font-medium">总福利</th>
             </tr>
           </thead>
           <tbody>
             {items.length === 0 && !loading ? (
               <tr>
-                <td colSpan={6} className="px-3 py-8 text-center text-textMuted">
+                <td
+                  colSpan={isMonthCycle ? 7 : 6}
+                  className="px-3 py-8 text-center text-textMuted"
+                >
                   暂无数据
                 </td>
               </tr>
             ) : items.length === 0 ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <tr key={i} className="border-b border-border last:border-0">
-                  {Array.from({ length: 6 }).map((_, j) => (
+                  {Array.from({ length: isMonthCycle ? 7 : 6 }).map((_, j) => (
                     <td key={j} className="px-3 py-2">
                       <Skeleton className="h-5 w-full" />
                     </td>
@@ -452,6 +475,10 @@ function RankingCard({
                 const badgeColor = isTop3
                   ? rankBadgeColors[item.rank - 1]
                   : '#94A3B8'
+                const hasNaming =
+                  isMonthCycle &&
+                  item.namings &&
+                  item.namings.some((n) => n.count > 0)
                 return (
                   <tr
                     key={`${item.branchId}-${item.personnelId}`}
@@ -471,8 +498,20 @@ function RankingCard({
                     <td className="px-3 py-2 text-textPrimary font-mono">{item.sg}</td>
                     <td className="px-3 py-2 text-textPrimary font-mono">{item.mx}</td>
                     <td className="px-3 py-2 text-textPrimary font-mono">{item.qm}</td>
-                    <td className="px-3 py-2 text-textPrimary font-semibold font-mono">
-                      {item.totalWelfare}
+                    {isMonthCycle && (
+                      <td className="px-3 py-2 text-textPrimary text-xs whitespace-nowrap">
+                        {formatNamings(item.namings)}
+                      </td>
+                    )}
+                    <td className="px-3 py-2">
+                      <div className="text-textPrimary font-semibold font-mono">
+                        {item.totalWelfare}
+                      </div>
+                      {hasNaming && (item.namingWelfare ?? 0) > 0 && (
+                        <div className="text-[10px] text-amber-600 dark:text-amber-400 font-mono mt-0.5">
+                          含冠名 {item.namingWelfare}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 )

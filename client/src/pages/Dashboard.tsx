@@ -723,6 +723,11 @@ export default function Dashboard() {
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     {items.map((item) => {
                       const color = rankColors[item.rank - 1] || '156 163 175'
+                      // 安全访问冠名明细（按月厅才有，按周厅可能未返回）
+                      const namingText = (item.namings ?? [])
+                        .filter((n) => n.count > 0)
+                        .map((n) => `${n.levelName}×${n.count}`)
+                        .join(' ')
                       return (
                         <div
                           key={item.personnelId}
@@ -741,6 +746,11 @@ export default function Dashboard() {
                             <div className="text-xs text-textMuted mt-0.5 font-mono">
                               麦序 {item.mx} · 福利 {item.totalWelfare}
                             </div>
+                            {namingText && (
+                              <div className="text-[10px] text-amber-600 dark:text-amber-400 font-mono mt-0.5">
+                                冠名 {namingText}
+                              </div>
+                            )}
                           </div>
                         </div>
                       )

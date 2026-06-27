@@ -73,6 +73,7 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
         include: {
           personnel: { select: { id: true, name: true } },
           branch: { select: { id: true, name: true } },
+          namings: { include: { level: { select: { name: true, reward: true } } } },
         },
         orderBy: [{ branchId: 'asc' }, { personnelId: 'asc' }],
       })
@@ -86,7 +87,15 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
 
       const result = records.map((r) => {
         const rule = ruleMap.get(r.branchId)
-        const welfare = rule
+        // 冠名福利
+        const namings = r.namings.map((n) => ({
+          levelId: n.levelId,
+          levelName: n.level.name,
+          count: n.count,
+          reward: n.level.reward,
+        }))
+        const namingWelfare = namings.reduce((s, n) => s + n.count * n.reward, 0)
+        const baseWelfare = rule
           ? calcWelfare(r.sg, r.mx, r.qm, rule)
           : r.sg * 3 + r.qm * 3
         return {
@@ -99,7 +108,8 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
           sg: r.sg,
           mx: r.mx,
           qm: r.qm,
-          welfare,
+          welfare: baseWelfare + namingWelfare,
+          namings,
         }
       })
 
