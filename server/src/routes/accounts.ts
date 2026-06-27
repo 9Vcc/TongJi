@@ -230,7 +230,24 @@ export default async function accountRoutes(fastify: FastifyInstance) {
         }
       }
 
-      await prisma.account.delete({ where: { id: accountId } })
+      // 删除账户前需处理外键关联：
+      // - LoginRecord.accountId（登录记录）
+      // - DataHistory.modifierId（数据修改历史）
+      // - DataRecord.createdBy（数据记录创建人）
+      // 采用级联清理策略：登录记录与修改历史直接删除，数据记录改为重新归属到当前操作人
+      await prisma.$transaction(async (tx) => {
+        // 1. 删除该账户的登录记录
+        await tx.loginRecord.deleteMany({ where: { accountId } })
+        // 2. 删除该账户的数据修改历史
+        await tx.dataHistory.deleteMany({ where: { modifierId: accountId } })
+        // 3. 将该账户创建的数据记录转交给当前操作人，避免外键约束失败
+        await tx.dataRecord.updateMany({
+          where: { createdBy: accountId },
+          data: { createdBy: currentUser.id },
+        })
+        // 4. 最后删除账户本身
+        await tx.account.delete({ where: { id: accountId } })
+      })
 
       return reply.send({ message: '账户已删除' })
     }
