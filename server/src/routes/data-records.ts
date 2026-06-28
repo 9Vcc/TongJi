@@ -16,8 +16,10 @@ interface RecordInput {
 
 /**
  * 解析前端传入的 weekStart 字符串（YYYY-MM-DD），返回周一 00:00:00 的 Date
- * 校验：必须是合法日期、必须是周一、不能晚于当前周（防止未来周录入）
+ * 校验：必须是合法日期、必须是周一
  * 未传或为空时返回 null（调用方降级到 getWeekStart()）
+ * 注意：不校验"未来周"——前端 UI 已限制不能切换到未来周（handleNextWeek），
+ *       后端若再校验会因 Docker UTC 时区与客户端 UTC+8 的差异误伤周一凌晨录入
  */
 function parseWeekStart(input: unknown): { ok: true; date: Date } | { ok: false; error: string } | null {
   if (input === undefined || input === null || input === '') return null
@@ -45,12 +47,7 @@ function parseWeekStart(input: unknown): { ok: true; date: Date } | { ok: false;
   if (day !== 1) {
     return { ok: false, error: 'weekStart 必须为周一' }
   }
-  // 校验不能晚于当前周（防止未来周录入）
-  const currentWeekStart = getWeekStart()
   date.setHours(0, 0, 0, 0)
-  if (date > currentWeekStart) {
-    return { ok: false, error: '不能录入未来周数据' }
-  }
   return { ok: true, date }
 }
 
