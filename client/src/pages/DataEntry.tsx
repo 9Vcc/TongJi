@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Upload,
@@ -103,6 +103,8 @@ export default function DataEntry() {
   const [branches, setBranches] = useState<Branch[]>([])
   const [branchId, setBranchId] = useState<number | undefined>(undefined)
   const [loading, setLoading] = useState(false)
+  // loadData 竞态保护：每次调用自增，仅最后一次调用可写 state
+  const loadIdRef = useRef(0)
 
   // 视图周期：用户可切换本周/本月查看
   const [viewCycle, setViewCycle] = useState<'WEEK' | 'MONTH'>('WEEK')
@@ -177,9 +179,15 @@ export default function DataEntry() {
   const loadData = async () => {
     // 会长未选择厅时不加载任何数据（数据录入页面仅支持独立厅显示）
     if (!effectiveBranchId) {
+      loadIdRef.current++
       setRecords([])
+      setLoading(false)
       return
     }
+    // 竞态保护：每次调用自增，仅最后一次调用可写 state
+    const loadId = ++loadIdRef.current
+    // 切换条件变化时先清空旧数据，避免显示上一个厅/周/月的残留数据
+    setRecords([])
     setLoading(true)
     try {
       if (isMonthCycle) {
@@ -206,6 +214,8 @@ export default function DataEntry() {
         const allResults = await Promise.all(
           weekStarts.map((w) => dataQueryApi.listByWeek(w, effectiveBranchId))
         )
+        // 竞态保护：若期间又有新的 loadData 调用，丢弃本次结果
+        if (loadId !== loadIdRef.current) return
         // 按 (branchId, personnelId) 合并累加，避免多厅数据混合
         const mergedMap = new Map<
           string,
@@ -231,25 +241,39 @@ export default function DataEntry() {
         // 周模式：查询单周数据
         const weekParam = formatDate(weekStart)
         const recs = await dataQueryApi.listByWeek(weekParam, effectiveBranchId)
+        // 竞态保护：若期间又有新的 loadData 调用，丢弃本次结果
+        if (loadId !== loadIdRef.current) return
         setRecords(recs)
       }
     } catch (err) {
+      if (loadId !== loadIdRef.current) return
       toast.error(getErrorMessage(err))
     } finally {
-      setLoading(false)
+      // 仅最后一次调用的 finally 才关闭 loading
+      if (loadId === loadIdRef.current) {
+        setLoading(false)
+      }
     }
   }
 
+  // loadPersonnel 竞态保护：与 loadIdRef 同样的机制
+  const personLoadIdRef = useRef(0)
   const loadPersonnel = async () => {
     // 会长未选择厅时不加载人员（数据录入页面仅支持独立厅显示）
     if (!effectiveBranchId) {
+      personLoadIdRef.current++
       setPersonnel([])
       return
     }
+    const loadId = ++personLoadIdRef.current
+    // 切换厅时先清空，避免旧厅人员残留导致列表错乱
+    setPersonnel([])
     try {
       const list = await personnelApi.list(effectiveBranchId)
+      if (loadId !== personLoadIdRef.current) return
       setPersonnel(list)
     } catch (err) {
+      if (loadId !== personLoadIdRef.current) return
       toast.error(getErrorMessage(err))
     }
   }
