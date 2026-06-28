@@ -115,6 +115,8 @@ export default function DataEntry() {
 
   // 人员搜索框（用于过滤列表，替代原手动录入卡片的人员选择）
   const [searchTerm, setSearchTerm] = useState('')
+  // 列表排序：null=按录入顺序，'sg'/'mx'/'qm'/'welfare'=按对应指标降序
+  const [sortKey, setSortKey] = useState<'sg' | 'mx' | 'qm' | 'welfare' | null>(null)
   // 分页：每页最多 30 人
   const [currentPage, setCurrentPage] = useState(1)
   const pageSize = 30
@@ -690,8 +692,20 @@ export default function DataEntry() {
       }
       return !records.some((r) => r.personnelId === p.id)
     })
-    // 已录入记录按麦序降序排序（高麦序在前，麦序相同保持原顺序）
-    const sortedRecords = [...records].sort((a, b) => b.mx - a.mx)
+    // 已录入记录按 sortKey 降序排序（高值在前，相同保持原顺序）；null=不排序
+    const sortedRecords = sortKey
+      ? [...records].sort((a, b) => {
+          const av =
+            sortKey === 'welfare'
+              ? (a.finalWelfare ?? a.welfare ?? 0)
+              : a[sortKey]
+          const bv =
+            sortKey === 'welfare'
+              ? (b.finalWelfare ?? b.welfare ?? 0)
+              : b[sortKey]
+          return bv - av
+        })
+      : records
     return [
       ...sortedRecords.map((r) => ({
         key: `rec-${r.id}`,
@@ -728,7 +742,7 @@ export default function DataEntry() {
         namings: undefined,
       })),
     ]
-  }, [records, personnel, effectiveBranchId])
+  }, [records, personnel, effectiveBranchId, sortKey])
 
   // 受搜索框过滤的行：用于表格列表显示
   const filteredRecords = useMemo<DisplayRow[]>(() => {
@@ -1161,8 +1175,8 @@ export default function DataEntry() {
 
       {/* 人员搜索框（用于过滤下方列表，录入请使用勾选行后的"添加"按钮） */}
       <div className="bg-card border border-border rounded-xl p-3">
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1 max-w-xs">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="relative flex-1 max-w-xs min-w-[180px]">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-textMuted" />
             <input
               type="text"
@@ -1172,7 +1186,30 @@ export default function DataEntry() {
               className="w-full pl-9 pr-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
             />
           </div>
-          <span className="text-xs text-textSecondary">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-textSecondary">排序</span>
+            <select
+              value={sortKey ?? ''}
+              onChange={(e) =>
+                setSortKey(
+                  (e.target.value || null) as
+                    | 'sg'
+                    | 'mx'
+                    | 'qm'
+                    | 'welfare'
+                    | null
+                )
+              }
+              className="px-2 py-1.5 border border-border rounded-lg text-xs bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer"
+            >
+              <option value="">默认</option>
+              <option value="mx">麦序降序</option>
+              <option value="sg">收光降序</option>
+              {qmInputEnabled && <option value="qm">全麦降序</option>}
+              <option value="welfare">福利降序</option>
+            </select>
+          </div>
+          <span className="text-xs text-textSecondary ml-auto">
             共 {filteredRecords.length} 人
           </span>
         </div>
