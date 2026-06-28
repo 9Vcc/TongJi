@@ -690,8 +690,10 @@ export default function DataEntry() {
       }
       return !records.some((r) => r.personnelId === p.id)
     })
+    // 已录入记录按麦序降序排序（高麦序在前，麦序相同保持原顺序）
+    const sortedRecords = [...records].sort((a, b) => b.mx - a.mx)
     return [
-      ...records.map((r) => ({
+      ...sortedRecords.map((r) => ({
         key: `rec-${r.id}`,
         id: r.id,
         personnelId: r.personnelId,
