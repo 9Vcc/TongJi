@@ -60,6 +60,7 @@ model Account {
   createdDataRecords DataRecord[]  @relation("DataRecordCreatedBy")
   modifiedHistories  DataHistory[] @relation("DataHistoryModifier")
   loginRecords       LoginRecord[] @relation("AccountLoginRecords")
+  deductions        Deduction[]   @relation("DeductionCreatedBy")
 
   @@index([branchId])
 }
@@ -78,6 +79,7 @@ model Branch {
   rewardRules       RewardRule?
   namingLevels      NamingLevel[]
   notifications     Notification[]
+  deductions        Deduction[]
 }
 
 // ============ 冠名等级表（每厅独立配置）============
@@ -108,6 +110,7 @@ model Personnel {
 
   personnelBranches PersonnelBranch[]
   dataRecords       DataRecord[]
+  deductions        Deduction[]
 }
 
 // ============ 人员-分部关联表 ============
@@ -249,4 +252,28 @@ model LoginRecord {
 
   @@index([accountId])
   @@index([loginTime])
+}
+
+// ============ 福利扣减表 ============
+// 按周期记录每个人员的福利扣减金额，最终福利 = 原福利 - deduction
+// periodStart：周统计厅=该周周一，月统计厅=该月1号
+// 与 DataRecord 解耦，避免月统计厅按周累加扣减
+
+model Deduction {
+  id          Int      @id @default(autoincrement())
+  branchId    Int
+  personnelId Int
+  periodStart DateTime
+  amount      Int      @default(0)
+  createdBy   Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  branch    Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  personnel Personnel @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  creator   Account   @relation("DeductionCreatedBy", fields: [createdBy], references: [id])
+
+  @@unique([branchId, personnelId, periodStart])
+  @@index([branchId, periodStart])
+  @@index([personnelId])
 }

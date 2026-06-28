@@ -22,6 +22,7 @@ import {
   exportApi,
   rewardRulesApi,
   namingLevelsApi,
+  deductionsApi,
   getErrorMessage,
 } from '../api'
 import { useAuth } from '../hooks/useAuth'
@@ -55,6 +56,8 @@ type RecordForm = {
   qm: string
   // 冠名数量：levelId -> count（字符串便于输入控制）
   namings: Record<string, string>
+  // 福利扣减金额（字符串便于输入控制）
+  deduction: string
 }
 
 const emptyForm: RecordForm = {
@@ -63,6 +66,7 @@ const emptyForm: RecordForm = {
   mx: '',
   qm: '',
   namings: {},
+  deduction: '',
 }
 
 // 冠名展示格式：如 "周冠×2 月冠×1"，无则返回 '-'
@@ -229,14 +233,26 @@ export default function DataEntry() {
               existing.sg += r.sg
               existing.mx += r.mx
               existing.qm += r.qm
+              // 月视图聚合：累加各周福利（参考值，最终以排名接口为准）
+              existing.welfare = (existing.welfare ?? 0) + (r.welfare ?? 0)
               // 月视图聚合：累加各等级冠名数
               existing.namings = mergeNamings(existing.namings, r.namings)
+              // 扣减是月度独立值，不累加（所有周记录的 deduction 相同，取首次即可）
+              if (!existing.deduction) existing.deduction = r.deduction
             } else {
               mergedMap.set(key, { ...r })
             }
           }
         }
-        setRecords([...mergedMap.values()])
+        // 月视图聚合后重新计算 finalWelfare = welfare - deduction
+        const mergedRecords = [...mergedMap.values()].map((r) => ({
+          ...r,
+          finalWelfare:
+            r.welfare !== undefined && r.deduction !== undefined
+              ? r.welfare - r.deduction
+              : r.welfare,
+        }))
+        setRecords(mergedRecords)
       } else {
         // 周模式：查询单周数据
         const weekParam = formatDate(weekStart)
@@ -376,6 +392,7 @@ export default function DataEntry() {
       mx: record.mx ? String(record.mx) : '',
       qm: record.qm ? String(record.qm) : '',
       namings: namingMap,
+      deduction: record.deduction ? String(record.deduction) : '',
     })
     setEditModalOpen(true)
   }
@@ -398,6 +415,15 @@ export default function DataEntry() {
       (qmInputEnabled && (!Number.isInteger(qm) || qm < 0))
     ) {
       toast.error('收光/麦序/全麦必须为非负整数')
+      return
+    }
+
+    // 扣减金额校验（会长+超管可编辑）
+    const deductionRaw = editForm.deduction.trim()
+    const deduction = deductionRaw === '' ? 0 : Number(deductionRaw)
+    const canEditDeduction = isHuizhang || user?.role === 'CHAOGUAN'
+    if (canEditDeduction && (!Number.isInteger(deduction) || deduction < 0)) {
+      toast.error('扣减金额必须为非负整数')
       return
     }
 
@@ -427,10 +453,40 @@ export default function DataEntry() {
       } = { sg, mx, qm }
       if (namings) payload.namings = namings
       const original = records.find((r) => r.id === editingId)
+      const targetPersonnelId =
+        original && original.personnelId !== Number(editForm.personnelId)
+          ? Number(editForm.personnelId)
+          : original?.personnelId
       if (original && original.personnelId !== Number(editForm.personnelId)) {
         payload.personnelId = Number(editForm.personnelId)
       }
       await dataRecordsApi.update(editingId, payload)
+
+      // 保存扣减（仅会长+超管，且必须有厅和人员）
+      // 扣减周期必须基于厅的统计周期（branchCycle），而非用户视图周期（isMonthCycle），
+      // 否则与 data-query.ts 查询时的周期匹配不一致，会导致扣减保存了但查不到
+      if (canEditDeduction && effectiveBranchId && targetPersonnelId) {
+        const cycleParam: 'WEEK' | 'MONTH' =
+          branchCycle === 'MONTH' ? 'MONTH' : 'WEEK'
+        const weekParam = formatDate(
+          branchCycle === 'MONTH'
+            ? new Date(weekStart.getFullYear(), weekStart.getMonth(), 1)
+            : weekStart
+        )
+        try {
+          await deductionsApi.upsert({
+            branchId: effectiveBranchId,
+            personnelId: targetPersonnelId,
+            weekStart: weekParam,
+            cycle: cycleParam,
+            amount: deduction,
+          })
+        } catch (err) {
+          // 扣减保存失败不阻塞主流程，仅提示
+          toast.error('数据已更新，但扣减保存失败：' + getErrorMessage(err))
+        }
+      }
+
       toast.success('修改成功')
       setEditModalOpen(false)
       setEditingId(null)
@@ -603,6 +659,8 @@ export default function DataEntry() {
     mx: number
     qm: number
     welfare?: number
+    deduction?: number
+    finalWelfare?: number
     createdAt?: string
     isRecorded: boolean
     namings?: NamingItem[]
@@ -632,6 +690,8 @@ export default function DataEntry() {
         mx: r.mx,
         qm: r.qm,
         welfare: r.welfare,
+        deduction: r.deduction,
+        finalWelfare: r.finalWelfare,
         createdAt: r.createdAt,
         isRecorded: true,
         namings: r.namings,
@@ -1210,7 +1270,11 @@ export default function DataEntry() {
                         </td>
                       )}
                       <td className="px-4 py-3 text-textPrimary font-mono">
-                        {r.welfare ?? '-'}
+                        {r.finalWelfare !== undefined
+                          ? r.deduction
+                            ? `${r.finalWelfare} (-${r.deduction})`
+                            : r.finalWelfare
+                          : r.welfare ?? '-'}
                       </td>
                       <td className="px-4 py-3 text-right">
                         {r.isRecorded ? (
@@ -1503,6 +1567,27 @@ export default function DataEntry() {
               <p className="mt-1.5 text-[11px] text-textMuted">
                 提示：编辑冠名数量为覆盖模式，将直接保存为该记录当前的冠名总数。
               </p>
+            </div>
+          )}
+
+          {/* 福利扣减：仅会长+超管可编辑，其他角色只读展示 */}
+          {(isHuizhang || user?.role === 'CHAOGUAN') && (
+            <div>
+              <label className="block text-xs text-textSecondary mb-1">
+                福利扣减
+                <span className="ml-1 text-[10px] text-textMuted">
+                  （{branchCycle === 'MONTH' ? '按月' : '按周'}扣减，最终福利 = 福利 - 扣减）
+                </span>
+              </label>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={editForm.deduction}
+                onChange={(e) => setEditForm({ ...editForm, deduction: e.target.value })}
+                placeholder="0"
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+              />
             </div>
           )}
         </div>

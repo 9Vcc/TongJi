@@ -22,6 +22,7 @@ import notificationRoutes from './routes/notifications';
 import dataHistoryRoutes from './routes/data-history';
 import loginRecordRoutes from './routes/login-records';
 import namingLevelRoutes from './routes/naming-levels';
+import deductionRoutes from './routes/deductions';
 
 const isDev = process.env.NODE_ENV !== 'production';
 
@@ -128,6 +129,9 @@ fastify.register(loginRecordRoutes);
 
 // 冠名等级管理路由
 fastify.register(namingLevelRoutes);
+
+// 福利扣减路由（会长+超管可编辑）
+fastify.register(deductionRoutes);
 
 // 全局错误处理：打印完整错误堆栈便于排查
 fastify.setErrorHandler((error: Error & { validation?: unknown }, request, reply) => {

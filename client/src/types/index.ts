@@ -78,8 +78,25 @@ export interface DataRecord {
   personnelName?: string
   branchName?: string
   welfare?: number
+  // 福利扣减（按周期独立存储，与 DataRecord 解耦）
+  deduction?: number
+  // 最终福利 = welfare - deduction
+  finalWelfare?: number
   // 冠名明细（按月统计厅返回）
   namings?: NamingItem[]
+}
+
+// 福利扣减记录
+export interface Deduction {
+  id: number
+  branchId: number
+  personnelId: number
+  periodStart: string
+  amount: number
+  createdBy: number
+  createdAt: string
+  updatedAt: string
+  personnel?: { id: number; name: string }
 }
 
 // 冠名等级
@@ -162,6 +179,8 @@ export interface RankingItem {
   totalWelfare: number
   // 冠名福利总额
   namingWelfare: number
+  // 福利扣减
+  deduction: number
   // 冠名明细
   namings: NamingItem[]
 }

@@ -17,6 +17,7 @@ export interface RankingItem {
   baseWelfare: number
   rankReward: number
   namingWelfare: number
+  deduction: number
   totalWelfare: number
   namings: { levelId: number; levelName: string; count: number; reward: number }[]
 }
@@ -186,6 +187,19 @@ export async function computeRanking(
   })
   const levelInfoMap = new Map(namingLevels.map((l) => [l.id, { name: l.name, reward: l.reward }]))
 
+  // 查询扣减：按 cycle 决定 periodStart（周=周一，月=月初1号）
+  const deductions = await prisma.deduction.findMany({
+    where: {
+      periodStart,
+      ...(branchFilter ? { branchId: branchFilter } : {}),
+    },
+  })
+  // 按 (branchId, personnelId) 索引扣减金额
+  const deductionMap = new Map<string, number>()
+  for (const d of deductions) {
+    deductionMap.set(`${d.branchId}:${d.personnelId}`, d.amount)
+  }
+
   // 月模式：按 (branchId, personnelId) 聚合求和
   // 周模式：每条记录已是单人员单周，无需聚合（用 Map 统一处理也兼容）
   const byBranchPersonnel = new Map<
@@ -282,7 +296,8 @@ export async function computeRanking(
         baseWelfare,
         rankReward,
         namingWelfare,
-        totalWelfare: baseWelfare + rankReward + namingWelfare,
+        deduction: deductionMap.get(`${branchId}:${p.personnelId}`) ?? 0,
+        totalWelfare: Math.max(0, baseWelfare + rankReward + namingWelfare - (deductionMap.get(`${branchId}:${p.personnelId}`) ?? 0)),
         namings,
       })
     })

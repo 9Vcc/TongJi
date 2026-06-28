@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import prisma from '../lib/prisma'
 import { authenticate } from '../middleware/auth'
-import { Role } from '../../generated/prisma/client'
+import { Role, StatCycle } from '../../generated/prisma/client'
 import { getWeekStart } from '../utils/week'
 
 interface RewardRuleLike {
@@ -85,6 +85,53 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
       })
       const ruleMap = new Map(rules.map((r) => [r.branchId, r]))
 
+      // 获取相关分部的统计周期（决定扣减按周还是按月匹配）
+      const branches = await prisma.branch.findMany({
+        where: { id: { in: branchIds } },
+        select: { id: true, statCycle: true },
+      })
+      const branchCycleMap = new Map(branches.map((b) => [b.id, b.statCycle]))
+
+      // 查询扣减：周统计厅按 weekStart 匹配，月统计厅按 weekStart 所在月的1号匹配
+      const monthStart = new Date(weekStart.getFullYear(), weekStart.getMonth(), 1)
+      const [weekDeductions, monthDeductions] = await Promise.all([
+        prisma.deduction.findMany({
+          where: {
+            periodStart: weekStart,
+            ...(branchFilter ? { branchId: branchFilter } : {}),
+          },
+        }),
+        prisma.deduction.findMany({
+          where: {
+            periodStart: monthStart,
+            ...(branchFilter ? { branchId: branchFilter } : {}),
+          },
+        }),
+      ])
+      // 按 (branchId, personnelId) 索引扣减金额
+      const deductionMap = new Map<string, number>()
+      for (const d of weekDeductions) {
+        if (branchCycleMap.get(d.branchId) === StatCycle.WEEK) {
+          deductionMap.set(`${d.branchId}:${d.personnelId}`, d.amount)
+        }
+      }
+      for (const d of monthDeductions) {
+        if (branchCycleMap.get(d.branchId) === StatCycle.MONTH) {
+          deductionMap.set(`${d.branchId}:${d.personnelId}`, d.amount)
+        }
+      }
+
+      // 临时调试日志：确认扣减查询参数与结果
+      console.log('[data-query] deduction lookup:', {
+        weekStart: weekStart.toISOString(),
+        monthStart: monthStart.toISOString(),
+        branchFilter,
+        branchCycleMap: Object.fromEntries(branchCycleMap),
+        weekDeductionsCount: weekDeductions.length,
+        monthDeductionsCount: monthDeductions.length,
+        deductionMapEntries: [...deductionMap.entries()],
+      })
+
       const result = records.map((r) => {
         const rule = ruleMap.get(r.branchId)
         // 冠名福利
@@ -98,6 +145,8 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
         const baseWelfare = rule
           ? calcWelfare(r.sg, r.mx, r.qm, rule)
           : r.sg * 3 + r.qm * 3
+        const welfare = baseWelfare + namingWelfare
+        const deduction = deductionMap.get(`${r.branchId}:${r.personnelId}`) ?? 0
         return {
           id: r.id,
           personnelId: r.personnelId,
@@ -108,7 +157,9 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
           sg: r.sg,
           mx: r.mx,
           qm: r.qm,
-          welfare: baseWelfare + namingWelfare,
+          welfare,
+          deduction,
+          finalWelfare: welfare - deduction,
           namings,
         }
       })

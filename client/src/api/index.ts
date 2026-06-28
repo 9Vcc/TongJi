@@ -22,6 +22,7 @@ import type {
   DataLogItem,
   LoginRecord,
   NamingLevel,
+  Deduction,
 } from '../types'
 
 const request = axios.create({
@@ -358,6 +359,34 @@ export const notificationsApi = {
       '/notifications',
       { params: branchId ? { branchId } : undefined }
     )
+  },
+}
+
+// ============ 福利扣减 ============
+export const deductionsApi = {
+  list(params: { weekStart: string; branchId?: number; cycle: 'WEEK' | 'MONTH' }) {
+    return request.get<unknown, Deduction[]>('/deductions', {
+      params,
+    })
+  },
+  upsert(data: {
+    branchId: number
+    personnelId: number
+    weekStart: string
+    cycle: 'WEEK' | 'MONTH'
+    amount: number
+  }) {
+    return request.put<unknown, Deduction>('/deductions', data)
+  },
+  remove(data: {
+    branchId: number
+    personnelId: number
+    weekStart: string
+    cycle: 'WEEK' | 'MONTH'
+  }) {
+    return request.delete<unknown, { message: string }>('/deductions', {
+      data,
+    })
   },
 }
 

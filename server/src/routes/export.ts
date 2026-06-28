@@ -47,6 +47,7 @@ export default async function exportRoutes(fastify: FastifyInstance) {
         全麦: r.qm,
         基础福利: r.baseWelfare,
         排名奖励: r.rankReward,
+        扣减: r.deduction,
         总福利: r.totalWelfare,
       }))
 
@@ -97,6 +98,7 @@ export default async function exportRoutes(fastify: FastifyInstance) {
         { label: '全麦', value: 'qm' },
         { label: '基础福利', value: 'baseWelfare' },
         { label: '排名奖励', value: 'rankReward' },
+        { label: '扣减', value: 'deduction' },
         { label: '总福利', value: 'totalWelfare' },
       ]
 
