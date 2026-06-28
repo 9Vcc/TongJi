@@ -274,6 +274,10 @@ export interface CreateRecordInput {
   sg: number
   mx: number
   qm: number
+  // 录入目标周的周一（YYYY-MM-DD）
+  // 不传则由后端使用服务器当前周（不推荐，存在时区 bug）
+  // 周统计厅：传用户查看的周；月统计厅：传当前周的周一
+  weekStart?: string
 }
 
 // 更新数据记录入参

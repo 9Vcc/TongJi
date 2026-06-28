@@ -14,6 +14,46 @@ interface RecordInput {
   qm: number
 }
 
+/**
+ * 解析前端传入的 weekStart 字符串（YYYY-MM-DD），返回周一 00:00:00 的 Date
+ * 校验：必须是合法日期、必须是周一、不能晚于当前周（防止未来周录入）
+ * 未传或为空时返回 null（调用方降级到 getWeekStart()）
+ */
+function parseWeekStart(input: unknown): { ok: true; date: Date } | { ok: false; error: string } | null {
+  if (input === undefined || input === null || input === '') return null
+  if (typeof input !== 'string') {
+    return { ok: false, error: 'weekStart 必须为字符串 (YYYY-MM-DD)' }
+  }
+  // YYYY-MM-DD 解析为本地时间 00:00:00
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input)
+  if (!match) {
+    return { ok: false, error: 'weekStart 格式必须为 YYYY-MM-DD' }
+  }
+  const y = Number(match[1])
+  const m = Number(match[2])
+  const d = Number(match[3])
+  const date = new Date(y, m - 1, d)
+  if (
+    date.getFullYear() !== y ||
+    date.getMonth() !== m - 1 ||
+    date.getDate() !== d
+  ) {
+    return { ok: false, error: 'weekStart 不是有效日期' }
+  }
+  // 校验是周一（getWeekStart 返回周一）
+  const day = date.getDay()
+  if (day !== 1) {
+    return { ok: false, error: 'weekStart 必须为周一' }
+  }
+  // 校验不能晚于当前周（防止未来周录入）
+  const currentWeekStart = getWeekStart()
+  date.setHours(0, 0, 0, 0)
+  if (date > currentWeekStart) {
+    return { ok: false, error: '不能录入未来周数据' }
+  }
+  return { ok: true, date }
+}
+
 function isNonNegInt(v: unknown): boolean {
   return typeof v === 'number' && Number.isInteger(v) && v >= 0
 }
@@ -179,7 +219,14 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const currentUser = request.user
       const body = request.body as Record<string, unknown>
-      const weekStart = getWeekStart()
+      // 解析前端传入的 weekStart（YYYY-MM-DD），未传则降级到服务器当前周
+      // 修复：原来硬编码 getWeekStart()，导致 Docker UTC 时区下周一凌晨录入数据进入上周
+      // 同时支持编辑历史周数据（前端传入用户查看的周）
+      const parsedWeekStart = parseWeekStart(body.weekStart)
+      if (parsedWeekStart && !parsedWeekStart.ok) {
+        return reply.code(400).send({ error: parsedWeekStart.error })
+      }
+      const weekStart = parsedWeekStart && parsedWeekStart.ok ? parsedWeekStart.date : getWeekStart()
 
       // 批量录入
       if (Array.isArray(body.records)) {
@@ -308,6 +355,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
       // 遍历所有部分，收集文件与 branchId 字段
       let fileBuffer: Buffer | null = null
       let requestedBranchId: number | undefined
+      let requestedWeekStart: string | undefined
       const parts = request.parts()
       for await (const part of parts) {
         if (part.type === 'file') {
@@ -317,6 +365,8 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         } else if (part.type === 'field') {
           if (part.fieldname === 'branchId') {
             requestedBranchId = Number(part.value)
+          } else if (part.fieldname === 'weekStart') {
+            requestedWeekStart = String(part.value)
           }
         }
       }
@@ -344,7 +394,12 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         blankrows: false,
       })
 
-      const weekStart = getWeekStart()
+      // 解析前端传入的 weekStart（修复时区 bug + 支持编辑历史周）
+      const parsedWeekStartExcel = parseWeekStart(requestedWeekStart)
+      if (parsedWeekStartExcel && !parsedWeekStartExcel.ok) {
+        return reply.code(400).send({ error: parsedWeekStartExcel.error })
+      }
+      const weekStart = parsedWeekStartExcel && parsedWeekStartExcel.ok ? parsedWeekStartExcel.date : getWeekStart()
       let success = 0
       let failed = 0
       const failures: { row: number; name: string; reason: string }[] = []
@@ -411,9 +466,10 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
     { preHandler: [authenticate, requireRole(Role.GUANLI)] },
     async (request, reply) => {
       const currentUser = request.user
-      const { data, branchId: requestedBranchId } = request.body as {
+      const { data, branchId: requestedBranchId, weekStart: requestedWeekStart } = request.body as {
         data: string
         branchId?: number
+        weekStart?: string
       }
 
       if (!data) {
@@ -429,7 +485,12 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: '请指定分部' })
       }
 
-      const weekStart = getWeekStart()
+      // 解析前端传入的 weekStart（修复时区 bug + 支持编辑历史周）
+      const parsedWeekStartPaste = parseWeekStart(requestedWeekStart)
+      if (parsedWeekStartPaste && !parsedWeekStartPaste.ok) {
+        return reply.code(400).send({ error: parsedWeekStartPaste.error })
+      }
+      const weekStart = parsedWeekStartPaste && parsedWeekStartPaste.ok ? parsedWeekStartPaste.date : getWeekStart()
       let success = 0
       let failed = 0
       const failures: { row: number; name: string; reason: string }[] = []

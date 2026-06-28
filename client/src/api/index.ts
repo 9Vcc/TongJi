@@ -147,20 +147,22 @@ export const dataRecordsApi = {
   create(data: CreateRecordInput) {
     return request.post<unknown, DataRecord>('/data-records', data)
   },
-  importExcel(file: File, branchId?: number) {
+  importExcel(file: File, branchId?: number, weekStart?: string) {
     const formData = new FormData()
     formData.append('file', file)
     if (branchId) formData.append('branchId', String(branchId))
+    if (weekStart) formData.append('weekStart', weekStart)
     return request.post<unknown, ImportResult>(
       '/data-records/import-excel',
       formData,
       { headers: { 'Content-Type': 'multipart/form-data' } }
     )
   },
-  importPaste(data: string, branchId?: number) {
+  importPaste(data: string, branchId?: number, weekStart?: string) {
     return request.post<unknown, ImportResult>('/data-records/import-paste', {
       data,
       branchId,
+      weekStart,
     })
   },
   update(id: number, data: UpdateRecordInput) {

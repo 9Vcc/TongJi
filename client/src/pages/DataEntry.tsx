@@ -195,6 +195,29 @@ export default function DataEntry() {
   // 是否在编辑弹窗中显示冠名输入：仅按月统计厅且已配置冠名等级
   const editNamingsEnabled = branchCycle === "MONTH" && namingLevels.length > 0;
 
+  // 录入目标周（YYYY-MM-DD，周一）
+  // 周统计厅：用户查看的周（支持编辑历史周数据）
+  // 月统计厅：查看当前月录入到当前周；查看历史月录入到该月最后一周（支持编辑历史月数据）
+  // 修复：原来不传 weekStart，后端用服务器时区 getWeekStart()，
+  //   Docker UTC 时区下周一凌晨录入数据会进入上周
+  const recordWeekStart = useMemo(() => {
+    if (branchCycle === "MONTH") {
+      const currentWeekStart = getWeekStart();
+      const monthStart = new Date(weekStart.getFullYear(), weekStart.getMonth(), 1);
+      const monthEnd = new Date(weekStart.getFullYear(), weekStart.getMonth() + 1, 0);
+      const firstWeekStart = getWeekStart(monthStart);
+      const lastWeekStart = getWeekStart(monthEnd);
+      // 当前周在该月覆盖范围内：录入到当前周
+      if (currentWeekStart >= firstWeekStart && currentWeekStart <= lastWeekStart) {
+        return formatDate(currentWeekStart);
+      }
+      // 历史月：录入到该月最后一周（数据在该月覆盖范围内，月视图可查到）
+      return formatDate(lastWeekStart);
+    }
+    // 周统计厅：用户查看的周（支持编辑历史周数据）
+    return formatDate(weekStart);
+  }, [branchCycle, weekStart]);
+
   const loadData = async () => {
     // 会长未选择厅时不加载任何数据（数据录入页面仅支持独立厅显示）
     if (!effectiveBranchId) {
@@ -630,14 +653,22 @@ export default function DataEntry() {
           setImporting(false);
           return;
         }
-        result = await dataRecordsApi.importExcel(excelFile, effectiveBranchId);
+        result = await dataRecordsApi.importExcel(
+          excelFile,
+          effectiveBranchId,
+          recordWeekStart,
+        );
       } else {
         if (!pasteData.trim()) {
           toast.error("请粘贴数据");
           setImporting(false);
           return;
         }
-        result = await dataRecordsApi.importPaste(pasteData, effectiveBranchId);
+        result = await dataRecordsApi.importPaste(
+          pasteData,
+          effectiveBranchId,
+          recordWeekStart,
+        );
       }
       toast.success(
         `导入完成：成功 ${result.success} 条，失败 ${result.failed} 条`,
@@ -927,6 +958,7 @@ export default function DataEntry() {
               sg: item.sg,
               mx: item.mx,
               qm: item.qm,
+              weekStart: recordWeekStart,
             });
           }
           successCount++;
@@ -1052,6 +1084,7 @@ export default function DataEntry() {
             sg: item.sg,
             mx: item.mx,
             qm: item.qm,
+            weekStart: recordWeekStart,
           });
           successCount++;
         } catch {
