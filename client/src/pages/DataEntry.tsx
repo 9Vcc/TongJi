@@ -465,6 +465,7 @@ export default function DataEntry() {
       // 保存扣减（仅会长+超管，且必须有厅和人员）
       // 扣减周期必须基于厅的统计周期（branchCycle），而非用户视图周期（isMonthCycle），
       // 否则与 data-query.ts 查询时的周期匹配不一致，会导致扣减保存了但查不到
+      // 扣减为 0 时删除记录（实现"可增删"语义），正值时 upsert
       if (canEditDeduction && effectiveBranchId && targetPersonnelId) {
         const cycleParam: 'WEEK' | 'MONTH' =
           branchCycle === 'MONTH' ? 'MONTH' : 'WEEK'
@@ -474,13 +475,24 @@ export default function DataEntry() {
             : weekStart
         )
         try {
-          await deductionsApi.upsert({
-            branchId: effectiveBranchId,
-            personnelId: targetPersonnelId,
-            weekStart: weekParam,
-            cycle: cycleParam,
-            amount: deduction,
-          })
+          if (deduction === 0) {
+            // 扣减为 0：删除该周期扣减记录（清零）
+            await deductionsApi.remove({
+              branchId: effectiveBranchId,
+              personnelId: targetPersonnelId,
+              weekStart: weekParam,
+              cycle: cycleParam,
+            })
+          } else {
+            // 正值：upsert 覆盖旧值（可增可减）
+            await deductionsApi.upsert({
+              branchId: effectiveBranchId,
+              personnelId: targetPersonnelId,
+              weekStart: weekParam,
+              cycle: cycleParam,
+              amount: deduction,
+            })
+          }
         } catch (err) {
           // 扣减保存失败不阻塞主流程，仅提示
           toast.error('数据已更新，但扣减保存失败：' + getErrorMessage(err))

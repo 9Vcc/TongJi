@@ -135,16 +135,6 @@ export default async function deductionRoutes(fastify: FastifyInstance) {
         },
       })
 
-      // 临时调试日志：确认扣减已保存
-      console.log('[deductions PUT] saved:', {
-        branchId: body.branchId,
-        personnelId: body.personnelId,
-        cycle: body.cycle,
-        inputWeekStart: body.weekStart,
-        periodStart: result.periodStart,
-        amount: result.amount,
-      })
-
       return reply.send(result)
     }
   )

@@ -121,17 +121,6 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
         }
       }
 
-      // 临时调试日志：确认扣减查询参数与结果
-      console.log('[data-query] deduction lookup:', {
-        weekStart: weekStart.toISOString(),
-        monthStart: monthStart.toISOString(),
-        branchFilter,
-        branchCycleMap: Object.fromEntries(branchCycleMap),
-        weekDeductionsCount: weekDeductions.length,
-        monthDeductionsCount: monthDeductions.length,
-        deductionMapEntries: [...deductionMap.entries()],
-      })
-
       const result = records.map((r) => {
         const rule = ruleMap.get(r.branchId)
         // 冠名福利
