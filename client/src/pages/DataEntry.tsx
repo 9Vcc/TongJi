@@ -485,10 +485,10 @@ export default function DataEntry() {
       return;
     }
 
-    // 扣减金额校验（会长+超管可编辑）
+    // 扣减金额校验（会长+超管+管理可编辑）
     const deductionRaw = editForm.deduction.trim();
     const deduction = deductionRaw === "" ? 0 : Number(deductionRaw);
-    const canEditDeduction = isHuizhang || user?.role === "CHAOGUAN";
+    const canEditDeduction = isHuizhang || user?.role === "CHAOGUAN" || user?.role === "GUANLI";
     if (canEditDeduction && (!Number.isInteger(deduction) || deduction < 0)) {
       toast.error("扣减金额必须为非负整数");
       return;
@@ -1829,8 +1829,8 @@ export default function DataEntry() {
             </div>
           )}
 
-          {/* 福利扣减：仅会长+超管可编辑，其他角色只读展示 */}
-          {(isHuizhang || user?.role === "CHAOGUAN") && (
+          {/* 福利扣减：会长+超管+管理可编辑 */}
+          {(isHuizhang || user?.role === "CHAOGUAN" || user?.role === "GUANLI") && (
             <div>
               <label className="block text-xs text-textSecondary mb-1">
                 福利扣减

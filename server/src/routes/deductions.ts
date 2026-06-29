@@ -63,11 +63,11 @@ export default async function deductionRoutes(fastify: FastifyInstance) {
     }
   )
 
-  // PUT /api/deductions - upsert 扣减金额（会长+超管）
+  // PUT /api/deductions - upsert 扣减金额（会长+超管+管理）
   // body: { branchId, personnelId, weekStart, cycle, amount }
   fastify.put(
     '/api/deductions',
-    { preHandler: [authenticate, requireRole(Role.CHAOGUAN)] },
+    { preHandler: [authenticate, requireRole(Role.GUANLI)] },
     async (request, reply) => {
       const currentUser = request.user
       const body = request.body as {
@@ -89,8 +89,8 @@ export default async function deductionRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: '扣减金额必须为非负整数' })
       }
 
-      // 权限校验：超管只能操作本厅
-      if (currentUser.role === Role.CHAOGUAN) {
+      // 权限校验：非会长只能操作本厅（超管/管理限定 branchId === currentUser.branchId）
+      if (currentUser.role !== Role.HUIZHANG) {
         if (
           currentUser.branchId === null ||
           body.branchId !== currentUser.branchId
@@ -139,11 +139,11 @@ export default async function deductionRoutes(fastify: FastifyInstance) {
     }
   )
 
-  // DELETE /api/deductions - 删除扣减（清零，会长+超管）
+  // DELETE /api/deductions - 删除扣减（清零，会长+超管+管理）
   // body: { branchId, personnelId, weekStart, cycle }
   fastify.delete(
     '/api/deductions',
-    { preHandler: [authenticate, requireRole(Role.CHAOGUAN)] },
+    { preHandler: [authenticate, requireRole(Role.GUANLI)] },
     async (request, reply) => {
       const currentUser = request.user
       const body = request.body as {
@@ -157,8 +157,8 @@ export default async function deductionRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: '缺少必要参数' })
       }
 
-      // 权限校验：超管只能操作本厅
-      if (currentUser.role === Role.CHAOGUAN) {
+      // 权限校验：非会长只能操作本厅（超管/管理限定 branchId === currentUser.branchId）
+      if (currentUser.role !== Role.HUIZHANG) {
         if (
           currentUser.branchId === null ||
           body.branchId !== currentUser.branchId
