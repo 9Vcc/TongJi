@@ -69,6 +69,64 @@
     font-family: 'Fira Code', ui-monospace, SFMono-Regular, monospace;
     font-variant-numeric: tabular-nums;
   }
+
+  /* 隐藏 number 输入框的数值调整按钮（spin buttons） */
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type='number'] {
+    -moz-appearance: textfield;
+  }
+
+  /* 圆形复选框：自定义外观，支持主题色与暗色模式 */
+  input[type='checkbox'].checkbox-round {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    width: 1.15rem;
+    height: 1.15rem;
+    border: 1.5px solid rgb(var(--color-border));
+    border-radius: 9999px;
+    background-color: rgb(var(--color-card));
+    cursor: pointer;
+    display: inline-block;
+    vertical-align: middle;
+    position: relative;
+    flex-shrink: 0;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+  }
+
+  /* 悬停：边框高亮 */
+  input[type='checkbox'].checkbox-round:hover {
+    border-color: rgb(var(--color-primary));
+  }
+
+  /* 选中状态：背景主色 + 边框主色 */
+  input[type='checkbox'].checkbox-round:checked {
+    background-color: rgb(var(--color-primary));
+    border-color: rgb(var(--color-primary));
+  }
+
+  /* 选中状态的勾（使用 SVG mask 绘制白色对勾） */
+  input[type='checkbox'].checkbox-round:checked::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 0.45rem;
+    height: 0.7rem;
+    transform: translate(-50%, -65%) rotate(45deg);
+    border: solid white;
+    border-width: 0 2px 2px 0;
+  }
+
+  /* 聚焦可见样式（键盘导航） */
+  input[type='checkbox'].checkbox-round:focus-visible {
+    outline: 2px solid rgb(var(--color-primary));
+    outline-offset: 2px;
+  }
 }
 
 /* ============ 自定义滚动条 ============ */

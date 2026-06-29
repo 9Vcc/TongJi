@@ -13,6 +13,7 @@ import {
   Save,
   UserPlus,
   Search,
+  X,
 } from "lucide-react";
 import {
   dataRecordsApi,
@@ -58,6 +59,8 @@ type RecordForm = {
   namings: Record<string, string>;
   // 福利扣减金额（字符串便于输入控制）
   deduction: string;
+  // 操作备注（覆盖式存储到 DataRecord.remark）
+  remark: string;
 };
 
 const emptyForm: RecordForm = {
@@ -67,6 +70,7 @@ const emptyForm: RecordForm = {
   qm: "",
   namings: {},
   deduction: "",
+  remark: "",
 };
 
 // 冠名展示格式：如 "周冠×2 月冠×1"，无则返回 '-'
@@ -139,6 +143,7 @@ export default function DataEntry() {
   const [excelFile, setExcelFile] = useState<File | null>(null);
   const [pasteData, setPasteData] = useState("");
   const [importing, setImporting] = useState(false);
+  const [importRemark, setImportRemark] = useState("");
   const [exporting, setExporting] = useState<"excel" | "csv" | null>(null);
 
   // 导出弹窗状态：可选按周/按月 + 历史周/月
@@ -162,6 +167,8 @@ export default function DataEntry() {
     Record<string, { sg: string; mx: string; qm: string }>
   >({});
   const [batchSubmitting, setBatchSubmitting] = useState(false);
+  // 批量编辑/添加的共用备注
+  const [batchRemark, setBatchRemark] = useState("");
 
   // 批量添加状态：表格化批量录入
   const [batchAddOpen, setBatchAddOpen] = useState(false);
@@ -217,6 +224,15 @@ export default function DataEntry() {
     // 周统计厅：用户查看的周（支持编辑历史周数据）
     return formatDate(weekStart);
   }, [branchCycle, weekStart]);
+
+  // 最近一条录入的备注：按更新时间倒序取第一条有 remark 的记录
+  // 显示在搜索框后面，让用户快速看到当前周最近一次录入的备注
+  const latestRemark = useMemo(() => {
+    const withRemark = records
+      .filter((r) => r.remark && r.remark.trim().length > 0)
+      .sort((a, b) => (b.id - a.id)); // id 越大越新（自增主键）
+    return withRemark[0]?.remark ?? null;
+  }, [records]);
 
   const loadData = async () => {
     // 会长未选择厅时不加载任何数据（数据录入页面仅支持独立厅显示）
@@ -437,6 +453,7 @@ export default function DataEntry() {
       qm: record.qm ? String(record.qm) : "",
       namings: namingMap,
       deduction: record.deduction ? String(record.deduction) : "",
+      remark: record.remark ?? "",
     });
     setEditModalOpen(true);
   };
@@ -446,6 +463,11 @@ export default function DataEntry() {
     if (!editingId) return;
     if (!editForm.personnelId) {
       toast.error("请选择人员");
+      return;
+    }
+    // 备注必填
+    if (!editForm.remark.trim()) {
+      toast.error("请填写备注");
       return;
     }
     // 厅规则关闭收光/全麦转换时，对应字段强制为 0 不参与录入
@@ -494,8 +516,11 @@ export default function DataEntry() {
         qm: number;
         personnelId?: number;
         namings?: { levelId: number; count: number }[];
+        remark?: string;
       } = { sg, mx, qm };
       if (namings) payload.namings = namings;
+      // 备注始终传递（覆盖式存储：空字符串会清空备注）
+      payload.remark = editForm.remark.trim();
       const original = records.find((r) => r.id === editingId);
       const targetPersonnelId =
         original && original.personnelId !== Number(editForm.personnelId)
@@ -554,11 +579,30 @@ export default function DataEntry() {
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!window.confirm("确认删除该条数据记录？")) return;
+  // 删除确认弹窗（含备注输入）
+  const [deleteTargetId, setDeleteTargetId] = useState<number | null>(null);
+  const [deleteRemark, setDeleteRemark] = useState("");
+
+  const handleDelete = (id: number) => {
+    setDeleteTargetId(id);
+    setDeleteRemark("");
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (deleteTargetId === null) return;
+    // 备注必填
+    if (!deleteRemark.trim()) {
+      toast.error("请填写备注");
+      return;
+    }
     try {
-      await dataRecordsApi.delete(id);
+      await dataRecordsApi.delete(
+        deleteTargetId,
+        deleteRemark.trim(),
+      );
       toast.success("删除成功");
+      setDeleteTargetId(null);
+      setDeleteRemark("");
       await loadData();
     } catch (err) {
       toast.error(getErrorMessage(err));
@@ -644,6 +688,11 @@ export default function DataEntry() {
       toast.error(isHuizhang ? "请选择厅" : "当前账户未关联厅");
       return;
     }
+    // 备注必填
+    if (!importRemark.trim()) {
+      toast.error("请填写备注");
+      return;
+    }
     setImporting(true);
     try {
       let result: ImportResult;
@@ -657,6 +706,7 @@ export default function DataEntry() {
           excelFile,
           effectiveBranchId,
           recordWeekStart,
+          importRemark.trim() || undefined,
         );
       } else {
         if (!pasteData.trim()) {
@@ -668,6 +718,7 @@ export default function DataEntry() {
           pasteData,
           effectiveBranchId,
           recordWeekStart,
+          importRemark.trim() || undefined,
         );
       }
       toast.success(
@@ -891,6 +942,11 @@ export default function DataEntry() {
       toast.error(isHuizhang ? "请选择厅" : "当前账户未关联厅");
       return;
     }
+    // 备注必填
+    if (!batchRemark.trim()) {
+      toast.error("请填写备注");
+      return;
+    }
     // 校验所有表单数据
     const entries = Object.entries(batchForms);
     if (entries.length === 0) {
@@ -944,14 +1000,15 @@ export default function DataEntry() {
       for (const item of parsed) {
         try {
           if (item.recordId > 0) {
-            // 已有记录：更新
+            // 已有记录：更新（含备注）
             await dataRecordsApi.update(item.recordId, {
               sg: item.sg,
               mx: item.mx,
               qm: item.qm,
+              remark: batchRemark.trim(),
             });
           } else {
-            // 未录入：新建（按行匹配的 branchId）
+            // 未录入：新建（按行匹配的 branchId，含备注）
             await dataRecordsApi.create({
               personnelId: item.personnelId,
               branchId: item.branchId,
@@ -959,6 +1016,7 @@ export default function DataEntry() {
               mx: item.mx,
               qm: item.qm,
               weekStart: recordWeekStart,
+              remark: batchRemark.trim() || undefined,
             });
           }
           successCount++;
@@ -1024,6 +1082,11 @@ export default function DataEntry() {
       toast.error(isHuizhang ? "请选择厅" : "当前账户未关联厅");
       return;
     }
+    // 备注必填
+    if (!batchRemark.trim()) {
+      toast.error("请填写备注");
+      return;
+    }
     const entries = Object.entries(batchAddForms);
     if (entries.length === 0) {
       toast.error("无数据可保存");
@@ -1085,6 +1148,7 @@ export default function DataEntry() {
             mx: item.mx,
             qm: item.qm,
             weekStart: recordWeekStart,
+            remark: batchRemark.trim() || undefined,
           });
           successCount++;
         } catch {
@@ -1223,6 +1287,16 @@ export default function DataEntry() {
               添加（{selectedKeys.size}）
             </button>
           )}
+          {selectedKeys.size > 0 && (
+            <button
+              onClick={() => setSelectedKeys(new Set())}
+              className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg bg-card text-sm text-textSecondary hover:border-danger hover:text-danger transition-colors duration-200 cursor-pointer"
+              title="取消所有选择"
+            >
+              <X size={16} />
+              取消选择
+            </button>
+          )}
           <button
             onClick={() => setImportOpen(true)}
             disabled={!effectiveBranchId && !isHuizhang}
@@ -1261,6 +1335,16 @@ export default function DataEntry() {
               className="w-full pl-9 pr-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
             />
           </div>
+          {/* 最近一条录入备注：搜索框后展示 */}
+          {latestRemark && (
+            <div
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/5 border border-primary/20 rounded-lg text-xs text-primary max-w-md truncate"
+              title={latestRemark}
+            >
+              <span className="text-textMuted">最近备注：</span>
+              <span className="truncate">{latestRemark}</span>
+            </div>
+          )}
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-textSecondary">排序</span>
             <select
@@ -1315,7 +1399,7 @@ export default function DataEntry() {
                             )
                           }
                           onChange={handleToggleSelectAll}
-                          className="w-4 h-4 cursor-pointer accent-primary"
+                          className="checkbox-round cursor-pointer"
                           title="全选/取消全选（当前页）"
                         />
                       </th>
@@ -1368,7 +1452,7 @@ export default function DataEntry() {
                               onChange={() =>
                                 handleToggleSelect(r.branchId, r.personnelId)
                               }
-                              className="w-4 h-4 cursor-pointer accent-primary"
+                              className="checkbox-round cursor-pointer"
                             />
                           </td>
                           <td className="px-4 py-3 text-textPrimary">
@@ -1529,6 +1613,23 @@ export default function DataEntry() {
               <ClipboardPaste size={16} />
               表格粘贴
             </button>
+          </div>
+
+          {/* 导入备注（共用，覆盖原有备注） */}
+          <div>
+            <label className="block text-xs text-textSecondary mb-1">
+              备注
+              <span className="text-danger ml-0.5">*</span>
+              <span className="ml-1 text-[10px] text-textMuted">（共用，覆盖原有备注）</span>
+            </label>
+            <input
+              type="text"
+              maxLength={100}
+              value={importRemark}
+              onChange={(e) => setImportRemark(e.target.value)}
+              placeholder="必填，最多 100 字"
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+            />
           </div>
 
           {importTab === "excel" ? (
@@ -1745,6 +1846,80 @@ export default function DataEntry() {
               />
             </div>
           )}
+
+          {/* 操作备注：覆盖式存储到记录，显示在数据录入页搜索框后 */}
+          <div className="sm:col-span-2">
+            <label className="block text-xs text-textSecondary mb-1">
+              备注
+              <span className="text-danger ml-0.5">*</span>
+              <span className="ml-1 text-[10px] text-textMuted">
+                （将覆盖该记录原备注）
+              </span>
+            </label>
+            <input
+              type="text"
+              maxLength={100}
+              value={editForm.remark}
+              onChange={(e) =>
+                setEditForm({ ...editForm, remark: e.target.value })
+              }
+              placeholder="必填，最多 100 字"
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+            />
+          </div>
+        </div>
+      </Modal>
+
+      {/* 删除确认弹窗（含备注输入） */}
+      <Modal
+        open={deleteTargetId !== null}
+        title="删除数据记录"
+        onClose={() => {
+          setDeleteTargetId(null);
+          setDeleteRemark("");
+        }}
+        footer={
+          <>
+            <button
+              onClick={() => {
+                setDeleteTargetId(null);
+                setDeleteRemark("");
+              }}
+              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleDeleteConfirm}
+              className="px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-medium hover:bg-red-600 transition-colors duration-200 cursor-pointer"
+            >
+              确认删除
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-textSecondary">
+            确认删除该条数据记录？此操作不可撤销。
+          </p>
+          <div>
+            <label className="block text-xs text-textSecondary mb-1">
+              备注
+              <span className="text-danger ml-0.5">*</span>
+              <span className="ml-1 text-[10px] text-textMuted">（记录删除原因）</span>
+            </label>
+            <input
+              type="text"
+              maxLength={100}
+              value={deleteRemark}
+              onChange={(e) => setDeleteRemark(e.target.value)}
+              placeholder="必填，最多 100 字"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleDeleteConfirm();
+              }}
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+            />
+          </div>
         </div>
       </Modal>
 
@@ -1780,6 +1955,22 @@ export default function DataEntry() {
           <p className="text-xs text-textMuted">
             每行可独立编辑收光/麦序/全麦，未录入的行填写后将自动创建记录。同一人员在多个厅的数据互不影响。
           </p>
+          {/* 批量操作备注（共用） */}
+          <div>
+            <label className="block text-xs text-textSecondary mb-1">
+              备注
+              <span className="text-danger ml-0.5">*</span>
+              <span className="ml-1 text-[10px] text-textMuted">（共用，覆盖原有备注）</span>
+            </label>
+            <input
+              type="text"
+              maxLength={100}
+              value={batchRemark}
+              onChange={(e) => setBatchRemark(e.target.value)}
+              placeholder="必填，最多 100 字"
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+            />
+          </div>
           <div className="max-h-[60vh] overflow-y-auto scrollbar-thin space-y-2">
             {allRows
               .filter((r) =>
@@ -1914,6 +2105,22 @@ export default function DataEntry() {
             输入值）。未录入的行将以此数值创建新记录。留空视为
             0（不累加）。同一人员在多个厅的数据互不影响。
           </p>
+          {/* 批量添加备注（共用） */}
+          <div>
+            <label className="block text-xs text-textSecondary mb-1">
+              备注
+              <span className="text-danger ml-0.5">*</span>
+              <span className="ml-1 text-[10px] text-textMuted">（共用，覆盖原有备注）</span>
+            </label>
+            <input
+              type="text"
+              maxLength={100}
+              value={batchRemark}
+              onChange={(e) => setBatchRemark(e.target.value)}
+              placeholder="必填，最多 100 字"
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+            />
+          </div>
           <div className="max-h-[60vh] overflow-auto scrollbar-thin border border-border rounded-lg">
             <table className="w-full text-sm">
               <thead className="bg-surface border-b border-border sticky top-0 z-10">

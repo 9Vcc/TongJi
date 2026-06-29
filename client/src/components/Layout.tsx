@@ -15,13 +15,16 @@ import {
   ChevronLeft,
   ChevronRight,
   CheckCheck,
+  Pencil,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
-import { notificationsApi, getErrorMessage } from '../api'
+import { notificationsApi, authApi, getErrorMessage } from '../api'
 import { useToast } from '../hooks/useToast'
 import type { Notification } from '../types'
 import { getRoleText, formatDateTime } from '../utils'
 import ThemeToggle from './ThemeToggle'
+import Modal from './Modal'
+import { Spinner } from './Skeleton'
 
 interface LayoutProps {
   children: ReactNode
@@ -55,7 +58,7 @@ const pageTitleMap: Record<string, string> = {
 }
 
 export default function Layout({ children }: LayoutProps) {
-  const { user, logout } = useAuth()
+  const { user, logout, refreshUser } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const toast = useToast()
@@ -63,6 +66,30 @@ export default function Layout({ children }: LayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [notifications, setNotifications] = useState<Notification[]>([])
+
+  // 编辑昵称弹窗
+  const [nicknameModalOpen, setNicknameModalOpen] = useState(false)
+  const [nicknameInput, setNicknameInput] = useState('')
+  const [nicknameSubmitting, setNicknameSubmitting] = useState(false)
+
+  const openNicknameModal = () => {
+    setNicknameInput(user?.nickname ?? '')
+    setNicknameModalOpen(true)
+  }
+
+  const handleNicknameSubmit = async () => {
+    setNicknameSubmitting(true)
+    try {
+      await authApi.updateMe({ nickname: nicknameInput.trim() })
+      await refreshUser()
+      toast.success('昵称已更新')
+      setNicknameModalOpen(false)
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setNicknameSubmitting(false)
+    }
+  }
 
   const unreadCount = notifications.filter((n) => !n.isRead).length
   const pageTitle = pageTitleMap[location.pathname] || '统计系统'
@@ -198,7 +225,18 @@ export default function Layout({ children }: LayoutProps) {
             }`}
           >
             <div className="text-sm font-medium text-textPrimary truncate">
-              {user?.username}
+              {user?.nickname?.trim() ? (
+                <>
+                  {user.nickname}
+                  {!sidebarCollapsed && (
+                    <span className="ml-1 text-xs text-textMuted font-normal">
+                      ({user.username})
+                    </span>
+                  )}
+                </>
+              ) : (
+                user?.username
+              )}
             </div>
             <AnimatePresence initial={false}>
               {!sidebarCollapsed && (
@@ -216,30 +254,56 @@ export default function Layout({ children }: LayoutProps) {
               )}
             </AnimatePresence>
           </div>
-          <button
-            onClick={handleLogout}
-            aria-label="退出登录"
-            title={sidebarCollapsed ? '退出登录' : undefined}
-            className={`flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-danger hover:bg-danger/10 transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-danger/50 ${
-              sidebarCollapsed ? 'lg:justify-center' : ''
-            }`}
-          >
-            <LogOut size={16} className="shrink-0" />
-            <AnimatePresence initial={false}>
-              {!sidebarCollapsed && (
-                <motion.span
-                  key="logout-text"
-                  initial={{ opacity: 0, width: 0 }}
-                  animate={{ opacity: 1, width: 'auto' }}
-                  exit={{ opacity: 0, width: 0 }}
-                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                  className="whitespace-nowrap overflow-hidden"
-                >
-                  退出登录
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </button>
+          <div className={`flex items-center gap-1 mb-1 ${sidebarCollapsed ? 'lg:flex-col lg:gap-1' : ''}`}>
+            <button
+              onClick={openNicknameModal}
+              aria-label="编辑昵称"
+              title={sidebarCollapsed ? '编辑昵称' : undefined}
+              className={`flex items-center gap-2 flex-1 px-3 py-2 rounded-lg text-sm text-textSecondary hover:text-primary hover:bg-primary/10 transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
+                sidebarCollapsed ? 'lg:justify-center' : ''
+              }`}
+            >
+              <Pencil size={16} className="shrink-0" />
+              <AnimatePresence initial={false}>
+                {!sidebarCollapsed && (
+                  <motion.span
+                    key="nickname-text"
+                    initial={{ opacity: 0, width: 0 }}
+                    animate={{ opacity: 1, width: 'auto' }}
+                    exit={{ opacity: 0, width: 0 }}
+                    transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                    className="whitespace-nowrap overflow-hidden"
+                  >
+                    编辑昵称
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </button>
+            <button
+              onClick={handleLogout}
+              aria-label="退出登录"
+              title={sidebarCollapsed ? '退出登录' : undefined}
+              className={`flex items-center gap-2 flex-1 px-3 py-2 rounded-lg text-sm text-danger hover:bg-danger/10 transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-danger/50 ${
+                sidebarCollapsed ? 'lg:justify-center' : ''
+              }`}
+            >
+              <LogOut size={16} className="shrink-0" />
+              <AnimatePresence initial={false}>
+                {!sidebarCollapsed && (
+                  <motion.span
+                    key="logout-text"
+                    initial={{ opacity: 0, width: 0 }}
+                    animate={{ opacity: 1, width: 'auto' }}
+                    exit={{ opacity: 0, width: 0 }}
+                    transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                    className="whitespace-nowrap overflow-hidden"
+                  >
+                    退出登录
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </button>
+          </div>
         </div>
 
         {/* 桌面端折叠/展开按钮（浮于侧边栏右边缘，醒目样式） */}
@@ -406,6 +470,67 @@ export default function Layout({ children }: LayoutProps) {
         </motion.button>
         )}
       </AnimatePresence>
+
+      {/* 编辑昵称弹窗 */}
+      <Modal
+        open={nicknameModalOpen}
+        title="编辑昵称"
+        onClose={() => setNicknameModalOpen(false)}
+        footer={
+          <>
+            <button
+              onClick={() => setNicknameModalOpen(false)}
+              disabled={nicknameSubmitting}
+              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleNicknameSubmit}
+              disabled={nicknameSubmitting}
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+            >
+              {nicknameSubmitting && <Spinner className="h-4 w-4" />}
+              {nicknameSubmitting ? '保存中...' : '保存'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs text-textSecondary mb-1">
+              用户名
+              <span className="ml-1 text-[10px] text-textMuted">（不可修改）</span>
+            </label>
+            <input
+              type="text"
+              value={user?.username ?? ''}
+              disabled
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-surface text-textMuted cursor-not-allowed"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-textSecondary mb-1">
+              昵称
+              <span className="ml-1 text-[10px] text-textMuted">（选填，仅展示用）</span>
+            </label>
+            <input
+              type="text"
+              maxLength={50}
+              value={nicknameInput}
+              onChange={(e) => setNicknameInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !nicknameSubmitting) {
+                  handleNicknameSubmit()
+                }
+              }}
+              placeholder="可选，最多 50 字"
+              autoFocus
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+            />
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

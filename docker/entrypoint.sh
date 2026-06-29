@@ -44,21 +44,27 @@ NGINX_PID=$!
 node dist/src/index.js &
 NODE_PID=$!
 
-# 等待后端就绪后初始化会长账户
-echo "[4/4] 初始化会长账户..."
-sleep 3
-node -e "
-    const http = require('http');
-    const req = http.request({ hostname: '127.0.0.1', port: 3001, path: '/api/seed', method: 'POST' }, (res) => {
-        let data = '';
-        res.on('data', (chunk) => data += chunk);
-        res.on('end', () => {
-            try { console.log('  ' + JSON.parse(data).message); } catch(e) { console.log('  会长账户检查完成'); }
+# 等待后端就绪后初始化会长账户（仅当环境变量 SEED_ADMIN=1 时执行）
+# 首次部署：在 docker-compose.yml 设置 SEED_ADMIN=1，或运行 docker exec <容器> sh -c 'SEED_ADMIN=1 ...'
+# 后续更新部署：移除该环境变量或留空，启动时不再触发 seed
+if [ "$SEED_ADMIN" = "1" ]; then
+    echo "[4/4] 初始化会长账户..."
+    sleep 3
+    node -e "
+        const http = require('http');
+        const req = http.request({ hostname: '127.0.0.1', port: 3001, path: '/api/seed', method: 'POST' }, (res) => {
+            let data = '';
+            res.on('data', (chunk) => data += chunk);
+            res.on('end', () => {
+                try { console.log('  ' + JSON.parse(data).message); } catch(e) { console.log('  会长账户检查完成'); }
+            });
         });
-    });
-    req.on('error', () => console.log('  会长账户初始化跳过'));
-    req.end();
-" 2>/dev/null || true
+        req.on('error', () => console.log('  会长账户初始化跳过'));
+        req.end();
+    " 2>/dev/null || true
+else
+    echo "[4/4] 跳过会长账户初始化（如需初始化请设置环境变量 SEED_ADMIN=1）"
+fi
 
 echo "=========================================="
 echo "  服务已启动"

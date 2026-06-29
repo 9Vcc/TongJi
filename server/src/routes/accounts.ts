@@ -10,11 +10,12 @@ export default async function accountRoutes(fastify: FastifyInstance) {
     '/api/accounts',
     { preHandler: [authenticate, requireRole(Role.CHAOGUAN)] },
     async (request, reply) => {
-      const { username, password, role, branchId } = request.body as {
+      const { username, password, role, branchId, nickname } = request.body as {
         username: string
         password: string
         role: Role
         branchId?: number
+        nickname?: string
       }
       const currentUser = request.user
 
@@ -80,6 +81,7 @@ export default async function accountRoutes(fastify: FastifyInstance) {
       const account = await prisma.account.create({
         data: {
           username,
+          nickname: nickname?.trim() || null,
           passwordHash,
           role,
           branchId: targetBranchId,
@@ -87,6 +89,7 @@ export default async function accountRoutes(fastify: FastifyInstance) {
         select: {
           id: true,
           username: true,
+          nickname: true,
           role: true,
           branchId: true,
           status: true,
@@ -120,6 +123,7 @@ export default async function accountRoutes(fastify: FastifyInstance) {
         select: {
           id: true,
           username: true,
+          nickname: true,
           role: true,
           branchId: true,
           status: true,
@@ -182,6 +186,7 @@ export default async function accountRoutes(fastify: FastifyInstance) {
         select: {
           id: true,
           username: true,
+          nickname: true,
           role: true,
           branchId: true,
           status: true,
@@ -259,11 +264,12 @@ export default async function accountRoutes(fastify: FastifyInstance) {
     { preHandler: [authenticate, requireRole(Role.CHAOGUAN)] },
     async (request, reply) => {
       const { id } = request.params as { id: string }
-      const { username, password, role, branchId } = request.body as {
+      const { username, password, role, branchId, nickname } = request.body as {
         username?: string
         password?: string
         role?: Role
         branchId?: number | null
+        nickname?: string | null
       }
       const currentUser = request.user
 
@@ -300,6 +306,7 @@ export default async function accountRoutes(fastify: FastifyInstance) {
       // 构建更新数据
       const updateData: {
         username?: string
+        nickname?: string | null
         passwordHash?: string
         role?: Role
         branchId?: number | null
@@ -314,6 +321,14 @@ export default async function accountRoutes(fastify: FastifyInstance) {
           return reply.code(400).send({ error: '用户名已存在' })
         }
         updateData.username = username.trim()
+      }
+
+      // nickname 允许传 null 清空，传字符串覆盖；显式 undefined 表示未传不更新
+      if (nickname !== undefined) {
+        updateData.nickname =
+          typeof nickname === 'string' && nickname.trim().length > 0
+            ? nickname.trim().slice(0, 50)
+            : null
       }
 
       if (password !== undefined && password.length > 0) {
@@ -358,6 +373,7 @@ export default async function accountRoutes(fastify: FastifyInstance) {
         select: {
           id: true,
           username: true,
+          nickname: true,
           role: true,
           branchId: true,
           status: true,

@@ -15,6 +15,17 @@ interface RecordInput {
 }
 
 /**
+ * 校验备注字段：最大长度 100，去除首尾空白，空字符串视为 null
+ */
+function normalizeRemark(v: unknown): string | null {
+  if (v === undefined || v === null) return null
+  const s = String(v).trim()
+  if (s.length === 0) return null
+  if (s.length > 100) return s.slice(0, 100)
+  return s
+}
+
+/**
  * 解析前端传入的 weekStart 字符串（YYYY-MM-DD），返回周一 00:00:00 的 Date
  * 校验：必须是合法日期、必须是周一
  * 未传或为空时返回 null（调用方降级到 getWeekStart()）
@@ -109,7 +120,8 @@ async function upsertRecord(
   input: RecordInput,
   createdBy: number,
   weekStart: Date,
-  namingLevels: { id: number; threshold: number }[] = []
+  namingLevels: { id: number; threshold: number }[] = [],
+  remark: string | null = null
 ) {
   // 冠名转换：对本次录入的收光进行逐级扣减转换
   let sgToStore = input.sg
@@ -134,6 +146,8 @@ async function upsertRecord(
         sg: existing.sg + sgToStore,
         mx: existing.mx + input.mx,
         qm: existing.qm + input.qm,
+        // 覆盖式更新备注：最近一次录入的备注
+        ...(remark !== null ? { remark } : {}),
       },
     })
     // 累加冠名数量到关联表
@@ -155,6 +169,7 @@ async function upsertRecord(
       mx: input.mx,
       qm: input.qm,
       createdBy,
+      remark,
     },
   })
   // 新建冠名记录
@@ -224,6 +239,8 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: parsedWeekStart.error })
       }
       const weekStart = parsedWeekStart && parsedWeekStart.ok ? parsedWeekStart.date : getWeekStart()
+      // 备注字段：批量录入共用一个备注，写入每条记录
+      const remark = normalizeRemark(body.remark)
 
       // 批量录入
       if (Array.isArray(body.records)) {
@@ -285,7 +302,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
           const results = []
           for (const input of inputs as RecordInput[]) {
             const levels = branchLevelsMap.get(input.branchId) ?? []
-            const rec = await upsertRecord(tx, input, currentUser.id, weekStart, levels)
+            const rec = await upsertRecord(tx, input, currentUser.id, weekStart, levels, remark)
             results.push(rec)
           }
           return results
@@ -336,7 +353,8 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         input as RecordInput,
         currentUser.id,
         weekStart,
-        namingLevels
+        namingLevels,
+        remark
       )
       return reply.code(201).send(record)
     }
@@ -353,6 +371,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
       let fileBuffer: Buffer | null = null
       let requestedBranchId: number | undefined
       let requestedWeekStart: string | undefined
+      let requestedRemark: string | undefined
       const parts = request.parts()
       for await (const part of parts) {
         if (part.type === 'file') {
@@ -364,6 +383,8 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
             requestedBranchId = Number(part.value)
           } else if (part.fieldname === 'weekStart') {
             requestedWeekStart = String(part.value)
+          } else if (part.fieldname === 'remark') {
+            requestedRemark = String(part.value)
           }
         }
       }
@@ -397,6 +418,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: parsedWeekStartExcel.error })
       }
       const weekStart = parsedWeekStartExcel && parsedWeekStartExcel.ok ? parsedWeekStartExcel.date : getWeekStart()
+      const remark = normalizeRemark(requestedRemark)
       let success = 0
       let failed = 0
       const failures: { row: number; name: string; reason: string }[] = []
@@ -444,7 +466,8 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
             { personnelId, branchId, sg, mx, qm },
             currentUser.id,
             weekStart,
-            namingLevels
+            namingLevels,
+            remark
           )
           success++
         } catch {
@@ -463,10 +486,11 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
     { preHandler: [authenticate, requireRole(Role.GUANLI)] },
     async (request, reply) => {
       const currentUser = request.user
-      const { data, branchId: requestedBranchId, weekStart: requestedWeekStart } = request.body as {
+      const { data, branchId: requestedBranchId, weekStart: requestedWeekStart, remark: requestedRemark } = request.body as {
         data: string
         branchId?: number
         weekStart?: string
+        remark?: string
       }
 
       if (!data) {
@@ -488,6 +512,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: parsedWeekStartPaste.error })
       }
       const weekStart = parsedWeekStartPaste && parsedWeekStartPaste.ok ? parsedWeekStartPaste.date : getWeekStart()
+      const remark = normalizeRemark(requestedRemark)
       let success = 0
       let failed = 0
       const failures: { row: number; name: string; reason: string }[] = []
@@ -544,7 +569,8 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
             { personnelId, branchId, sg, mx, qm },
             currentUser.id,
             weekStart,
-            namingLevels
+            namingLevels,
+            remark
           )
           success++
         } catch {
@@ -570,7 +596,9 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         qm?: number
         personnelId?: number
         namings?: { levelId: number; count: number }[]
+        remark?: string
       }
+      const remark = normalizeRemark(body.remark)
 
       const recordId = Number(id)
       if (Number.isNaN(recordId)) {
@@ -664,7 +692,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         namingsToUpdate = body.namings.filter((n) => n.count > 0)
       }
 
-      if (updates.length === 0 && !personnelChanged && namingsToUpdate === null) {
+      if (updates.length === 0 && !personnelChanged && namingsToUpdate === null && body.remark === undefined) {
         return reply.code(400).send({ error: '没有需要更新的字段' })
       }
 
@@ -682,6 +710,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
               field,
               oldValue: String(oldValue),
               newValue: String(value),
+              remark,
             },
           })
         }
@@ -709,6 +738,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
               field: 'personnelId',
               oldValue: String(record.personnelId),
               newValue: String(newPersonnelId),
+              remark,
             },
           })
 
@@ -742,6 +772,8 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
                 sg: target.sg + newSg,
                 mx: target.mx + newMx,
                 qm: target.qm + newQm,
+                // 覆盖式更新备注
+                ...(body.remark !== undefined ? { remark } : {}),
               },
             })
             // 冠名数量累加到目标记录
@@ -765,6 +797,8 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
                 sg: body.sg ?? undefined,
                 mx: body.mx ?? undefined,
                 qm: body.qm ?? undefined,
+                // 覆盖式更新备注
+                ...(body.remark !== undefined ? { remark } : {}),
               },
             })
           }
@@ -776,6 +810,8 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
             sg: body.sg ?? undefined,
             mx: body.mx ?? undefined,
             qm: body.qm ?? undefined,
+            // 覆盖式更新备注
+            ...(body.remark !== undefined ? { remark } : {}),
           },
         })
       })
@@ -791,6 +827,8 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const { id } = request.params as { id: string }
       const currentUser = request.user
+      const body = request.body as { remark?: string } | null
+      const remark = normalizeRemark(body?.remark)
 
       const recordId = Number(id)
       if (Number.isNaN(recordId)) {
@@ -831,6 +869,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
               qm: record.qm,
             }),
             newValue: null,
+            remark,
           },
         })
         await tx.dataRecord.delete({ where: { id: record.id } })

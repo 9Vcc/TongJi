@@ -17,6 +17,7 @@ export type StatCycle = 'WEEK' | 'MONTH'
 export interface User {
   id: number
   username: string
+  nickname?: string | null
   role: Role
   branchId: number | null
   status: AccountStatus
@@ -84,6 +85,8 @@ export interface DataRecord {
   finalWelfare?: number
   // 冠名明细（按月统计厅返回）
   namings?: NamingItem[]
+  // 最近一次录入/修改的备注（覆盖式存储）
+  remark?: string | null
 }
 
 // 福利扣减记录
@@ -248,6 +251,7 @@ export interface ImportResult {
 // 创建账户入参
 export interface CreateAccountInput {
   username: string
+  nickname?: string
   password: string
   role: Role
   branchId?: number
@@ -256,6 +260,7 @@ export interface CreateAccountInput {
 // 更新账户入参
 export interface UpdateAccountInput {
   username?: string
+  nickname?: string | null
   password?: string
   role?: Role
   branchId?: number | null
@@ -278,6 +283,8 @@ export interface CreateRecordInput {
   // 不传则由后端使用服务器当前周（不推荐，存在时区 bug）
   // 周统计厅：传用户查看的周；月统计厅：传当前周的周一
   weekStart?: string
+  // 录入备注（覆盖式存储到 DataRecord.remark）
+  remark?: string
 }
 
 // 更新数据记录入参
@@ -288,6 +295,8 @@ export interface UpdateRecordInput {
   personnelId?: number
   // 冠名数量（覆盖语义）：传入即覆盖该记录所有等级的冠名数量
   namings?: { levelId: number; count: number }[]
+  // 修改备注（覆盖式存储到 DataRecord.remark）
+  remark?: string
 }
 
 // 更新奖励规则入参
@@ -331,6 +340,8 @@ export interface DataLogItem {
   sg?: number
   mx?: number
   qm?: number
+  // 操作备注（DataRecord.remark 或 DataHistory.remark）
+  remark?: string | null
 }
 
 // 登录记录

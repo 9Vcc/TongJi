@@ -49,6 +49,7 @@ enum NotificationType {
 model Account {
   id           Int           @id @default(autoincrement())
   username     String        @unique
+  nickname     String?
   passwordHash String
   role         Role
   branchId     Int?
@@ -141,6 +142,7 @@ model DataRecord {
   createdBy   Int
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  remark       String?
 
   personnel Personnel     @relation(fields: [personnelId], references: [id])
   branch    Branch        @relation(fields: [branchId], references: [id])
@@ -170,6 +172,7 @@ model DataHistory {
   field      String?
   oldValue   String?
   newValue   String?
+  remark     String?
 
   record   DataRecord? @relation(fields: [recordId], references: [id], onDelete: SetNull)
   modifier Account     @relation("DataHistoryModifier", fields: [modifierId], references: [id])

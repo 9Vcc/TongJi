@@ -173,6 +173,7 @@ fastify.post('/api/seed', async (_request, reply) => {
       user: {
         id: existing.id,
         username: existing.username,
+        nickname: existing.nickname,
         role: existing.role,
       },
     });
@@ -192,6 +193,7 @@ fastify.post('/api/seed', async (_request, reply) => {
     user: {
       id: admin.id,
       username: admin.username,
+      nickname: admin.nickname,
       role: admin.role,
     },
   });

@@ -10,6 +10,7 @@ import {
   Key,
   Eye,
   EyeOff,
+  AlertTriangle,
 } from 'lucide-react'
 import {
   accountsApi,
@@ -37,6 +38,7 @@ export default function AccountsPage() {
   const [editingAccount, setEditingAccount] = useState<User | null>(null)
   const [accountForm, setAccountForm] = useState({
     username: '',
+    nickname: '',
     password: '',
     role: 'GUANLI' as Role,
     branchId: '',
@@ -44,6 +46,12 @@ export default function AccountsPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [accountSubmitting, setAccountSubmitting] = useState(false)
   const [branches, setBranches] = useState<Branch[]>([])
+
+  // 确认弹窗（禁用/启用/删除账户）
+  // type 区分操作类型，account 为目标账户
+  type ConfirmAction = { type: 'status' | 'delete'; account: User }
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null)
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false)
 
   const loadAccounts = async () => {
     if (!canManageAccounts) return
@@ -82,6 +90,7 @@ export default function AccountsPage() {
     setEditingAccount(null)
     setAccountForm({
       username: '',
+      nickname: '',
       password: '',
       role: 'GUANLI',
       branchId: isHuizhang ? '' : String(user?.branchId ?? ''),
@@ -94,6 +103,7 @@ export default function AccountsPage() {
     setEditingAccount(account)
     setAccountForm({
       username: account.username,
+      nickname: account.nickname ?? '',
       password: '',
       role: account.role,
       branchId: account.branchId ? String(account.branchId) : '',
@@ -130,6 +140,11 @@ export default function AccountsPage() {
         if (accountForm.username.trim() !== editingAccount.username) {
           payload.username = accountForm.username.trim()
         }
+        // 昵称变化即提交（包含清空场景：原值非空 -> 空字符串）
+        const originalNickname = editingAccount.nickname ?? ''
+        if (accountForm.nickname.trim() !== originalNickname) {
+          payload.nickname = accountForm.nickname.trim()
+        }
         if (accountForm.password) {
           payload.password = accountForm.password
         }
@@ -150,6 +165,7 @@ export default function AccountsPage() {
       } else {
         await accountsApi.create({
           username: accountForm.username.trim(),
+          nickname: accountForm.nickname.trim() || undefined,
           password: accountForm.password,
           role: accountForm.role,
           branchId: targetBranchId,
@@ -165,26 +181,37 @@ export default function AccountsPage() {
     }
   }
 
-  const handleAccountStatus = async (account: User) => {
-    const newStatus: AccountStatus =
-      account.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE'
-    try {
-      await accountsApi.updateStatus(account.id, newStatus)
-      toast.success(newStatus === 'ACTIVE' ? '已启用' : '已禁用')
-      await loadAccounts()
-    } catch (err) {
-      toast.error(getErrorMessage(err))
-    }
+  // 打开禁用/启用确认弹窗
+  const handleAccountStatus = (account: User) => {
+    setConfirmAction({ type: 'status', account })
   }
 
-  const handleAccountDelete = async (account: User) => {
-    if (!window.confirm(`确认删除账户「${account.username}」？`)) return
+  // 打开删除确认弹窗
+  const handleAccountDelete = (account: User) => {
+    setConfirmAction({ type: 'delete', account })
+  }
+
+  // 确认弹窗提交
+  const handleConfirmSubmit = async () => {
+    if (!confirmAction) return
+    const { type, account } = confirmAction
+    setConfirmSubmitting(true)
     try {
-      await accountsApi.delete(account.id)
-      toast.success('删除成功')
+      if (type === 'status') {
+        const newStatus: AccountStatus =
+          account.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE'
+        await accountsApi.updateStatus(account.id, newStatus)
+        toast.success(newStatus === 'ACTIVE' ? '已启用' : '已禁用')
+      } else {
+        await accountsApi.delete(account.id)
+        toast.success('删除成功')
+      }
+      setConfirmAction(null)
       await loadAccounts()
     } catch (err) {
       toast.error(getErrorMessage(err))
+    } finally {
+      setConfirmSubmitting(false)
     }
   }
 
@@ -232,6 +259,7 @@ export default function AccountsPage() {
             <thead className="bg-surface border-b border-border">
               <tr className="text-left text-textSecondary">
                 <th className="px-3 py-2 font-medium">用户名</th>
+                <th className="px-3 py-2 font-medium">昵称</th>
                 <th className="px-3 py-2 font-medium">角色</th>
                 <th className="px-3 py-2 font-medium">厅</th>
                 <th className="px-3 py-2 font-medium">状态</th>
@@ -242,7 +270,7 @@ export default function AccountsPage() {
               {accountsLoading ? (
                 Array.from({ length: 4 }).map((_, i) => (
                   <tr key={i} className="border-b border-border last:border-0">
-                    {Array.from({ length: 5 }).map((_, j) => (
+                    {Array.from({ length: 6 }).map((_, j) => (
                       <td key={j} className="px-3 py-2">
                         <Skeleton className="h-5 w-full" />
                       </td>
@@ -252,7 +280,7 @@ export default function AccountsPage() {
               ) : accounts.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="px-3 py-12 text-center text-textMuted"
                   >
                     暂无账户
@@ -266,6 +294,11 @@ export default function AccountsPage() {
                   >
                     <td className="px-3 py-2 text-textPrimary font-medium">
                       {a.username}
+                    </td>
+                    <td className="px-3 py-2 text-textSecondary">
+                      {a.nickname || (
+                        <span className="text-textMuted">-</span>
+                      )}
                     </td>
                     <td className="px-3 py-2">
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-primary/10 text-primary">
@@ -370,6 +403,24 @@ export default function AccountsPage() {
             />
           </div>
 
+          {/* 昵称 */}
+          <div>
+            <label className="block text-xs text-textSecondary mb-1">
+              昵称
+              <span className="ml-1 text-[10px] text-textMuted">（选填，仅展示用）</span>
+            </label>
+            <input
+              type="text"
+              maxLength={50}
+              value={accountForm.nickname}
+              onChange={(e) =>
+                setAccountForm({ ...accountForm, nickname: e.target.value })
+              }
+              placeholder="可选，最多 50 字"
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+            />
+          </div>
+
           {/* 密码 */}
           <div>
             <label className="block text-xs text-textSecondary mb-1">
@@ -456,6 +507,95 @@ export default function AccountsPage() {
             </div>
           )}
         </div>
+      </Modal>
+
+      {/* 禁用/启用/删除确认弹窗 */}
+      <Modal
+        open={confirmAction !== null}
+        title={
+          confirmAction?.type === 'delete'
+            ? '删除账户'
+            : confirmAction?.account.status === 'ACTIVE'
+              ? '禁用账户'
+              : '启用账户'
+        }
+        onClose={() => setConfirmAction(null)}
+        footer={
+          <>
+            <button
+              onClick={() => setConfirmAction(null)}
+              disabled={confirmSubmitting}
+              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleConfirmSubmit}
+              disabled={confirmSubmitting}
+              className={`flex items-center gap-1.5 px-4 py-2 text-white rounded-lg text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer ${
+                confirmAction?.type === 'delete'
+                  ? 'bg-danger hover:bg-danger/90'
+                  : confirmAction?.account.status === 'ACTIVE'
+                    ? 'bg-warning hover:bg-warning/90'
+                    : 'bg-primary hover:bg-primary-hover'
+              }`}
+            >
+              {confirmSubmitting && <Spinner className="h-4 w-4" />}
+              {confirmSubmitting
+                ? '处理中...'
+                : confirmAction?.type === 'delete'
+                  ? '确认删除'
+                  : confirmAction?.account.status === 'ACTIVE'
+                    ? '确认禁用'
+                    : '确认启用'}
+            </button>
+          </>
+        }
+      >
+        {confirmAction && (
+          <div className="space-y-3">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle
+                size={18}
+                className={`flex-shrink-0 mt-0.5 ${
+                  confirmAction.type === 'delete'
+                    ? 'text-danger'
+                    : 'text-warning'
+                }`}
+              />
+              <div className="text-sm text-textSecondary space-y-1">
+                {confirmAction.type === 'delete' ? (
+                  <>
+                    <p className="text-textPrimary font-medium">
+                      确认删除账户「{confirmAction.account.username}」？
+                    </p>
+                    <p className="text-xs text-textMuted">
+                      此操作不可撤销，账户关联的数据记录将转交给当前操作人，登录记录与历史记录将被清除。
+                    </p>
+                  </>
+                ) : confirmAction.account.status === 'ACTIVE' ? (
+                  <>
+                    <p className="text-textPrimary font-medium">
+                      确认禁用账户「{confirmAction.account.username}」？
+                    </p>
+                    <p className="text-xs text-textMuted">
+                      禁用后该账户将无法登录系统，可随时重新启用。
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-textPrimary font-medium">
+                      确认启用账户「{confirmAction.account.username}」？
+                    </p>
+                    <p className="text-xs text-textMuted">
+                      启用后该账户可正常登录系统。
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   )

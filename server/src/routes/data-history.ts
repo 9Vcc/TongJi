@@ -94,6 +94,8 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
         sg?: number
         mx?: number
         qm?: number
+        // 备注信息（DataRecord.remark 或 DataHistory.remark）
+        remark?: string | null
       }
 
       // 取创建记录（DataRecord.createdBy）
@@ -135,6 +137,7 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
           sg: r.sg,
           mx: r.mx,
           qm: r.qm,
+          remark: r.remark,
         }))
 
         // 若只要 create 类型，直接返回
@@ -205,6 +208,7 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
           oldValue: h.oldValue,
           newValue: h.newValue,
           recordId: h.recordId,
+          remark: h.remark,
         }))
 
         // 合并并按时间倒序
@@ -283,6 +287,7 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
         oldValue: h.oldValue,
         newValue: h.newValue,
         recordId: h.recordId,
+        remark: h.remark,
       }))
 
       return reply.send(items)

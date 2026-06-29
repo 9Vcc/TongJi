@@ -78,6 +78,10 @@ export const authApi = {
   getMe() {
     return request.get<unknown, User>('/auth/me')
   },
+  // 更新自己的昵称（仅限 nickname）
+  updateMe(data: { nickname?: string | null }) {
+    return request.patch<unknown, User>('/auth/me', data)
+  },
   seed() {
     return request.post<unknown, { message: string; user: User }>(
       '/seed'
@@ -147,29 +151,33 @@ export const dataRecordsApi = {
   create(data: CreateRecordInput) {
     return request.post<unknown, DataRecord>('/data-records', data)
   },
-  importExcel(file: File, branchId?: number, weekStart?: string) {
+  importExcel(file: File, branchId?: number, weekStart?: string, remark?: string) {
     const formData = new FormData()
     formData.append('file', file)
     if (branchId) formData.append('branchId', String(branchId))
     if (weekStart) formData.append('weekStart', weekStart)
+    if (remark) formData.append('remark', remark)
     return request.post<unknown, ImportResult>(
       '/data-records/import-excel',
       formData,
       { headers: { 'Content-Type': 'multipart/form-data' } }
     )
   },
-  importPaste(data: string, branchId?: number, weekStart?: string) {
+  importPaste(data: string, branchId?: number, weekStart?: string, remark?: string) {
     return request.post<unknown, ImportResult>('/data-records/import-paste', {
       data,
       branchId,
       weekStart,
+      remark,
     })
   },
   update(id: number, data: UpdateRecordInput) {
     return request.put<unknown, DataRecord>(`/data-records/${id}`, data)
   },
-  delete(id: number) {
-    return request.delete<unknown, { message: string }>(`/data-records/${id}`)
+  delete(id: number, remark?: string) {
+    return request.delete<unknown, { message: string }>(`/data-records/${id}`, {
+      data: remark ? { remark } : undefined,
+    })
   },
   getHistory(id: number) {
     return request.get<unknown, DataHistory[]>(`/data-records/${id}/history`)

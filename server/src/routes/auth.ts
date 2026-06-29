@@ -57,6 +57,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
       user: {
         id: account.id,
         username: account.username,
+        nickname: account.nickname,
         role: account.role,
         branchId: account.branchId,
         status: account.status,
@@ -84,10 +85,43 @@ export default async function authRoutes(fastify: FastifyInstance) {
       return reply.send({
         id: account.id,
         username: account.username,
+        nickname: account.nickname,
         role: account.role,
         branchId: account.branchId,
         status: account.status,
       })
+    }
+  )
+
+  // PATCH /api/auth/me - 更新自己的昵称（仅限 nickname 字段，避免越权改角色/密码）
+  fastify.patch(
+    '/api/auth/me',
+    { preHandler: [authenticate] },
+    async (request, reply) => {
+      if (!request.user) {
+        return reply.code(401).send({ error: '未认证' })
+      }
+
+      const { nickname } = request.body as { nickname?: string | null }
+      const trimmed =
+        typeof nickname === 'string' && nickname.trim().length > 0
+          ? nickname.trim().slice(0, 50)
+          : null
+
+      const updated = await prisma.account.update({
+        where: { id: request.user.id },
+        data: { nickname: trimmed },
+        select: {
+          id: true,
+          username: true,
+          nickname: true,
+          role: true,
+          branchId: true,
+          status: true,
+        },
+      })
+
+      return reply.send(updated)
     }
   )
 }

@@ -150,6 +150,7 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
           deduction,
           finalWelfare: welfare - deduction,
           namings,
+          remark: r.remark,
         }
       })
 
