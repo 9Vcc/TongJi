@@ -453,7 +453,8 @@ export default function DataEntry() {
       qm: record.qm ? String(record.qm) : "",
       namings: namingMap,
       deduction: record.deduction ? String(record.deduction) : "",
-      remark: record.remark ?? "",
+      // 备注不预填历史值，每次编辑都需要重新填写
+      remark: "",
     });
     setEditModalOpen(true);
   };
@@ -571,6 +572,8 @@ export default function DataEntry() {
       toast.success("修改成功");
       setEditModalOpen(false);
       setEditingId(null);
+      // 重置表单（含备注），避免下次打开弹窗时残留上次输入的备注
+      setEditForm(emptyForm);
       await loadData();
     } catch (err) {
       toast.error(getErrorMessage(err));
@@ -735,6 +738,7 @@ export default function DataEntry() {
       setImportOpen(false);
       setExcelFile(null);
       setPasteData("");
+      setImportRemark("");
       await loadData();
     } catch (err) {
       toast.error(getErrorMessage(err));
@@ -1031,6 +1035,7 @@ export default function DataEntry() {
       }
       setBatchEditOpen(false);
       setSelectedKeys(new Set());
+      setBatchRemark("");
       await loadData();
     } catch (err) {
       toast.error(getErrorMessage(err));
@@ -1162,6 +1167,7 @@ export default function DataEntry() {
       }
       setBatchAddOpen(false);
       setSelectedKeys(new Set());
+      setBatchRemark("");
       await loadData();
     } catch (err) {
       toast.error(getErrorMessage(err));

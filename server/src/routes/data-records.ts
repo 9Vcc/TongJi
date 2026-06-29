@@ -158,6 +158,19 @@ async function upsertRecord(
         create: { recordId: existing.id, levelId: n.levelId, count: n.count },
       })
     }
+    // 记录本次录入历史（累加场景也产生独立历史记录）
+    // oldValue: 累加前汇总值, newValue: 本次增量值
+    await client.dataHistory.create({
+      data: {
+        recordId: existing.id,
+        modifierId: createdBy,
+        action: HistoryAction.CREATE,
+        field: null,
+        oldValue: JSON.stringify({ sg: existing.sg, mx: existing.mx, qm: existing.qm }),
+        newValue: JSON.stringify({ sg: sgToStore, mx: input.mx, qm: input.qm }),
+        remark,
+      },
+    })
     return updated
   }
   const created = await client.dataRecord.create({
@@ -178,6 +191,19 @@ async function upsertRecord(
       data: { recordId: created.id, levelId: n.levelId, count: n.count },
     })
   }
+  // 记录本次录入历史（新建场景）
+  // oldValue: null（首次录入）, newValue: 本次录入值
+  await client.dataHistory.create({
+    data: {
+      recordId: created.id,
+      modifierId: createdBy,
+      action: HistoryAction.CREATE,
+      field: null,
+      oldValue: null,
+      newValue: JSON.stringify({ sg: sgToStore, mx: input.mx, qm: input.qm }),
+      remark,
+    },
+  })
   return created
 }
 
@@ -622,14 +648,17 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         }
       }
 
-      // 校验 sg/mx/qm 字段合法性
+      // 校验 sg/mx/qm 字段合法性（仅记录值实际发生变化的字段）
       const updates: { field: 'sg' | 'mx' | 'qm'; value: number }[] = []
       for (const field of ['sg', 'mx', 'qm'] as const) {
         if (body[field] !== undefined) {
           if (!isNonNegInt(body[field])) {
             return reply.code(400).send({ error: `${field} 必须为非负整数` })
           }
-          updates.push({ field, value: body[field] as number })
+          // 仅当值与原值不同时才记为更新（值未变化不参与保存判定）
+          if (body[field] !== record[field]) {
+            updates.push({ field, value: body[field] as number })
+          }
         }
       }
 
@@ -656,6 +685,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
       }
 
       // 校验 namings（覆盖语义：传入即覆盖该记录的所有冠名数量）
+      // 仅当传入的冠名数据与当前数据库存储不同时才标记为需要更新
       let namingsToUpdate: { levelId: number; count: number }[] | null = null
       if (body.namings !== undefined) {
         if (!Array.isArray(body.namings)) {
@@ -689,12 +719,39 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
           }
         }
         // 仅保留 count > 0 的项
-        namingsToUpdate = body.namings.filter((n) => n.count > 0)
+        const filteredNamings = body.namings.filter((n) => n.count > 0)
+        // 查询当前数据库中该记录的冠名数据，对比是否实际发生变化
+        const currentNamings = await prisma.dataRecordNaming.findMany({
+          where: { recordId: record.id },
+          select: { levelId: true, count: true },
+        })
+        const currentMap = new Map(currentNamings.map((n) => [n.levelId, n.count]))
+        const newMap = new Map(filteredNamings.map((n) => [n.levelId, n.count]))
+        // 对比 keys 和 values 是否完全一致
+        let namingsChanged = currentMap.size !== newMap.size
+        if (!namingsChanged) {
+          for (const [levelId, count] of newMap) {
+            if (currentMap.get(levelId) !== count) {
+              namingsChanged = true
+              break
+            }
+          }
+        }
+        // 仅在实际发生变化时才标记为需要更新
+        if (namingsChanged) {
+          namingsToUpdate = filteredNamings
+        }
       }
 
-      if (updates.length === 0 && !personnelChanged && namingsToUpdate === null && body.remark === undefined) {
-        return reply.code(400).send({ error: '没有需要更新的字段' })
+      // 数据无变化时阻止保存（即使备注变化，也必须有数值变化才能保存）
+      if (updates.length === 0 && !personnelChanged && namingsToUpdate === null) {
+        return reply.code(400).send({ error: '数据无变化，无需保存' })
       }
+
+      // 备注是否变化（仅在数值有变化时才覆盖更新备注）
+      const originalRemark = record.remark ?? ''
+      const newRemark = remark ?? ''
+      const remarkChanged = newRemark !== originalRemark
 
       // 记录修改历史并更新
       const updated = await prismaClient.$transaction(async (tx) => {
@@ -773,7 +830,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
                 mx: target.mx + newMx,
                 qm: target.qm + newQm,
                 // 覆盖式更新备注
-                ...(body.remark !== undefined ? { remark } : {}),
+                ...(remarkChanged ? { remark } : {}),
               },
             })
             // 冠名数量累加到目标记录
@@ -798,7 +855,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
                 mx: body.mx ?? undefined,
                 qm: body.qm ?? undefined,
                 // 覆盖式更新备注
-                ...(body.remark !== undefined ? { remark } : {}),
+                ...(remarkChanged ? { remark } : {}),
               },
             })
           }
@@ -811,7 +868,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
             mx: body.mx ?? undefined,
             qm: body.qm ?? undefined,
             // 覆盖式更新备注
-            ...(body.remark !== undefined ? { remark } : {}),
+            ...(remarkChanged ? { remark } : {}),
           },
         })
       })

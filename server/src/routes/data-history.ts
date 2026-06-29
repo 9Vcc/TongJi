@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify'
 import prisma from '../lib/prisma'
 import { authenticate, requireRole } from '../middleware/auth'
-import { Role, HistoryAction } from '../../generated/prisma/client'
+import { Role } from '../../generated/prisma/client'
+import type { HistoryAction } from '../../generated/prisma/client'
 
 /**
  * 录入历史记录路由
@@ -98,47 +99,81 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
         remark?: string | null
       }
 
-      // 取创建记录（DataRecord.createdBy）
+      // 取录入历史记录（从 DataHistory action=CREATE 查询，每次录入独立一条）
       if (!query.type || query.type === 'create') {
-        const createWhere = { ...where }
+        const createHistoryWhere: {
+          action: HistoryAction
+          modifierId?: number
+          modifyTime?: { gte: Date; lt: Date }
+          record?: {
+            weekStart?: Date
+            branchId?: number
+            personnelId?: number
+          }
+        } = { action: 'CREATE' }
         if (query.modifierId) {
-          createWhere.createdBy = Number(query.modifierId)
+          createHistoryWhere.modifierId = Number(query.modifierId)
         }
-        // 超管只看本分部
-        if (currentUser.role === Role.CHAOGUAN && currentUser.branchId) {
-          createWhere.branchId = currentUser.branchId
-        } else if (branchScope) {
-          createWhere.branchId = branchScope
+        // date 参数：按录入操作的 modifyTime 过滤当天
+        if (dayRange) {
+          createHistoryWhere.modifyTime = { gte: dayRange.start, lt: dayRange.end }
+        }
+        if (query.weekStart || query.personnelId || branchScope) {
+          createHistoryWhere.record = {}
+          if (query.weekStart) {
+            createHistoryWhere.record.weekStart = new Date(query.weekStart)
+          }
+          if (query.personnelId) {
+            createHistoryWhere.record.personnelId = Number(query.personnelId)
+          }
+          if (currentUser.role === Role.CHAOGUAN && currentUser.branchId) {
+            createHistoryWhere.record.branchId = currentUser.branchId
+          } else if (branchScope) {
+            createHistoryWhere.record.branchId = branchScope
+          }
         }
 
-        const records = await prisma.dataRecord.findMany({
-          where: createWhere,
+        const createHistories = await prisma.dataHistory.findMany({
+          where: createHistoryWhere,
           include: {
-            personnel: true,
-            branch: true,
-            creator: { select: { id: true, username: true } },
+            record: {
+              include: {
+                personnel: true,
+                branch: true,
+              },
+            },
+            modifier: { select: { id: true, username: true } },
           },
-          orderBy: { createdAt: 'desc' },
+          orderBy: { modifyTime: 'desc' },
           take: limit,
         })
 
-        const createItems: LogItem[] = records.map((r) => ({
-          id: r.id,
-          type: 'create' as const,
-          time: r.createdAt,
-          personnelId: r.personnelId,
-          personnelName: r.personnel.name,
-          branchId: r.branchId,
-          branchName: r.branch.name,
-          weekStart: r.weekStart,
-          operatorId: r.createdBy,
-          operatorName: r.creator.username,
-          recordId: r.id,
-          sg: r.sg,
-          mx: r.mx,
-          qm: r.qm,
-          remark: r.remark,
-        }))
+        // 解析 newValue JSON 还原本次录入的增量值
+        const createItems: LogItem[] = createHistories.map((h) => {
+          let parsedNew: { sg?: number; mx?: number; qm?: number } = {}
+          try {
+            parsedNew = JSON.parse(h.newValue || '{}')
+          } catch {
+            parsedNew = {}
+          }
+          return {
+            id: h.id,
+            type: 'create' as const,
+            time: h.modifyTime,
+            personnelId: h.record?.personnelId ?? 0,
+            personnelName: h.record?.personnel.name ?? '(已删除记录)',
+            branchId: h.record?.branchId ?? 0,
+            branchName: h.record?.branch.name ?? '-',
+            weekStart: h.record?.weekStart ?? h.modifyTime,
+            operatorId: h.modifierId,
+            operatorName: h.modifier.username,
+            recordId: h.recordId,
+            sg: parsedNew.sg,
+            mx: parsedNew.mx,
+            qm: parsedNew.qm,
+            remark: h.remark,
+          }
+        })
 
         // 若只要 create 类型，直接返回
         if (query.type === 'create') {
@@ -154,7 +189,8 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
             branchId?: number
             personnelId?: number
           }
-        } = {}
+          action: { not: 'CREATE' }
+        } = { action: { not: 'CREATE' } }
         if (query.modifierId) {
           historyWhere.modifierId = Number(query.modifierId)
         }
@@ -194,7 +230,7 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
 
         const historyItems: LogItem[] = histories.map((h) => ({
           id: h.id,
-          type: h.action === HistoryAction.DELETE ? 'delete' : 'update',
+          type: h.action === 'DELETE' ? 'delete' : 'update',
           time: h.modifyTime,
           personnelId: h.record?.personnelId ?? 0,
           personnelName: h.record?.personnel.name ?? '(已删除记录)',
@@ -227,19 +263,17 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
           branchId?: number
           personnelId?: number
         }
-        action?: HistoryAction
-      } = {}
+        action: HistoryAction
+      } = { action: 'UPDATE' }
+      if (query.type === 'delete') {
+        historyWhere.action = 'DELETE'
+      }
       if (query.modifierId) {
         historyWhere.modifierId = Number(query.modifierId)
       }
       // date 参数：按修改/删除操作的 modifyTime 过滤当天
       if (dayRange) {
         historyWhere.modifyTime = { gte: dayRange.start, lt: dayRange.end }
-      }
-      if (query.type === 'update') {
-        historyWhere.action = HistoryAction.UPDATE
-      } else if (query.type === 'delete') {
-        historyWhere.action = HistoryAction.DELETE
       }
       if (query.weekStart || query.personnelId || branchScope) {
         historyWhere.record = {}
@@ -273,7 +307,7 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
 
       const items: LogItem[] = histories.map((h) => ({
         id: h.id,
-        type: h.action === HistoryAction.DELETE ? 'delete' : 'update',
+        type: h.action === 'DELETE' ? 'delete' : 'update',
         time: h.modifyTime,
         personnelId: h.record?.personnelId ?? 0,
         personnelName: h.record?.personnel.name ?? '(已删除记录)',

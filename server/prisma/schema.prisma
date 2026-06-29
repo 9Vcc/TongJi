@@ -27,6 +27,7 @@ enum AccountStatus {
 
 // 历史操作类型
 enum HistoryAction {
+  CREATE // 录入
   UPDATE // 修改
   DELETE // 删除
 }
