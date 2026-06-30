@@ -274,6 +274,75 @@ export default async function personnelRoutes(fastify: FastifyInstance) {
     }
   )
 
+  // PUT /api/personnel/:id - 修改人员姓名
+  // 会长可修改任意人员；超管只能修改本分部人员
+  fastify.put(
+    '/api/personnel/:id',
+    { preHandler: [authenticate, requireRole(Role.CHAOGUAN)] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+      const { name, branchId } = request.body as { name: string; branchId?: number }
+      const currentUser = request.user
+
+      const personnelId = Number(id)
+      if (Number.isNaN(personnelId)) {
+        return reply.code(400).send({ error: '无效的人员ID' })
+      }
+
+      const trimmedName = typeof name === 'string' ? name.trim() : ''
+      if (!trimmedName) {
+        return reply.code(400).send({ error: '姓名不能为空' })
+      }
+      if (trimmedName.length > 50) {
+        return reply.code(400).send({ error: '姓名长度不能超过50字' })
+      }
+
+      const personnel = await prisma.personnel.findUnique({
+        where: { id: personnelId },
+        include: { personnelBranches: true },
+      })
+      if (!personnel) {
+        return reply.code(404).send({ error: '人员不存在' })
+      }
+
+      // 超管只能修改本分部人员：需指定 branchId 且必须是本厅
+      if (currentUser.role === Role.CHAOGUAN) {
+        const targetBranchId = branchId ?? currentUser.branchId
+        if (
+          currentUser.branchId === null ||
+          targetBranchId !== currentUser.branchId
+        ) {
+          return reply.code(403).send({ error: '只能修改本分部人员' })
+        }
+        const assoc = personnel.personnelBranches.find(
+          (pb) => pb.branchId === targetBranchId,
+        )
+        if (!assoc) {
+          return reply.code(400).send({ error: '该人员不属于此分部' })
+        }
+      }
+
+      // 校验同名人员（排除自己）
+      const duplicate = await prisma.personnel.findFirst({
+        where: { name: trimmedName, NOT: { id: personnelId } },
+      })
+      if (duplicate) {
+        return reply.code(400).send({ error: '该姓名已存在' })
+      }
+
+      const updated = await prisma.personnel.update({
+        where: { id: personnelId },
+        data: { name: trimmedName },
+      })
+
+      return reply.send({
+        id: updated.id,
+        name: updated.name,
+        createdAt: updated.createdAt,
+      })
+    },
+  )
+
   // DELETE /api/personnel/:id - 移除人员
   fastify.delete(
     '/api/personnel/:id',

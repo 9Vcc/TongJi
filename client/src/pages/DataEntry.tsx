@@ -121,9 +121,6 @@ export default function DataEntry() {
   // loadData 竞态保护：每次调用自增，仅最后一次调用可写 state
   const loadIdRef = useRef(0);
 
-  // 视图周期：用户可切换本周/本月查看
-  const [viewCycle, setViewCycle] = useState<"WEEK" | "MONTH">("WEEK");
-
   // 人员搜索框（用于过滤列表，替代原手动录入卡片的人员选择）
   const [searchTerm, setSearchTerm] = useState("");
   // 列表排序：null=按录入顺序，'sg'/'mx'/'qm'/'welfare'=按对应指标降序
@@ -194,36 +191,46 @@ export default function DataEntry() {
   // 当前厅的冠名等级（仅按月统计厅有配置时加载）
   const [namingLevels, setNamingLevels] = useState<NamingLevel[]>([]);
 
-  // 当前厅的统计周期（仅用于显示标签）
+  // 当前厅的统计周期（直接跟随厅配置，按周就是按周，按月就是按月）
   const branchCycle: StatCycle = useMemo(() => {
     const branch = branches.find((b) => b.id === effectiveBranchId);
     return branch?.statCycle ?? "WEEK";
   }, [branches, effectiveBranchId]);
-  // 视图周期由用户切换决定，不再绑定厅配置
-  const isMonthCycle = viewCycle === "MONTH";
+  // 视图周期直接跟随厅配置
+  const isMonthCycle = branchCycle === "MONTH";
   // 是否在编辑弹窗中显示冠名输入：仅按月统计厅且已配置冠名等级
   const editNamingsEnabled = branchCycle === "MONTH" && namingLevels.length > 0;
 
+  // 切换厅时根据厅统计周期重置 weekStart 到本周/本月
+  // 原因：weekStart 可能是跨月周（如7月1日周二时本周周一是6月29日），切到月统计厅会用 getMonthStart(6月29日)=6月1日 查询上月数据
+  // 周统计厅：本周周一；月统计厅：本月1日（对两种周期查询都正确）
+  const prevBranchCycleRef = useRef<StatCycle | null>(null);
+  useEffect(() => {
+    if (prevBranchCycleRef.current !== branchCycle) {
+      prevBranchCycleRef.current = branchCycle;
+      if (effectiveBranchId !== undefined) {
+        if (branchCycle === "MONTH") {
+          const d = new Date();
+          d.setDate(1);
+          d.setHours(0, 0, 0, 0);
+          setWeekStart(d);
+        } else {
+          setWeekStart(getWeekStart());
+        }
+      }
+    }
+  }, [branchCycle, effectiveBranchId]);
+
   // 录入目标周（YYYY-MM-DD，周一）
-  // 周统计厅：用户查看的周（支持编辑历史周数据）
-  // 月统计厅：查看当前月录入到当前周；查看历史月录入到该月最后一周（支持编辑历史月数据）
-  // 修复：原来不传 weekStart，后端用服务器时区 getWeekStart()，
-  //   Docker UTC 时区下周一凌晨录入数据会进入上周
+  // 录入时使用的 weekStart：
+  // 周统计厅：用户查看的周（周一，支持编辑历史周数据）
+  // 月统计厅：用户查看月的1日（前端归一化为月初1日，避免依赖服务端时区）
   const recordWeekStart = useMemo(() => {
     if (branchCycle === "MONTH") {
-      const currentWeekStart = getWeekStart();
       const monthStart = new Date(weekStart.getFullYear(), weekStart.getMonth(), 1);
-      const monthEnd = new Date(weekStart.getFullYear(), weekStart.getMonth() + 1, 0);
-      const firstWeekStart = getWeekStart(monthStart);
-      const lastWeekStart = getWeekStart(monthEnd);
-      // 当前周在该月覆盖范围内：录入到当前周
-      if (currentWeekStart >= firstWeekStart && currentWeekStart <= lastWeekStart) {
-        return formatDate(currentWeekStart);
-      }
-      // 历史月：录入到该月最后一周（数据在该月覆盖范围内，月视图可查到）
-      return formatDate(lastWeekStart);
+      monthStart.setHours(0, 0, 0, 0);
+      return formatDate(monthStart);
     }
-    // 周统计厅：用户查看的周（支持编辑历史周数据）
     return formatDate(weekStart);
   }, [branchCycle, weekStart]);
 
@@ -247,28 +254,27 @@ export default function DataEntry() {
     setLoading(true);
     try {
       if (isMonthCycle) {
-        // 月模式：查询整月所有周的数据并按人员累加
-        // weekStart 已是月初1号，基于年月计算该月覆盖的所有周起始（周一）
+        // 月模式：月统计厅数据存储在月初1日（recordWeekStart）
+        // 兼容旧数据：同时查询该月所有周一，合并结果
         const year = weekStart.getFullYear();
         const month = weekStart.getMonth();
         const monthStart = new Date(year, month, 1);
-        const monthEnd = new Date(year, month + 1, 0); // 月末最后一天
-        // 该月第一天所在周的周一
+        const monthEnd = new Date(year, month + 1, 0);
         const firstWeekStart = getWeekStart(monthStart);
-        // 该月最后一天所在周的周一
         const lastWeekStart = getWeekStart(monthEnd);
-        // 收集所有周一起始日期
-        const weekStarts: string[] = [];
+        // 收集查询日期：月初1日 + 该月所有周一（兼容旧数据按周存储）
+        const queryDates = new Set<string>();
+        queryDates.add(formatDate(monthStart));
         let cur = new Date(firstWeekStart);
         while (cur <= lastWeekStart) {
-          weekStarts.push(formatDate(cur));
+          queryDates.add(formatDate(cur));
           const next = new Date(cur);
           next.setDate(next.getDate() + 7);
           cur = next;
         }
-        // 并发查询所有周数据
+        // 并发查询所有日期数据
         const allResults = await Promise.all(
-          weekStarts.map((w) => dataQueryApi.listByWeek(w, effectiveBranchId)),
+          [...queryDates].map((w) => dataQueryApi.listByWeek(w, effectiveBranchId)),
         );
         // 竞态保护：若期间又有新的 loadData 调用，丢弃本次结果
         if (loadId !== loadIdRef.current) return;
@@ -285,18 +291,14 @@ export default function DataEntry() {
               existing.sg += r.sg;
               existing.mx += r.mx;
               existing.qm += r.qm;
-              // 月视图聚合：累加各周福利（参考值，最终以排名接口为准）
               existing.welfare = (existing.welfare ?? 0) + (r.welfare ?? 0);
-              // 月视图聚合：累加各等级冠名数
               existing.namings = mergeNamings(existing.namings, r.namings);
-              // 扣减是月度独立值，不累加（所有周记录的 deduction 相同，取首次即可）
               if (!existing.deduction) existing.deduction = r.deduction;
             } else {
               mergedMap.set(key, { ...r });
             }
           }
         }
-        // 月视图聚合后重新计算 finalWelfare = welfare - deduction
         const mergedRecords = [...mergedMap.values()].map((r) => ({
           ...r,
           finalWelfare:
@@ -622,7 +624,8 @@ export default function DataEntry() {
     }
   };
 
-  // 打开导出弹窗：加载历史周次列表，默认选中当前周
+  // 打开导出弹窗：加载历史周次列表，默认选中当前周/月
+  // 导出周期固定跟随当前厅的 statCycle，按周厅只能导出按周，按月厅只能导出按月
   const handleOpenExport = async () => {
     if (!effectiveBranchId) {
       toast.error(isHuizhang ? "请先选择厅" : "当前账户未关联厅");
@@ -636,25 +639,18 @@ export default function DataEntry() {
       set.add(formatDate(getWeekStart()));
       const sorted = Array.from(set).sort().reverse();
       setExportWeeks(sorted);
-      // 默认选中当前周
-      setExportCycle("WEEK");
-      setExportDate(formatDate(getWeekStart()));
+      // 导出周期跟随厅配置
+      setExportCycle(branchCycle);
+      if (branchCycle === "MONTH") {
+        const d = new Date();
+        d.setDate(1);
+        setExportDate(formatDate(d));
+      } else {
+        setExportDate(formatDate(getWeekStart()));
+      }
       setExportOpen(true);
     } catch (err) {
       toast.error(getErrorMessage(err));
-    }
-  };
-
-  // 切换导出周期时重置选中日期
-  const handleExportCycleChange = (cycle: "WEEK" | "MONTH") => {
-    setExportCycle(cycle);
-    if (cycle === "WEEK") {
-      setExportDate(formatDate(getWeekStart()));
-    } else {
-      // 月模式：默认本月1号
-      const d = new Date();
-      d.setDate(1);
-      setExportDate(formatDate(d));
     }
   };
 
@@ -682,8 +678,10 @@ export default function DataEntry() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
+      const branchName =
+        branches.find((b) => b.id === effectiveBranchId)?.name ?? "全部厅";
       const prefix = exportCycle === "MONTH" ? "月排名" : "周排名";
-      a.download = `${prefix}_${dateParam}.${type === "excel" ? "xlsx" : "csv"}`;
+      a.download = `${branchName}_${prefix}_${dateParam}.${type === "excel" ? "xlsx" : "csv"}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -1190,83 +1188,55 @@ export default function DataEntry() {
     <div className="space-y-5">
       {/* 顶部工具栏 */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handlePrevWeek}
-            className="p-2 border border-border rounded-lg bg-card text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
-          >
-            <ChevronLeft size={16} />
-          </button>
-          <div className="px-4 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary min-w-[220px] text-center">
-            {isMonthCycle
-              ? getMonthRangeText(weekStart)
-              : getWeekRangeText(weekStart)}
-          </div>
-          <button
-            onClick={handleNextWeek}
-            className="p-2 border border-border rounded-lg bg-card text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
-          >
-            <ChevronRight size={16} />
-          </button>
-          <button
-            onClick={() => {
-              if (isMonthCycle) {
-                // 月模式：回到本月1号
-                const d = new Date();
-                d.setDate(1);
-                d.setHours(0, 0, 0, 0);
-                setWeekStart(d);
-              } else {
-                setWeekStart(getWeekStart());
-              }
-            }}
-            className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
-          >
-            {isMonthCycle ? "本月" : "本周"}
-          </button>
-          {/* 本周/本月切换 */}
-          <div className="flex border border-border rounded-lg bg-card overflow-hidden">
+        {/* 未选厅时仅显示厅选择器，不显示日期控件 */}
+        {effectiveBranchId ? (
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => {
-                setViewCycle("WEEK");
-                setWeekStart(getWeekStart());
-              }}
-              className={`px-3 py-2 text-sm transition-colors duration-200 cursor-pointer ${
-                !isMonthCycle
-                  ? "bg-primary text-white font-medium"
-                  : "text-textSecondary hover:text-textPrimary"
-              }`}
+              onClick={handlePrevWeek}
+              className="p-2 border border-border rounded-lg bg-card text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
             >
-              按周
+              <ChevronLeft size={16} />
+            </button>
+            <div className="px-4 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary min-w-[220px] text-center">
+              {isMonthCycle
+                ? getMonthRangeText(weekStart)
+                : getWeekRangeText(weekStart)}
+            </div>
+            <button
+              onClick={handleNextWeek}
+              className="p-2 border border-border rounded-lg bg-card text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+            >
+              <ChevronRight size={16} />
             </button>
             <button
               onClick={() => {
-                setViewCycle("MONTH");
-                // 切换到本月1号（直接设置月初，避免 getWeekStart 导致月份错乱）
-                const d = new Date();
-                d.setDate(1);
-                d.setHours(0, 0, 0, 0);
-                setWeekStart(d);
+                if (isMonthCycle) {
+                  // 月模式：回到本月1号
+                  const d = new Date();
+                  d.setDate(1);
+                  d.setHours(0, 0, 0, 0);
+                  setWeekStart(d);
+                } else {
+                  setWeekStart(getWeekStart());
+                }
               }}
-              className={`px-3 py-2 text-sm transition-colors duration-200 cursor-pointer ${
-                isMonthCycle
-                  ? "bg-primary text-white font-medium"
-                  : "text-textSecondary hover:text-textPrimary"
-              }`}
+              className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
             >
-              按月
+              {isMonthCycle ? "本月" : "本周"}
             </button>
+            {/* 厅配置统计周期标签 */}
+            {branchCycle === "MONTH" && (
+              <span
+                className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                title="该厅配置为按月统计"
+              >
+                月统计厅
+              </span>
+            )}
           </div>
-          {/* 厅配置统计周期标签 */}
-          {effectiveBranchId && branchCycle === "MONTH" && (
-            <span
-              className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
-              title="该厅配置为按月统计"
-            >
-              月统计厅
-            </span>
-          )}
-        </div>
+        ) : (
+          <div className="text-sm text-textMuted">请先选择厅</div>
+        )}
 
         <div className="flex items-center gap-2">
           {isHuizhang && (
@@ -1315,8 +1285,9 @@ export default function DataEntry() {
           )}
           <button
             onClick={() => setImportOpen(true)}
-            disabled={!effectiveBranchId && !isHuizhang}
+            disabled={!effectiveBranchId}
             className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary hover:border-primary hover:text-textPrimary disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+            title={!effectiveBranchId ? "请先选择厅" : undefined}
           >
             <Upload size={16} />
             导入
@@ -2278,32 +2249,13 @@ export default function DataEntry() {
         }
       >
         <div className="space-y-4">
-          {/* 周期切换 */}
+          {/* 导出周期：只读显示，跟随厅配置 */}
           <div>
             <label className="block text-xs text-textSecondary mb-2">
               导出周期
             </label>
-            <div className="flex border border-border rounded-lg bg-card overflow-hidden w-fit">
-              <button
-                onClick={() => handleExportCycleChange("WEEK")}
-                className={`px-4 py-2 text-sm transition-colors duration-200 cursor-pointer ${
-                  exportCycle === "WEEK"
-                    ? "bg-primary text-white font-medium"
-                    : "text-textSecondary hover:text-textPrimary"
-                }`}
-              >
-                按周
-              </button>
-              <button
-                onClick={() => handleExportCycleChange("MONTH")}
-                className={`px-4 py-2 text-sm transition-colors duration-200 cursor-pointer ${
-                  exportCycle === "MONTH"
-                    ? "bg-primary text-white font-medium"
-                    : "text-textSecondary hover:text-textPrimary"
-                }`}
-              >
-                按月
-              </button>
+            <div className="inline-flex items-center px-3 py-2 rounded-lg bg-card border border-border text-sm text-textPrimary">
+              {exportCycle === "MONTH" ? "按月统计" : "按周统计"}
             </div>
           </div>
 

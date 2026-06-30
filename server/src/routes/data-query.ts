@@ -59,9 +59,11 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
         request.query as { weekStart?: string; branchId?: string }
 
       // 计算查询的周起始（默认本周）
+      // 不强制转周一：月统计厅前端传月初1日，周统计厅传周一
       const weekStart = weekStartParam
-        ? getWeekStart(new Date(weekStartParam))
+        ? new Date(weekStartParam + 'T00:00:00')
         : getWeekStart()
+      weekStart.setHours(0, 0, 0, 0)
 
       const branchFilter = resolveQueryBranchId(currentUser, branchIdParam)
 

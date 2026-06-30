@@ -26,18 +26,15 @@ function normalizeRemark(v: unknown): string | null {
 }
 
 /**
- * 解析前端传入的 weekStart 字符串（YYYY-MM-DD），返回周一 00:00:00 的 Date
- * 校验：必须是合法日期、必须是周一
+ * 解析前端传入的 weekStart 字符串（YYYY-MM-DD），返回本地时间 00:00:00 的 Date
+ * 校验：必须是合法日期（不再强制校验周一，因为月统计厅前端传月初1日）
  * 未传或为空时返回 null（调用方降级到 getWeekStart()）
- * 注意：不校验"未来周"——前端 UI 已限制不能切换到未来周（handleNextWeek），
- *       后端若再校验会因 Docker UTC 时区与客户端 UTC+8 的差异误伤周一凌晨录入
  */
 function parseWeekStart(input: unknown): { ok: true; date: Date } | { ok: false; error: string } | null {
   if (input === undefined || input === null || input === '') return null
   if (typeof input !== 'string') {
     return { ok: false, error: 'weekStart 必须为字符串 (YYYY-MM-DD)' }
   }
-  // YYYY-MM-DD 解析为本地时间 00:00:00
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input)
   if (!match) {
     return { ok: false, error: 'weekStart 格式必须为 YYYY-MM-DD' }
@@ -52,11 +49,6 @@ function parseWeekStart(input: unknown): { ok: true; date: Date } | { ok: false;
     date.getDate() !== d
   ) {
     return { ok: false, error: 'weekStart 不是有效日期' }
-  }
-  // 校验是周一（getWeekStart 返回周一）
-  const day = date.getDay()
-  if (day !== 1) {
-    return { ok: false, error: 'weekStart 必须为周一' }
   }
   date.setHours(0, 0, 0, 0)
   return { ok: true, date }

@@ -51,11 +51,11 @@ function ProtectedLayout() {
 function AppRoutes() {
   return (
     <Routes>
-      {/* 公开排名页面：无需登录，所有人可访问 */}
-      <Route path="/public/ranking" element={<PublicRanking />} />
+      {/* 默认首页：公开排名（无需登录，所有人可访问） */}
+      <Route path="/" element={<PublicRanking />} />
       <Route path="/login" element={<Login />} />
       <Route element={<ProtectedLayout />}>
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/data" element={<DataEntry />} />
         <Route path="/ranking" element={<Ranking />} />
         <Route path="/personnel" element={<Personnel />} />

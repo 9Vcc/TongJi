@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { authenticate } from '../middleware/auth'
 import { StatCycle, Role } from '../../generated/prisma/client'
+import prisma from '../lib/prisma'
 import {
   computeRanking,
   resolveCycle,
@@ -21,12 +22,11 @@ async function resolveCycleParam(
 /**
  * 解析排名查询的分部过滤
  * - 会长：可指定任意厅或全部厅
- * - 超管/管理：始终限定本厅；viewAll=true 时仅切换为按月统计本厅数据
+ * - 超管/管理：始终限定本厅
  */
 function resolveRankingBranchId(
   currentUser: { role: Role; branchId: number | null },
-  requestedBranchId: string | undefined,
-  _viewAll: string | undefined
+  requestedBranchId: string | undefined
 ): number | undefined {
   if (currentUser.role === Role.HUIZHANG) {
     if (requestedBranchId) {
@@ -41,24 +41,45 @@ function resolveRankingBranchId(
 
 export default async function rankingRoutes(fastify: FastifyInstance) {
   // GET /api/ranking - 查询周期排名（按厅统计周期：周或月聚合）
+  // 指定单厅：按该厅 statCycle 查询
+  // 全部厅（会长）：按各厅自身 statCycle 分别查询后合并（周统计厅查本周、月统计厅查本月）
   fastify.get(
     '/api/ranking',
     { preHandler: [authenticate] },
     async (request, reply) => {
       const currentUser = request.user
-      const { weekStart: weekStartParam, branchId: branchIdParam, cycle: cycleParam, viewAll } =
-        request.query as { weekStart?: string; branchId?: string; cycle?: string; viewAll?: string }
+      const { weekStart: weekStartParam, branchId: branchIdParam, cycle: cycleParam } =
+        request.query as { weekStart?: string; branchId?: string; cycle?: string }
 
       const refDate = weekStartParam
         ? new Date(weekStartParam)
         : new Date()
 
-      const branchFilter = resolveRankingBranchId(currentUser, branchIdParam, viewAll)
-      const cycle = await resolveCycleParam(cycleParam, branchFilter)
+      const branchFilter = resolveRankingBranchId(currentUser, branchIdParam)
 
-      const ranking = await computeRanking(refDate, branchFilter, cycle)
+      // 指定单厅：按该厅 cycle 查询
+      if (branchFilter) {
+        const cycle = await resolveCycleParam(cycleParam, branchFilter)
+        const ranking = await computeRanking(refDate, branchFilter, cycle)
+        return reply.send(ranking)
+      }
 
-      return reply.send(ranking)
+      // 全部厅：分别按各厅 statCycle 查询，合并结果
+      const allBranches = await prisma.branch.findMany({
+        select: { id: true, statCycle: true },
+      })
+      const results = await Promise.all(
+        allBranches.map((b) => {
+          const cycle =
+            cycleParam === 'MONTH'
+              ? StatCycle.MONTH
+              : cycleParam === 'WEEK'
+                ? StatCycle.WEEK
+                : b.statCycle
+          return computeRanking(refDate, b.id, cycle)
+        })
+      )
+      return reply.send(results.flat())
     }
   )
 }

@@ -16,7 +16,7 @@ import {
   ChevronRight,
   CheckCheck,
   Pencil,
-  KeyRound,
+  Home,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { notificationsApi, authApi, getErrorMessage } from '../api'
@@ -38,7 +38,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { to: '/', label: '数据看板', icon: LayoutDashboard },
+  { to: '/dashboard', label: '数据看板', icon: LayoutDashboard },
   { to: '/data', label: '数据录入', icon: FileInput },
   { to: '/ranking', label: '排名与福利', icon: Trophy },
   { to: '/personnel', label: '人员管理', icon: Users },
@@ -46,7 +46,7 @@ const navItems: NavItem[] = [
 ]
 
 const pageTitleMap: Record<string, string> = {
-  '/': '数据看板',
+  '/dashboard': '数据看板',
   '/data': '数据录入',
   '/ranking': '排名与福利',
   '/personnel': '人员管理',
@@ -68,14 +68,30 @@ export default function Layout({ children }: LayoutProps) {
   const [notifOpen, setNotifOpen] = useState(false)
   const [notifications, setNotifications] = useState<Notification[]>([])
 
-  // 编辑昵称弹窗
-  const [nicknameModalOpen, setNicknameModalOpen] = useState(false)
+  // 账户管理统一弹窗（编辑昵称 / 修改密码 / 退出登录）
+  const [accountModalOpen, setAccountModalOpen] = useState(false)
+  const [accountTab, setAccountTab] = useState<'nickname' | 'password' | 'logout'>('nickname')
+
+  // 编辑昵称
   const [nicknameInput, setNicknameInput] = useState('')
   const [nicknameSubmitting, setNicknameSubmitting] = useState(false)
 
-  const openNicknameModal = () => {
-    setNicknameInput(user?.nickname ?? '')
-    setNicknameModalOpen(true)
+  // 修改密码
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordSubmitting, setPasswordSubmitting] = useState(false)
+
+  const openAccountModal = (tab: 'nickname' | 'password' | 'logout') => {
+    setAccountTab(tab)
+    if (tab === 'nickname') {
+      setNicknameInput(user?.nickname ?? '')
+    } else if (tab === 'password') {
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+    }
+    setAccountModalOpen(true)
   }
 
   const handleNicknameSubmit = async () => {
@@ -84,26 +100,12 @@ export default function Layout({ children }: LayoutProps) {
       await authApi.updateMe({ nickname: nicknameInput.trim() })
       await refreshUser()
       toast.success('昵称已更新')
-      setNicknameModalOpen(false)
+      setAccountModalOpen(false)
     } catch (err) {
       toast.error(getErrorMessage(err))
     } finally {
       setNicknameSubmitting(false)
     }
-  }
-
-  // 修改密码弹窗
-  const [passwordModalOpen, setPasswordModalOpen] = useState(false)
-  const [currentPassword, setCurrentPassword] = useState('')
-  const [newPassword, setNewPassword] = useState('')
-  const [confirmPassword, setConfirmPassword] = useState('')
-  const [passwordSubmitting, setPasswordSubmitting] = useState(false)
-
-  const openPasswordModal = () => {
-    setCurrentPassword('')
-    setNewPassword('')
-    setConfirmPassword('')
-    setPasswordModalOpen(true)
   }
 
   const handlePasswordSubmit = async () => {
@@ -132,7 +134,7 @@ export default function Layout({ children }: LayoutProps) {
     try {
       await authApi.changePassword(currentPassword, newPassword)
       toast.success('密码修改成功')
-      setPasswordModalOpen(false)
+      setAccountModalOpen(false)
     } catch (err) {
       toast.error(getErrorMessage(err))
     } finally {
@@ -303,12 +305,12 @@ export default function Layout({ children }: LayoutProps) {
               )}
             </AnimatePresence>
           </div>
-          <div className={`flex items-center gap-1 mb-1 ${sidebarCollapsed ? 'lg:flex-col lg:gap-1' : ''}`}>
+          <div className="flex items-center gap-1 mb-1">
             <button
-              onClick={openNicknameModal}
-              aria-label="编辑昵称"
-              title={sidebarCollapsed ? '编辑昵称' : undefined}
-              className={`flex items-center gap-2 flex-1 px-3 py-2 rounded-lg text-sm text-textSecondary hover:text-primary hover:bg-primary/10 transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
+              onClick={() => openAccountModal('nickname')}
+              aria-label="账户管理"
+              title={sidebarCollapsed ? '账户管理' : undefined}
+              className={`flex items-center gap-2 w-full px-3 py-2 rounded-lg text-sm text-textSecondary hover:text-primary hover:bg-primary/10 transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
                 sidebarCollapsed ? 'lg:justify-center' : ''
               }`}
             >
@@ -316,62 +318,14 @@ export default function Layout({ children }: LayoutProps) {
               <AnimatePresence initial={false}>
                 {!sidebarCollapsed && (
                   <motion.span
-                    key="nickname-text"
+                    key="account-text"
                     initial={{ opacity: 0, width: 0 }}
                     animate={{ opacity: 1, width: 'auto' }}
                     exit={{ opacity: 0, width: 0 }}
                     transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
                     className="whitespace-nowrap overflow-hidden"
                   >
-                    编辑昵称
-                  </motion.span>
-                )}
-              </AnimatePresence>
-            </button>
-            <button
-              onClick={openPasswordModal}
-              aria-label="修改密码"
-              title={sidebarCollapsed ? '修改密码' : undefined}
-              className={`flex items-center gap-2 flex-1 px-3 py-2 rounded-lg text-sm text-textSecondary hover:text-primary hover:bg-primary/10 transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
-                sidebarCollapsed ? 'lg:justify-center' : ''
-              }`}
-            >
-              <KeyRound size={16} className="shrink-0" />
-              <AnimatePresence initial={false}>
-                {!sidebarCollapsed && (
-                  <motion.span
-                    key="password-text"
-                    initial={{ opacity: 0, width: 0 }}
-                    animate={{ opacity: 1, width: 'auto' }}
-                    exit={{ opacity: 0, width: 0 }}
-                    transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                    className="whitespace-nowrap overflow-hidden"
-                  >
-                    修改密码
-                  </motion.span>
-                )}
-              </AnimatePresence>
-            </button>
-            <button
-              onClick={handleLogout}
-              aria-label="退出登录"
-              title={sidebarCollapsed ? '退出登录' : undefined}
-              className={`flex items-center gap-2 flex-1 px-3 py-2 rounded-lg text-sm text-danger hover:bg-danger/10 transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-danger/50 ${
-                sidebarCollapsed ? 'lg:justify-center' : ''
-              }`}
-            >
-              <LogOut size={16} className="shrink-0" />
-              <AnimatePresence initial={false}>
-                {!sidebarCollapsed && (
-                  <motion.span
-                    key="logout-text"
-                    initial={{ opacity: 0, width: 0 }}
-                    animate={{ opacity: 1, width: 'auto' }}
-                    exit={{ opacity: 0, width: 0 }}
-                    transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                    className="whitespace-nowrap overflow-hidden"
-                  >
-                    退出登录
+                    账户管理
                   </motion.span>
                 )}
               </AnimatePresence>
@@ -430,6 +384,16 @@ export default function Layout({ children }: LayoutProps) {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* 返回公开看板首页 */}
+            <a
+              href="/"
+              aria-label="返回首页"
+              title="返回公开看板"
+              className="flex items-center gap-1.5 p-2 text-textSecondary hover:text-primary rounded-lg hover:bg-primary/10 transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+            >
+              <Home size={20} />
+              <span className="hidden sm:inline text-sm">首页</span>
+            </a>
             {/* 主题切换 */}
             <ThemeToggle />
             {/* 通知 */}
@@ -544,139 +508,185 @@ export default function Layout({ children }: LayoutProps) {
         )}
       </AnimatePresence>
 
-      {/* 编辑昵称弹窗 */}
+      {/* 账户管理统一弹窗（编辑昵称 / 修改密码 / 退出登录） */}
       <Modal
-        open={nicknameModalOpen}
-        title="编辑昵称"
-        onClose={() => setNicknameModalOpen(false)}
-        footer={
-          <>
-            <button
-              onClick={() => setNicknameModalOpen(false)}
-              disabled={nicknameSubmitting}
-              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
-            >
-              取消
-            </button>
-            <button
-              onClick={handleNicknameSubmit}
-              disabled={nicknameSubmitting}
-              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
-            >
-              {nicknameSubmitting && <Spinner className="h-4 w-4" />}
-              {nicknameSubmitting ? '保存中...' : '保存'}
-            </button>
-          </>
-        }
+        open={accountModalOpen}
+        title="账户管理"
+        onClose={() => setAccountModalOpen(false)}
       >
-        <div className="space-y-3">
-          <div>
-            <label className="block text-xs text-textSecondary mb-1">
-              用户名
-              <span className="ml-1 text-[10px] text-textMuted">（不可修改）</span>
-            </label>
-            <input
-              type="text"
-              value={user?.username ?? ''}
-              disabled
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-surface text-textMuted cursor-not-allowed"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-textSecondary mb-1">
-              昵称
-              <span className="ml-1 text-[10px] text-textMuted">（选填，仅展示用）</span>
-            </label>
-            <input
-              type="text"
-              maxLength={50}
-              value={nicknameInput}
-              onChange={(e) => setNicknameInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !nicknameSubmitting) {
-                  handleNicknameSubmit()
-                }
-              }}
-              placeholder="可选，最多 50 字"
-              autoFocus
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
-            />
-          </div>
+        {/* 标签切换 */}
+        <div className="flex border-b border-border mb-4 -mt-1">
+          {([
+            { key: 'nickname', label: '编辑昵称' },
+            { key: 'password', label: '修改密码' },
+            { key: 'logout', label: '退出登录' },
+          ] as const).map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setAccountTab(tab.key)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors duration-200 cursor-pointer ${
+                accountTab === tab.key
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-textSecondary hover:text-textPrimary'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
-      </Modal>
 
-      {/* 修改密码弹窗 */}
-      <Modal
-        open={passwordModalOpen}
-        title="修改密码"
-        onClose={() => setPasswordModalOpen(false)}
-        footer={
-          <>
-            <button
-              onClick={() => setPasswordModalOpen(false)}
-              disabled={passwordSubmitting}
-              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
-            >
-              取消
-            </button>
-            <button
-              onClick={handlePasswordSubmit}
-              disabled={passwordSubmitting}
-              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
-            >
-              {passwordSubmitting && <Spinner className="h-4 w-4" />}
-              {passwordSubmitting ? '保存中...' : '保存'}
-            </button>
-          </>
-        }
-      >
-        <div className="space-y-3">
-          <div>
-            <label className="block text-xs text-textSecondary mb-1">
-              当前密码
-            </label>
-            <input
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              placeholder="请输入当前密码"
-              autoFocus
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
-            />
+        {/* 编辑昵称 */}
+        {accountTab === 'nickname' && (
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs text-textSecondary mb-1">
+                用户名
+                <span className="ml-1 text-[10px] text-textMuted">（不可修改）</span>
+              </label>
+              <input
+                type="text"
+                value={user?.username ?? ''}
+                disabled
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-surface text-textMuted cursor-not-allowed"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-textSecondary mb-1">
+                昵称
+                <span className="ml-1 text-[10px] text-textMuted">（选填，仅展示用）</span>
+              </label>
+              <input
+                type="text"
+                maxLength={50}
+                value={nicknameInput}
+                onChange={(e) => setNicknameInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !nicknameSubmitting) {
+                    handleNicknameSubmit()
+                  }
+                }}
+                placeholder="可选，最多 50 字"
+                autoFocus
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                onClick={() => setAccountModalOpen(false)}
+                disabled={nicknameSubmitting}
+                className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleNicknameSubmit}
+                disabled={nicknameSubmitting}
+                className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+              >
+                {nicknameSubmitting && <Spinner className="h-4 w-4" />}
+                {nicknameSubmitting ? '保存中...' : '保存'}
+              </button>
+            </div>
           </div>
-          <div>
-            <label className="block text-xs text-textSecondary mb-1">
-              新密码
-              <span className="ml-1 text-[10px] text-textMuted">（6-50 位）</span>
-            </label>
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="请输入新密码"
-              maxLength={50}
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
-            />
+        )}
+
+        {/* 修改密码 */}
+        {accountTab === 'password' && (
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs text-textSecondary mb-1">
+                当前密码
+              </label>
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                placeholder="请输入当前密码"
+                autoFocus
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-textSecondary mb-1">
+                新密码
+                <span className="ml-1 text-[10px] text-textMuted">（6-50 位）</span>
+              </label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="请输入新密码"
+                maxLength={50}
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-textSecondary mb-1">
+                确认新密码
+              </label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !passwordSubmitting) {
+                    handlePasswordSubmit()
+                  }
+                }}
+                placeholder="请再次输入新密码"
+                maxLength={50}
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                onClick={() => setAccountModalOpen(false)}
+                disabled={passwordSubmitting}
+                className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+              >
+                取消
+              </button>
+              <button
+                onClick={handlePasswordSubmit}
+                disabled={passwordSubmitting}
+                className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+              >
+                {passwordSubmitting && <Spinner className="h-4 w-4" />}
+                {passwordSubmitting ? '保存中...' : '保存'}
+              </button>
+            </div>
           </div>
-          <div>
-            <label className="block text-xs text-textSecondary mb-1">
-              确认新密码
-            </label>
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !passwordSubmitting) {
-                  handlePasswordSubmit()
-                }
-              }}
-              placeholder="请再次输入新密码"
-              maxLength={50}
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
-            />
+        )}
+
+        {/* 退出登录 */}
+        {accountTab === 'logout' && (
+          <div className="space-y-4">
+            <div className="flex items-start gap-3 p-3 bg-danger/10 rounded-lg">
+              <LogOut size={20} className="text-danger shrink-0 mt-0.5" />
+              <div className="text-sm text-textPrimary">
+                确认退出当前账户？
+                <div className="text-xs text-textMuted mt-1">
+                  退出后需重新登录才能访问后台管理功能。
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                onClick={() => setAccountModalOpen(false)}
+                className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-1.5 px-4 py-2 bg-danger text-white rounded-lg text-sm font-medium hover:bg-danger/90 transition-colors duration-200 cursor-pointer"
+              >
+                <LogOut size={16} />
+                确认退出
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </Modal>
     </div>
   )

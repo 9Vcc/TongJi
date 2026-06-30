@@ -5,9 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:public": "vite --config vite.config.public.ts",
     "build": "tsc -b && vite build",
-    "build:public": "tsc --noEmit -p tsconfig.app.json && vite build --config vite.config.public.ts",
     "lint": "oxlint",
     "preview": "vite preview"
   },

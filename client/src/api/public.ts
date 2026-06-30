@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { RankingItem, RewardRule, Branch } from '../types'
+import type { RankingItem, RewardRule, Branch, PublicPersonnelItem } from '../types'
 
 /**
  * 公开 API 客户端：不附加 token，用于无需登录的公开页面
@@ -42,5 +42,8 @@ export const publicApi = {
     return publicRequest.get<unknown, RewardRule[]>('/reward-rules', {
       params: branchId ? { branchId } : undefined,
     })
+  },
+  listPersonnel() {
+    return publicRequest.get<unknown, PublicPersonnelItem[]>('/personnel')
   },
 }

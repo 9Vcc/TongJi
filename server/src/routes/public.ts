@@ -45,6 +45,7 @@ export default async function publicRoutes(fastify: FastifyInstance) {
   })
 
   // GET /api/public/ranking - 公开查询周期排名
+  // 全部厅时：按各厅自身统计周期分别查询后合并，确保月统计厅数据也能返回
   fastify.get('/api/public/ranking', async (request, reply) => {
     const { weekStart: weekStartParam, branchId: branchIdParam, cycle: cycleParam } =
       request.query as {
@@ -56,10 +57,66 @@ export default async function publicRoutes(fastify: FastifyInstance) {
     const refDate = weekStartParam ? new Date(weekStartParam) : new Date()
     const branchFilter =
       branchIdParam && !Number.isNaN(Number(branchIdParam)) ? Number(branchIdParam) : undefined
-    const cycle = await resolveCycleParam(cycleParam, branchFilter)
 
-    const ranking = await computeRanking(refDate, branchFilter, cycle)
-    return reply.send(ranking)
+    // 指定单厅：按该厅 cycle 查询
+    if (branchFilter) {
+      const cycle = await resolveCycleParam(cycleParam, branchFilter)
+      const ranking = await computeRanking(refDate, branchFilter, cycle)
+      return reply.send(ranking)
+    }
+
+    // 全部厅：分别按各厅 statCycle 查询，合并结果
+    const allBranches = await prisma.branch.findMany({
+      select: { id: true, statCycle: true },
+    })
+    const results = await Promise.all(
+      allBranches.map((b) => {
+        const cycle =
+          cycleParam === 'MONTH'
+            ? StatCycle.MONTH
+            : cycleParam === 'WEEK'
+              ? StatCycle.WEEK
+              : b.statCycle
+        return computeRanking(refDate, b.id, cycle)
+      })
+    )
+    return reply.send(results.flat())
+  })
+
+  // GET /api/public/personnel - 公开查询所有人员及其所属厅（扁平化）
+  // 用于搜索时显示未录入数据的人员
+  fastify.get('/api/public/personnel', async (_request, reply) => {
+    const branches = await prisma.branch.findMany({
+      select: {
+        id: true,
+        name: true,
+        statCycle: true,
+        personnelBranches: {
+          select: {
+            personnel: { select: { id: true, name: true } },
+          },
+        },
+      },
+    })
+    const result: Array<{
+      personnelId: number
+      personnelName: string
+      branchId: number
+      branchName: string
+      statCycle: StatCycle
+    }> = []
+    for (const b of branches) {
+      for (const pb of b.personnelBranches) {
+        result.push({
+          personnelId: pb.personnel.id,
+          personnelName: pb.personnel.name,
+          branchId: b.id,
+          branchName: b.name,
+          statCycle: b.statCycle,
+        })
+      }
+    }
+    return reply.send(result)
   })
 
   // GET /api/public/reward-rules - 公开查询奖励规则

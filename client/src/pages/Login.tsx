@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { BarChart3, LogIn, AlertCircle } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
@@ -7,10 +7,15 @@ import { useToast } from '../hooks/useToast'
 import { getErrorMessage } from '../api'
 import { Spinner } from '../components/Skeleton'
 
+interface LocationState {
+  from?: { pathname: string }
+}
+
 export default function Login() {
   const { login } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
+  const location = useLocation()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -27,7 +32,9 @@ export default function Login() {
     try {
       await login(username, password)
       toast.success('登录成功')
-      navigate('/')
+      // 登录后跳回来源页，默认进入数据看板后台
+      const from = (location.state as LocationState)?.from?.pathname
+      navigate(from || '/dashboard')
     } catch (err) {
       const msg = getErrorMessage(err)
       setError(msg)

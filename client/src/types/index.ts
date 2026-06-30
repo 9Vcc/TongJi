@@ -190,6 +190,15 @@ export interface RankingItem {
   namings: NamingItem[]
 }
 
+// 公开人员查询项（人员-厅扁平化）
+export interface PublicPersonnelItem {
+  personnelId: number
+  personnelName: string
+  branchId: number
+  branchName: string
+  statCycle: StatCycle
+}
+
 // 看板汇总
 export interface DashboardSummary {
   personnelCount: number

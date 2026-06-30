@@ -155,22 +155,57 @@ export async function computeRanking(
   cycle: StatCycle = StatCycle.WEEK
 ): Promise<RankingItem[]> {
   // 根据周期确定查询范围
+  // WEEK: 周一到周日，精确匹配 weekStart
+  // MONTH: 按厅 statCycle 区分归属逻辑
+  //   - 月统计厅：周日归属月（weekStart+6 落在目标月内），兼容历史按周存储的数据
+  //   - 按周统计厅：录入时间归属月（createdAt 落在目标月内），避免跨月周中上月录入的数据被算入本月
+  //     例：本周 6/29(周一)-7/5(周日)，6/29 录入的属于 6 月，7/1 录入的属于 7 月
   const periodStart = getPeriodStart(cycle, refDate)
   const periodEnd = getPeriodEnd(cycle, refDate)
 
-  const records = await prisma.dataRecord.findMany({
-    where: {
-      ...(cycle === StatCycle.MONTH
-        ? { weekStart: { gte: periodStart, lt: periodEnd } }
-        : { weekStart: periodStart }),
-      ...(branchFilter ? { branchId: branchFilter } : {}),
-    },
-    include: {
-      personnel: { select: { id: true, name: true } },
-      branch: { select: { id: true, name: true } },
-      namings: { include: { level: true } },
-    },
-  })
+  let records
+
+  if (cycle === StatCycle.MONTH) {
+    // 扩大查询范围以覆盖所有可能归属目标月的记录
+    const queryStart = new Date(periodStart)
+    queryStart.setDate(queryStart.getDate() - 6)
+    const rawRecords = await prisma.dataRecord.findMany({
+      where: {
+        weekStart: { gte: queryStart, lt: periodEnd },
+        ...(branchFilter ? { branchId: branchFilter } : {}),
+      },
+      include: {
+        personnel: { select: { id: true, name: true } },
+        branch: { select: { id: true, name: true, statCycle: true } },
+        namings: { include: { level: true } },
+      },
+    })
+    // 过滤：按厅 statCycle 区分归属逻辑
+    // - 月统计厅（MONTH）：周日归属月（兼容历史按周存储的数据），周日落在目标月内才算
+    // - 按周统计厅（WEEK）：按录入时间归属月，createdAt 落在目标月内才算
+    //   避免跨月周（如本周6/29-7/5）中上月录入的数据被算入本月
+    records = rawRecords.filter((r) => {
+      if (r.branch.statCycle === StatCycle.WEEK) {
+        return r.createdAt >= periodStart && r.createdAt < periodEnd
+      }
+      const sunday = new Date(r.weekStart)
+      sunday.setDate(sunday.getDate() + 6)
+      sunday.setHours(0, 0, 0, 0)
+      return sunday >= periodStart && sunday < periodEnd
+    })
+  } else {
+    records = await prisma.dataRecord.findMany({
+      where: {
+        weekStart: periodStart,
+        ...(branchFilter ? { branchId: branchFilter } : {}),
+      },
+      include: {
+        personnel: { select: { id: true, name: true } },
+        branch: { select: { id: true, name: true } },
+        namings: { include: { level: true } },
+      },
+    })
+  }
 
   if (records.length === 0) return []
 

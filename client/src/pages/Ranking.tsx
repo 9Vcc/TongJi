@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Trophy, Info } from 'lucide-react'
+import { Trophy, Info, ChevronLeft, ChevronRight } from 'lucide-react'
 import {
   rankingApi,
   rewardRulesApi,
@@ -13,6 +13,7 @@ import { useToast } from '../hooks/useToast'
 import {
   formatDate,
   getWeekStart,
+  getPreviousWeekStart,
   getWeekRangeText,
   getMonthRangeText,
 } from '../utils'
@@ -43,178 +44,41 @@ function formatNamings(namings?: NamingItem[]): string {
   )
 }
 
+/**
+ * 获取月统计厅的月初1日
+ */
+function getMonthStart(d: Date): Date {
+  const r = new Date(d.getFullYear(), d.getMonth(), 1)
+  r.setHours(0, 0, 0, 0)
+  return r
+}
+
 export default function Ranking() {
   const { user } = useAuth()
   const toast = useToast()
   const isHuizhang = user?.role === 'HUIZHANG'
 
-  const [weekStart, setWeekStart] = useState(formatDate(getWeekStart()))
-  const [weeks, setWeeks] = useState<string[]>([])
-  const [ranking, setRanking] = useState<RankingItem[]>([])
-  const [rules, setRules] = useState<RewardRule[]>([])
   const [branches, setBranches] = useState<Branch[]>([])
-  const [branchId, setBranchId] = useState<number | undefined>(undefined)
-  const [loading, setLoading] = useState(false)
-  // 标记会长是否已完成初始随机选厅，避免用户手动切回"全部厅"时被覆盖
-  const initBranchRef = useRef(false)
-
-  // 当前厅的统计周期（全部厅时统一按周）
-  const currentCycle: StatCycle = useMemo(() => {
-    const branch = branches.find((b) => b.id === branchId)
-    return branch?.statCycle ?? 'WEEK'
-  }, [branches, branchId])
-  const isMonthCycle = currentCycle === 'MONTH'
+  // 会长默认全部厅(undefined)；超管/管理锁定本厅
+  const [branchId, setBranchId] = useState<number | undefined>(() =>
+    isHuizhang ? undefined : user?.branchId ?? undefined
+  )
 
   useEffect(() => {
-    // 所有用户都需加载厅列表以获取统计周期
-    branchesApi.list().then((list) => {
-      setBranches(list)
-      // 会长首次进入：随机选择一个厅（而非默认全部厅）
-      if (isHuizhang && !initBranchRef.current && list.length > 0) {
-        const randomBranch = list[Math.floor(Math.random() * list.length)]
-        setBranchId(randomBranch.id)
-      }
-      // 超管/管理：初始锁定到本厅，默认显示本厅统计数据
-      if (!isHuizhang && !initBranchRef.current && user?.branchId) {
-        setBranchId(user.branchId)
-      }
-      initBranchRef.current = true
-    }).catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    branchesApi.list().then(setBranches).catch(() => {})
   }, [])
 
-  useEffect(() => {
-    dataQueryApi
-      .getWeeks(branchId)
-      .then(setWeeks)
-      .catch(() => {})
-  }, [branchId])
-
-  useEffect(() => {
-    setLoading(true)
-    Promise.all([
-      rankingApi.getRanking(weekStart, branchId),
-      rewardRulesApi.get(branchId),
-    ])
-      .then(([r, rs]) => {
-        setRanking(r)
-        setRules(rs)
-      })
-      .catch((err) => toast.error(getErrorMessage(err)))
-      .finally(() => setLoading(false))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekStart, branchId])
-
-  // 合并本周与已选周到下拉列表（统一格式化为 YYYY-MM-DD 避免重复）
-  const allWeeks = useMemo(() => {
-    const set = new Set<string>()
-    weeks.forEach((w) => set.add(formatDate(new Date(w))))
-    set.add(formatDate(getWeekStart()))
-    set.add(weekStart)
-    return Array.from(set).sort().reverse()
-  }, [weeks, weekStart])
-
-  // 按月统计时：从周列表提取不重复月份，每月取最早周一作为参考日
-  const allMonths = useMemo(() => {
-    const monthMap = new Map<string, string>() // YYYY-MM -> refDate(YYYY-MM-DD)
-    const addMonth = (dateStr: string) => {
-      const formatted = formatDate(new Date(dateStr))
-      const d = new Date(formatted)
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      if (!monthMap.has(key)) monthMap.set(key, formatted)
-    }
-    weeks.forEach(addMonth)
-    addMonth(formatDate(getWeekStart()))
-    addMonth(weekStart)
-    return Array.from(monthMap.entries())
-      .map(([key, ref]) => ({ key, ref }))
-      .sort((a, b) => b.key.localeCompare(a.key))
-  }, [weeks, weekStart])
-
-  // 当前选中月份的参考日（确保 weekStart 落在所选月）
-  const selectedMonthRef = useMemo(() => {
-    const d = new Date(weekStart)
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    const found = allMonths.find((m) => m.key === key)
-    return found?.ref ?? weekStart
-  }, [weekStart, allMonths])
-
-  const currentRule = rules[0]
-
-  // 是否为全部厅模式
-  const isAllBranches = !branchId
-
-  // 全部厅时：按 branchId 分组，每组仅取前 10 名
-  const rankingByBranch = useMemo(() => {
-    const map = new Map<number, { branchName: string; items: RankingItem[] }>()
-    for (const item of ranking) {
-      let group = map.get(item.branchId)
-      if (!group) {
-        group = { branchName: item.branchName, items: [] }
-        map.set(item.branchId, group)
-      }
-      group.items.push(item)
-    }
-    return Array.from(map.entries()).map(([bid, g]) => ({
-      branchId: bid,
-      branchName: g.branchName,
-      items: g.items.slice(0, 10),
-    }))
-  }, [ranking])
-
-  // 单厅模式：仅取前 10 名
-  const top10Ranking = useMemo(() => ranking.slice(0, 10), [ranking])
+  const selectedBranch = useMemo(
+    () => branches.find((b) => b.id === branchId),
+    [branches, branchId]
+  )
+  const currentCycle: StatCycle = selectedBranch?.statCycle ?? 'WEEK'
 
   return (
     <div className="space-y-5">
-      {/* 顶部选择器 */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-textSecondary">
-            {isMonthCycle ? '月份' : '周次'}
-          </label>
-          {isMonthCycle ? (
-            <select
-              value={selectedMonthRef}
-              onChange={(e) => setWeekStart(e.target.value)}
-              aria-label="选择月份"
-              className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/50 min-w-[220px] cursor-pointer"
-            >
-              {allMonths.map((m) => (
-                <option key={m.key} value={m.ref}>
-                  {getMonthRangeText(m.ref)}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <select
-              value={weekStart}
-              onChange={(e) => setWeekStart(e.target.value)}
-              aria-label="选择周次"
-              className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/50 min-w-[220px] cursor-pointer"
-            >
-              {allWeeks.map((w) => (
-                <option key={w} value={w}>
-                  {getWeekRangeText(w)}
-                </option>
-              ))}
-            </select>
-          )}
-          {branchId && (
-            <span
-              className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-                isMonthCycle
-                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
-                  : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
-              }`}
-              title={isMonthCycle ? '该厅按月统计' : '该厅按周统计'}
-            >
-              {isMonthCycle ? '按月统计' : '按周统计'}
-            </span>
-          )}
-        </div>
-
-        {isHuizhang && (
+      {/* 顶部选择器：仅厅选择（日期选择已整合到卡片） */}
+      {isHuizhang && (
+        <div className="flex items-center justify-end">
           <select
             value={branchId ?? ''}
             onChange={(e) =>
@@ -230,51 +94,325 @@ export default function Ranking() {
               </option>
             ))}
           </select>
-        )}
-      </div>
-
-      {/* 数据区域：weekStart/branchId 变化时重新触发入场动画 */}
-      <AnimatePresence mode="wait">
-      <motion.div
-        key={`${weekStart}-${branchId ?? 'all'}`}
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -8 }}
-        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-        className="space-y-5"
-      >
-      {/* 排名表格：全部厅时按厅分卡片，单厅时单卡片 */}
-      {isAllBranches ? (
-        loading ? (
-          <RankingCardSkeleton />
-        ) : rankingByBranch.length === 0 ? (
-          <div className="bg-card border border-border rounded-xl px-5 py-12 text-center text-sm text-textMuted">
-            暂无排名数据
-          </div>
-        ) : (
-          <div className="grid gap-5 lg:grid-cols-2">
-            {rankingByBranch.map((group) => (
-              <RankingCard
-                key={group.branchId}
-                title={group.branchName}
-                items={group.items}
-                isMonthCycle={isMonthCycle}
-              />
-            ))}
-          </div>
-        )
-      ) : (
-        <RankingCard
-          title={isMonthCycle ? '本月排名' : '本周排名'}
-          items={top10Ranking}
-          isMonthCycle={isMonthCycle}
-          loading={loading}
-        />
+        </div>
       )}
 
-      {/* 福利计算说明：仅在选择具体厅时显示（全部厅时不显示） */}
-      {branchId && (
-      <div className="bg-card border border-border rounded-xl p-5">
+      {/* 排名区域 */}
+      {!branchId ? (
+        // 全部厅模式：每个厅一个独立卡片，含独立日期选择
+        <div className="grid gap-5 lg:grid-cols-2">
+          {branches.length === 0 ? (
+            <RankingCardSkeleton />
+          ) : (
+            branches.map((b) => (
+              <BranchRankingCard
+                key={b.id}
+                branch={b}
+                toast={toast}
+              />
+            ))
+          )}
+        </div>
+      ) : (
+        // 单厅模式：单卡片，含日期选择
+        <BranchRankingCard branch={selectedBranch!} toast={toast} />
+      )}
+
+      {/* 福利计算说明：仅在选择具体厅时显示 */}
+      {branchId && selectedBranch && (
+        <WelfareRuleCard branchId={branchId} isMonthCycle={currentCycle === 'MONTH'} />
+      )}
+    </div>
+  )
+}
+
+/**
+ * 厅排名卡片：含独立日期选择器和排名表格
+ */
+function BranchRankingCard({
+  branch,
+  toast,
+}: {
+  branch: Branch
+  toast: ReturnType<typeof useToast>
+}) {
+  const isMonthCycle = branch.statCycle === 'MONTH'
+  // 初始 weekStart：周统计厅=本周周一，月统计厅=本月1日
+  const [weekStart, setWeekStart] = useState(() =>
+    isMonthCycle ? getMonthStart(new Date()) : getWeekStart()
+  )
+  const [weeks, setWeeks] = useState<string[]>([])
+  const [ranking, setRanking] = useState<RankingItem[]>([])
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    dataQueryApi.getWeeks(branch.id).then(setWeeks).catch(() => {})
+  }, [branch.id])
+
+  useEffect(() => {
+    setLoading(true)
+    rankingApi
+      .getRanking(formatDate(weekStart), branch.id)
+      .then(setRanking)
+      .catch((err) => toast.error(getErrorMessage(err)))
+      .finally(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekStart, branch.id])
+
+  // 合并历史周次与当前周
+  const allWeeks = useMemo(() => {
+    const set = new Set<string>()
+    weeks.forEach((w) => set.add(formatDate(new Date(w))))
+    set.add(formatDate(getWeekStart()))
+    set.add(formatDate(weekStart))
+    return Array.from(set).sort().reverse()
+  }, [weeks, weekStart])
+
+  // 按月统计时：从周列表提取不重复月份
+  const allMonths = useMemo(() => {
+    const monthMap = new Map<string, string>()
+    const addMonth = (dateStr: string) => {
+      const formatted = formatDate(new Date(dateStr))
+      const d = new Date(formatted)
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+      if (!monthMap.has(key)) monthMap.set(key, formatted)
+    }
+    weeks.forEach(addMonth)
+    addMonth(formatDate(new Date()))
+    addMonth(formatDate(weekStart))
+    return Array.from(monthMap.entries())
+      .map(([key, ref]) => ({ key, ref }))
+      .sort((a, b) => b.key.localeCompare(a.key))
+  }, [weeks, weekStart])
+
+  const selectedMonthRef = useMemo(() => {
+    const d = new Date(weekStart)
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+    return allMonths.find((m) => m.key === key)?.ref ?? formatDate(weekStart)
+  }, [weekStart, allMonths])
+
+  const handlePrev = () => {
+    if (isMonthCycle) {
+      const d = new Date(weekStart)
+      d.setMonth(d.getMonth() - 1)
+      d.setDate(1)
+      d.setHours(0, 0, 0, 0)
+      setWeekStart(d)
+    } else {
+      setWeekStart(getPreviousWeekStart(weekStart))
+    }
+  }
+  const handleNext = () => {
+    if (isMonthCycle) {
+      const d = new Date(weekStart)
+      d.setMonth(d.getMonth() + 1)
+      d.setDate(1)
+      d.setHours(0, 0, 0, 0)
+      const thisMonthStart = getMonthStart(new Date())
+      if (d <= thisMonthStart) setWeekStart(d)
+    } else {
+      const next = new Date(weekStart)
+      next.setDate(next.getDate() + 7)
+      if (next <= getWeekStart()) setWeekStart(next)
+    }
+  }
+  const handleThisPeriod = () => {
+    setWeekStart(isMonthCycle ? getMonthStart(new Date()) : getWeekStart())
+  }
+
+  const top10 = useMemo(() => ranking.slice(0, 10), [ranking])
+
+  return (
+    <div className="bg-card border border-border rounded-xl overflow-hidden">
+      {/* 卡片头部：厅名 + 周期标签 */}
+      <div className="flex items-center gap-2 px-5 py-4 border-b border-border flex-wrap">
+        <Trophy size={18} className="text-warning" />
+        <h3 className="text-base font-semibold text-textPrimary">{branch.name}</h3>
+        <span
+          className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+            isMonthCycle
+              ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+              : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+          }`}
+        >
+          {isMonthCycle ? '按月统计' : '按周统计'}
+        </span>
+      </div>
+      {/* 日期选择器 */}
+      <div className="flex items-center gap-2 px-5 py-3 border-b border-border flex-wrap">
+        <button
+          onClick={handlePrev}
+          className="p-1.5 border border-border rounded-md bg-card text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+          aria-label={isMonthCycle ? '上一月' : '上一周'}
+        >
+          <ChevronLeft size={14} />
+        </button>
+        {isMonthCycle ? (
+          <select
+            value={selectedMonthRef}
+            onChange={(e) => setWeekStart(new Date(e.target.value))}
+            aria-label="选择月份"
+            className="px-2.5 py-1.5 border border-border rounded-md bg-card text-sm text-textPrimary focus:outline-none focus:border-primary min-w-[200px] cursor-pointer"
+          >
+            {allMonths.map((m) => (
+              <option key={m.key} value={m.ref}>
+                {getMonthRangeText(m.ref)}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <select
+            value={formatDate(weekStart)}
+            onChange={(e) => setWeekStart(new Date(e.target.value))}
+            aria-label="选择周次"
+            className="px-2.5 py-1.5 border border-border rounded-md bg-card text-sm text-textPrimary focus:outline-none focus:border-primary min-w-[200px] cursor-pointer"
+          >
+            {allWeeks.map((w) => (
+              <option key={w} value={w}>
+                {getWeekRangeText(w)}
+              </option>
+            ))}
+          </select>
+        )}
+        <button
+          onClick={handleNext}
+          className="p-1.5 border border-border rounded-md bg-card text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+          aria-label={isMonthCycle ? '下一月' : '下一周'}
+        >
+          <ChevronRight size={14} />
+        </button>
+        <button
+          onClick={handleThisPeriod}
+          className="px-2.5 py-1.5 border border-border rounded-md bg-card text-xs text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+        >
+          {isMonthCycle ? '本月' : '本周'}
+        </button>
+      </div>
+      {/* 排名表格 */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-surface border-b border-border">
+            <tr className="text-left text-textSecondary">
+              <th className="px-3 py-2 font-medium">排名</th>
+              <th className="px-3 py-2 font-medium">人员</th>
+              <th className="px-3 py-2 font-medium">收光</th>
+              <th className="px-3 py-2 font-medium">麦序</th>
+              <th className="px-3 py-2 font-medium">全麦</th>
+              {isMonthCycle && (
+                <th className="px-3 py-2 font-medium">冠名</th>
+              )}
+              <th className="px-3 py-2 font-medium">总福利</th>
+            </tr>
+          </thead>
+          <tbody>
+            {top10.length === 0 && !loading ? (
+              <tr>
+                <td
+                  colSpan={isMonthCycle ? 7 : 6}
+                  className="px-3 py-8 text-center text-textMuted"
+                >
+                  暂无数据
+                </td>
+              </tr>
+            ) : top10.length === 0 ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <tr key={i} className="border-b border-border last:border-0">
+                  {Array.from({ length: isMonthCycle ? 7 : 6 }).map((_, j) => (
+                    <td key={j} className="px-3 py-2">
+                      <Skeleton className="h-5 w-full" />
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : (
+              top10.map((item) => {
+                const isTop3 = item.rank <= 3
+                const rowBg = isTop3 ? rankRowBg[item.rank - 1] : ''
+                const badgeColor = isTop3
+                  ? rankBadgeColors[item.rank - 1]
+                  : '#94A3B8'
+                const hasNaming =
+                  isMonthCycle &&
+                  item.namings &&
+                  item.namings.some((n) => n.count > 0)
+                return (
+                  <tr
+                    key={`${item.branchId}-${item.personnelId}`}
+                    className={`border-b border-border last:border-0 ${rowBg} hover:bg-surface dark:hover:bg-surface/50 transition-colors duration-200`}
+                  >
+                    <td className="px-3 py-2">
+                      <div
+                        className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-semibold font-mono shadow-sm"
+                        style={{ backgroundColor: badgeColor }}
+                      >
+                        {item.rank}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-textPrimary font-medium">
+                      {item.personnelName}
+                    </td>
+                    <td className="px-3 py-2 text-textPrimary font-mono">{item.sg}</td>
+                    <td className="px-3 py-2 text-textPrimary font-mono">{item.mx}</td>
+                    <td className="px-3 py-2 text-textPrimary font-mono">{item.qm}</td>
+                    {isMonthCycle && (
+                      <td className="px-3 py-2 text-textPrimary text-xs whitespace-nowrap">
+                        {formatNamings(item.namings)}
+                      </td>
+                    )}
+                    <td className="px-3 py-2">
+                      <div className="text-textPrimary font-semibold font-mono">
+                        {item.totalWelfare}
+                      </div>
+                      {hasNaming && (item.namingWelfare ?? 0) > 0 && (
+                        <div className="text-[10px] text-amber-600 dark:text-amber-400 font-mono mt-0.5">
+                          含冠名 {item.namingWelfare}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 福利计算说明卡片
+ */
+function WelfareRuleCard({
+  branchId,
+  isMonthCycle,
+}: {
+  branchId: number
+  isMonthCycle: boolean
+}) {
+  const [rules, setRules] = useState<RewardRule[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    rewardRulesApi
+      .get(branchId)
+      .then(setRules)
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [branchId])
+
+  const currentRule = rules[0]
+
+  return (
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={`${branchId}-${isMonthCycle}`}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -8 }}
+        transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+        className="bg-card border border-border rounded-xl p-5"
+      >
         <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
           <div className="flex items-center gap-2">
             <Info size={18} className="text-primary" />
@@ -363,11 +501,8 @@ export default function Ranking() {
             暂无规则数据
           </div>
         )}
-      </div>
-      )}
       </motion.div>
-      </AnimatePresence>
-    </div>
+    </AnimatePresence>
   )
 }
 
@@ -411,125 +546,11 @@ function RuleCard({
 }
 
 /**
- * 排名卡片：单厅或分组后的厅排名
- */
-function RankingCard({
-  title,
-  items,
-  isMonthCycle,
-  loading = false,
-}: {
-  title: string
-  items: RankingItem[]
-  isMonthCycle: boolean
-  loading?: boolean
-}) {
-  return (
-    <div className="bg-card border border-border rounded-xl overflow-hidden">
-      <div className="flex items-center gap-2 px-5 py-4 border-b border-border">
-        <Trophy size={18} className="text-warning" />
-        <h3 className="text-base font-semibold text-textPrimary">{title}</h3>
-        <span className="text-xs text-textMuted ml-auto">
-          {isMonthCycle ? '本月排名' : '本周排名'}
-        </span>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-surface border-b border-border">
-            <tr className="text-left text-textSecondary">
-              <th className="px-3 py-2 font-medium">排名</th>
-              <th className="px-3 py-2 font-medium">人员</th>
-              <th className="px-3 py-2 font-medium">收光</th>
-              <th className="px-3 py-2 font-medium">麦序</th>
-              <th className="px-3 py-2 font-medium">全麦</th>
-              {isMonthCycle && (
-                <th className="px-3 py-2 font-medium">冠名</th>
-              )}
-              <th className="px-3 py-2 font-medium">总福利</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.length === 0 && !loading ? (
-              <tr>
-                <td
-                  colSpan={isMonthCycle ? 7 : 6}
-                  className="px-3 py-8 text-center text-textMuted"
-                >
-                  暂无数据
-                </td>
-              </tr>
-            ) : items.length === 0 ? (
-              Array.from({ length: 5 }).map((_, i) => (
-                <tr key={i} className="border-b border-border last:border-0">
-                  {Array.from({ length: isMonthCycle ? 7 : 6 }).map((_, j) => (
-                    <td key={j} className="px-3 py-2">
-                      <Skeleton className="h-5 w-full" />
-                    </td>
-                  ))}
-                </tr>
-              ))
-            ) : (
-              items.map((item) => {
-                const isTop3 = item.rank <= 3
-                const rowBg = isTop3 ? rankRowBg[item.rank - 1] : ''
-                const badgeColor = isTop3
-                  ? rankBadgeColors[item.rank - 1]
-                  : '#94A3B8'
-                const hasNaming =
-                  isMonthCycle &&
-                  item.namings &&
-                  item.namings.some((n) => n.count > 0)
-                return (
-                  <tr
-                    key={`${item.branchId}-${item.personnelId}`}
-                    className={`border-b border-border last:border-0 ${rowBg} hover:bg-surface dark:hover:bg-surface/50 transition-colors duration-200`}
-                  >
-                    <td className="px-3 py-2">
-                      <div
-                        className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-semibold font-mono shadow-sm"
-                        style={{ backgroundColor: badgeColor }}
-                      >
-                        {item.rank}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2 text-textPrimary font-medium">
-                      {item.personnelName}
-                    </td>
-                    <td className="px-3 py-2 text-textPrimary font-mono">{item.sg}</td>
-                    <td className="px-3 py-2 text-textPrimary font-mono">{item.mx}</td>
-                    <td className="px-3 py-2 text-textPrimary font-mono">{item.qm}</td>
-                    {isMonthCycle && (
-                      <td className="px-3 py-2 text-textPrimary text-xs whitespace-nowrap">
-                        {formatNamings(item.namings)}
-                      </td>
-                    )}
-                    <td className="px-3 py-2">
-                      <div className="text-textPrimary font-semibold font-mono">
-                        {item.totalWelfare}
-                      </div>
-                      {hasNaming && (item.namingWelfare ?? 0) > 0 && (
-                        <div className="text-[10px] text-amber-600 dark:text-amber-400 font-mono mt-0.5">
-                          含冠名 {item.namingWelfare}
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-/**
- * 排名卡片骨架屏（全部厅加载中）
+ * 排名卡片骨架屏
  */
 function RankingCardSkeleton() {
   return (
-    <div className="grid gap-5 lg:grid-cols-2">
+    <>
       {Array.from({ length: 2 }).map((_, i) => (
         <div
           key={i}
@@ -551,6 +572,6 @@ function RankingCardSkeleton() {
           </div>
         </div>
       ))}
-    </div>
+    </>
   )
 }

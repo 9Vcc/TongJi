@@ -156,6 +156,12 @@ export const personnelApi = {
       params: { branchId },
     })
   },
+  rename(id: number, name: string, branchId?: number) {
+    return request.put<unknown, Personnel>(`/personnel/${id}`, {
+      name,
+      branchId,
+    })
+  },
 }
 
 // ============ 数据录入 ============
