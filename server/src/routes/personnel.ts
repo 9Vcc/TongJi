@@ -84,6 +84,112 @@ export default async function personnelRoutes(fastify: FastifyInstance) {
     }
   )
 
+  // POST /api/personnel/batch - 批量导入人员（按行分隔的姓名名单）
+  // body: { names: string[], branchId: number }
+  // 返回: { success: number, failed: number, createdPersons: string[], failures: { name: string, reason: string }[] }
+  fastify.post(
+    '/api/personnel/batch',
+    { preHandler: [authenticate, requireRole(Role.CHAOGUAN)] },
+    async (request, reply) => {
+      const currentUser = request.user
+      const { names, branchId } = request.body as {
+        names: unknown
+        branchId: unknown
+      }
+
+      // 校验 branchId
+      if (typeof branchId !== 'number' || !Number.isInteger(branchId) || branchId <= 0) {
+        return reply.code(400).send({ error: '请指定有效的分部' })
+      }
+      // 校验 names 为字符串数组
+      if (!Array.isArray(names)) {
+        return reply.code(400).send({ error: '名单必须为字符串数组' })
+      }
+      // 规范化姓名：trim、去重、过滤空值
+      const normalizedNames: string[] = []
+      const seen = new Set<string>()
+      for (const raw of names) {
+        if (typeof raw !== 'string') continue
+        const trimmed = raw.trim()
+        if (trimmed.length === 0) continue
+        if (trimmed.length > 50) {
+          // 限制姓名长度
+          continue
+        }
+        if (seen.has(trimmed)) continue
+        seen.add(trimmed)
+        normalizedNames.push(trimmed)
+      }
+      if (normalizedNames.length === 0) {
+        return reply.code(400).send({ error: '名单为空或仅包含无效姓名' })
+      }
+
+      // 超管只能添加本分部人员
+      if (currentUser.role === Role.CHAOGUAN) {
+        if (currentUser.branchId === null || branchId !== currentUser.branchId) {
+          return reply.code(403).send({ error: '只能添加本分部人员' })
+        }
+      }
+
+      // 校验分部存在
+      const branch = await prisma.branch.findUnique({ where: { id: branchId } })
+      if (!branch) {
+        return reply.code(400).send({ error: '分部不存在' })
+      }
+
+      // 事务内批量处理
+      const result = await prisma.$transaction(async (tx) => {
+        let success = 0
+        let failed = 0
+        const createdPersons: string[] = []
+        const failures: { name: string; reason: string }[] = []
+
+        for (const name of normalizedNames) {
+          try {
+            // 查找同名人员（全局）
+            const existing = await tx.personnel.findFirst({ where: { name } })
+            if (existing) {
+              // 校验是否已属于该分部
+              const existingAssoc = await tx.personnelBranch.findUnique({
+                where: {
+                  personnelId_branchId: { personnelId: existing.id, branchId },
+                },
+              })
+              if (existingAssoc) {
+                failed++
+                failures.push({ name, reason: '该人员已属于此分部' })
+                continue
+              }
+              // 同名人员已存在，只创建关联
+              await tx.personnelBranch.create({
+                data: { personnelId: existing.id, branchId },
+              })
+              success++
+              createdPersons.push(name)
+              continue
+            }
+            // 人员不存在，创建人员 + 关联
+            const p = await tx.personnel.create({ data: { name } })
+            await tx.personnelBranch.create({
+              data: { personnelId: p.id, branchId },
+            })
+            success++
+            createdPersons.push(name)
+          } catch (err) {
+            failed++
+            failures.push({
+              name,
+              reason: err instanceof Error ? err.message : '创建失败',
+            })
+          }
+        }
+        return { success, failed, createdPersons, failures }
+      })
+
+      return reply.code(201).send(result)
+    }
+  )
+
   // GET /api/personnel - 查询人员列表
   fastify.get(
     '/api/personnel',

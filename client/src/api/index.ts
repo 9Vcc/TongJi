@@ -15,6 +15,7 @@ import type {
   CreateAccountInput,
   UpdateAccountInput,
   CreatePersonnelInput,
+  PersonnelBatchResult,
   CreateRecordInput,
   UpdateRecordInput,
   UpdateRewardRuleInput,
@@ -135,6 +136,13 @@ export const personnelApi = {
   },
   create(data: CreatePersonnelInput) {
     return request.post<unknown, Personnel>('/personnel', data)
+  },
+  // 批量导入人员（names 为姓名数组，按行分隔）
+  batchCreate(names: string[], branchId: number) {
+    return request.post<unknown, PersonnelBatchResult>('/personnel/batch', {
+      names,
+      branchId,
+    })
   },
   delete(id: number, branchId: number) {
     return request.delete<unknown, { message: string }>(`/personnel/${id}`, {

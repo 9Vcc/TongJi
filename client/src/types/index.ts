@@ -274,6 +274,14 @@ export interface CreatePersonnelInput {
   branchId: number
 }
 
+// 批量导入人员结果
+export interface PersonnelBatchResult {
+  success: number
+  failed: number
+  createdPersons: string[]
+  failures: { name: string; reason: string }[]
+}
+
 // 数据记录入参
 export interface CreateRecordInput {
   personnelId: number

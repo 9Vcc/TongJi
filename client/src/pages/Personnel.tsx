@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Users, Plus, Trash2, UserX } from 'lucide-react'
+import { Users, Plus, Trash2, UserX, Upload } from 'lucide-react'
 import {
   personnelApi,
   branchesApi,
@@ -10,6 +10,8 @@ import { useToast } from '../hooks/useToast'
 import Modal from '../components/Modal'
 import { Skeleton, Spinner } from '../components/Skeleton'
 import type { Personnel as PersonnelType, Branch } from '../types'
+
+type AddTab = 'single' | 'batch'
 
 export default function Personnel() {
   const { user } = useAuth()
@@ -24,7 +26,12 @@ export default function Personnel() {
   const [loading, setLoading] = useState(false)
 
   const [addOpen, setAddOpen] = useState(false)
+  // 单个添加
   const [name, setName] = useState('')
+  // 批量导入
+  const [addTab, setAddTab] = useState<AddTab>('single')
+  const [batchText, setBatchText] = useState('')
+  // 公共
   const [addBranchId, setAddBranchId] = useState<number | undefined>(undefined)
   const [submitting, setSubmitting] = useState(false)
 
@@ -60,32 +67,73 @@ export default function Personnel() {
 
   const openAdd = () => {
     setName('')
+    setBatchText('')
+    setAddTab('single')
     // 会长：默认不选中任何厅（提示"请选择厅"），强制手动选择
     // 超管/管理：使用其所属厅
     setAddBranchId(isHuizhang ? undefined : user?.branchId ?? undefined)
     setAddOpen(true)
   }
 
-  const handleAdd = async () => {
+  const handleSubmit = async () => {
     const targetBranchId = isHuizhang ? addBranchId : user?.branchId
     if (!targetBranchId) {
       toast.error(isHuizhang ? '请选择厅' : '当前账户未关联厅')
       return
     }
-    if (!name.trim()) {
-      toast.error('请输入姓名')
-      return
-    }
-    setSubmitting(true)
-    try {
-      await personnelApi.create({ name: name.trim(), branchId: targetBranchId })
-      toast.success('添加成功')
-      setAddOpen(false)
-      await loadPersonnel()
-    } catch (err) {
-      toast.error(getErrorMessage(err))
-    } finally {
-      setSubmitting(false)
+    if (addTab === 'single') {
+      // 单个添加
+      if (!name.trim()) {
+        toast.error('请输入姓名')
+        return
+      }
+      setSubmitting(true)
+      try {
+        await personnelApi.create({ name: name.trim(), branchId: targetBranchId })
+        toast.success('添加成功')
+        setAddOpen(false)
+        await loadPersonnel()
+      } catch (err) {
+        toast.error(getErrorMessage(err))
+      } finally {
+        setSubmitting(false)
+      }
+    } else {
+      // 批量导入
+      const names = batchText
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0)
+      if (names.length === 0) {
+        toast.error('请粘贴名单（每行一个姓名）')
+        return
+      }
+      setSubmitting(true)
+      try {
+        const result = await personnelApi.batchCreate(names, targetBranchId)
+        toast.success(
+          `导入完成：成功 ${result.success} 人，失败 ${result.failed} 人`,
+        )
+        if (result.createdPersons.length > 0) {
+          toast.info(
+            `已添加人员：${result.createdPersons.slice(0, 20).join('、')}${
+              result.createdPersons.length > 20
+                ? ` 等 ${result.createdPersons.length} 人`
+                : ''
+            }`,
+          )
+        }
+        if (result.failures.length > 0) {
+          const failedNames = result.failures.map((f) => f.name).join('、')
+          toast.error(`失败人员：${failedNames}`)
+        }
+        setAddOpen(false)
+        await loadPersonnel()
+      } catch (err) {
+        toast.error(getErrorMessage(err))
+      } finally {
+        setSubmitting(false)
+      }
     }
   }
 
@@ -104,6 +152,16 @@ export default function Personnel() {
       toast.error(getErrorMessage(err))
     }
   }
+
+  // 批量导入名单预览：解析非空姓名数量
+  const batchPreviewCount = useMemo(() => {
+    const names = batchText
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0)
+    // 去重统计
+    return new Set(names).size
+  }, [batchText])
 
   return (
     <div className="space-y-5">
@@ -224,7 +282,7 @@ export default function Personnel() {
         </div>
       </div>
 
-      {/* 添加人员弹窗 */}
+      {/* 添加人员弹窗（单个添加 / 批量导入） */}
       <Modal
         open={addOpen}
         title="添加人员"
@@ -238,27 +296,86 @@ export default function Personnel() {
               取消
             </button>
             <button
-              onClick={handleAdd}
+              onClick={handleSubmit}
               disabled={submitting}
               className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
             >
               {submitting && <Spinner className="h-4 w-4" />}
-              {submitting ? '添加中...' : '添加'}
+              {submitting
+                ? '处理中...'
+                : addTab === 'single'
+                  ? '添加'
+                  : '导入'}
             </button>
           </>
         }
       >
         <div className="space-y-4">
-          <div>
-            <label className="block text-xs text-textSecondary mb-1">姓名</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="请输入人员姓名"
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
-            />
+          {/* 标签页切换 */}
+          <div className="flex gap-1 p-1 bg-surface rounded-lg border border-border">
+            <button
+              onClick={() => setAddTab('single')}
+              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors duration-200 cursor-pointer ${
+                addTab === 'single'
+                  ? 'bg-card text-primary shadow-sm'
+                  : 'text-textSecondary hover:text-textPrimary'
+              }`}
+            >
+              <Plus size={14} />
+              单个添加
+            </button>
+            <button
+              onClick={() => setAddTab('batch')}
+              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors duration-200 cursor-pointer ${
+                addTab === 'batch'
+                  ? 'bg-card text-primary shadow-sm'
+                  : 'text-textSecondary hover:text-textPrimary'
+              }`}
+            >
+              <Upload size={14} />
+              批量导入
+            </button>
           </div>
+
+          {/* 单个添加 */}
+          {addTab === 'single' && (
+            <div>
+              <label className="block text-xs text-textSecondary mb-1">姓名</label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="请输入人员姓名"
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+              />
+            </div>
+          )}
+
+          {/* 批量导入 */}
+          {addTab === 'batch' && (
+            <div>
+              <label className="block text-xs text-textSecondary mb-1">
+                人员名单
+                <span className="ml-1 text-textMuted">
+                  （每行一个姓名，自动去重）
+                </span>
+              </label>
+              <textarea
+                value={batchText}
+                onChange={(e) => setBatchText(e.target.value)}
+                placeholder={'张三\n李四\n王五\n赵六'}
+                rows={8}
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 resize-y font-mono"
+              />
+              {batchPreviewCount > 0 && (
+                <p className="mt-1 text-xs text-textMuted">
+                  共 {batchPreviewCount} 人（去重后）
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* 所属厅选择 */}
           {isHuizhang ? (
             <div>
               <label className="block text-xs text-textSecondary mb-1">
