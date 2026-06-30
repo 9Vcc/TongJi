@@ -14,6 +14,7 @@ import BranchesPage from './pages/settings/Branches'
 import NotificationsPage from './pages/settings/Notifications'
 import DataHistoryPage from './pages/settings/DataHistory'
 import LoginRecordsPage from './pages/settings/LoginRecords'
+import PublicRanking from './pages/PublicRanking'
 
 /**
  * 受保护的布局路由：负责认证校验 + 渲染常驻 Layout
@@ -50,6 +51,8 @@ function ProtectedLayout() {
 function AppRoutes() {
   return (
     <Routes>
+      {/* 公开排名页面：无需登录，所有人可访问 */}
+      <Route path="/public/ranking" element={<PublicRanking />} />
       <Route path="/login" element={<Login />} />
       <Route element={<ProtectedLayout />}>
         <Route path="/" element={<Dashboard />} />

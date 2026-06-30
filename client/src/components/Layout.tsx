@@ -16,6 +16,7 @@ import {
   ChevronRight,
   CheckCheck,
   Pencil,
+  KeyRound,
 } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { notificationsApi, authApi, getErrorMessage } from '../api'
@@ -88,6 +89,54 @@ export default function Layout({ children }: LayoutProps) {
       toast.error(getErrorMessage(err))
     } finally {
       setNicknameSubmitting(false)
+    }
+  }
+
+  // 修改密码弹窗
+  const [passwordModalOpen, setPasswordModalOpen] = useState(false)
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordSubmitting, setPasswordSubmitting] = useState(false)
+
+  const openPasswordModal = () => {
+    setCurrentPassword('')
+    setNewPassword('')
+    setConfirmPassword('')
+    setPasswordModalOpen(true)
+  }
+
+  const handlePasswordSubmit = async () => {
+    // 前端校验
+    if (!currentPassword) {
+      toast.error('请输入当前密码')
+      return
+    }
+    if (!newPassword) {
+      toast.error('请输入新密码')
+      return
+    }
+    if (newPassword.length < 6 || newPassword.length > 50) {
+      toast.error('新密码长度需为 6-50 位')
+      return
+    }
+    if (currentPassword === newPassword) {
+      toast.error('新密码不能与当前密码相同')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error('两次输入的新密码不一致')
+      return
+    }
+    setPasswordSubmitting(true)
+    try {
+      await authApi.changePassword(currentPassword, newPassword)
+      toast.success('密码修改成功')
+      setPasswordModalOpen(false)
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setPasswordSubmitting(false)
     }
   }
 
@@ -275,6 +324,30 @@ export default function Layout({ children }: LayoutProps) {
                     className="whitespace-nowrap overflow-hidden"
                   >
                     编辑昵称
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </button>
+            <button
+              onClick={openPasswordModal}
+              aria-label="修改密码"
+              title={sidebarCollapsed ? '修改密码' : undefined}
+              className={`flex items-center gap-2 flex-1 px-3 py-2 rounded-lg text-sm text-textSecondary hover:text-primary hover:bg-primary/10 transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
+                sidebarCollapsed ? 'lg:justify-center' : ''
+              }`}
+            >
+              <KeyRound size={16} className="shrink-0" />
+              <AnimatePresence initial={false}>
+                {!sidebarCollapsed && (
+                  <motion.span
+                    key="password-text"
+                    initial={{ opacity: 0, width: 0 }}
+                    animate={{ opacity: 1, width: 'auto' }}
+                    exit={{ opacity: 0, width: 0 }}
+                    transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                    className="whitespace-nowrap overflow-hidden"
+                  >
+                    修改密码
                   </motion.span>
                 )}
               </AnimatePresence>
@@ -526,6 +599,80 @@ export default function Layout({ children }: LayoutProps) {
               }}
               placeholder="可选，最多 50 字"
               autoFocus
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+            />
+          </div>
+        </div>
+      </Modal>
+
+      {/* 修改密码弹窗 */}
+      <Modal
+        open={passwordModalOpen}
+        title="修改密码"
+        onClose={() => setPasswordModalOpen(false)}
+        footer={
+          <>
+            <button
+              onClick={() => setPasswordModalOpen(false)}
+              disabled={passwordSubmitting}
+              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+            >
+              取消
+            </button>
+            <button
+              onClick={handlePasswordSubmit}
+              disabled={passwordSubmitting}
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+            >
+              {passwordSubmitting && <Spinner className="h-4 w-4" />}
+              {passwordSubmitting ? '保存中...' : '保存'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs text-textSecondary mb-1">
+              当前密码
+            </label>
+            <input
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              placeholder="请输入当前密码"
+              autoFocus
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-textSecondary mb-1">
+              新密码
+              <span className="ml-1 text-[10px] text-textMuted">（6-50 位）</span>
+            </label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="请输入新密码"
+              maxLength={50}
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-textSecondary mb-1">
+              确认新密码
+            </label>
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !passwordSubmitting) {
+                  handlePasswordSubmit()
+                }
+              }}
+              placeholder="请再次输入新密码"
+              maxLength={50}
               className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
             />
           </div>

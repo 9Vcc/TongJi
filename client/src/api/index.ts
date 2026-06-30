@@ -83,6 +83,13 @@ export const authApi = {
   updateMe(data: { nickname?: string | null }) {
     return request.patch<unknown, User>('/auth/me', data)
   },
+  // 修改自己的密码
+  changePassword(currentPassword: string, newPassword: string) {
+    return request.put<unknown, { message: string }>('/auth/me/password', {
+      currentPassword,
+      newPassword,
+    })
+  },
   seed() {
     return request.post<unknown, { message: string; user: User }>(
       '/seed'

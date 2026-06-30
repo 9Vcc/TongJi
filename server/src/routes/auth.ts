@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import prisma from '../lib/prisma'
 import { signToken } from '../utils/jwt'
-import { comparePassword } from '../utils/password'
+import { comparePassword, hashPassword } from '../utils/password'
 import { authenticate } from '../middleware/auth'
 import type { JwtPayload } from '../types'
 
@@ -122,6 +122,60 @@ export default async function authRoutes(fastify: FastifyInstance) {
       })
 
       return reply.send(updated)
+    }
+  )
+
+  // PUT /api/auth/me/password - 修改自己的密码
+  // body: { currentPassword: string, newPassword: string }
+  // 校验：当前密码正确；新密码长度 6-50；新密码不能与旧密码相同
+  fastify.put(
+    '/api/auth/me/password',
+    { preHandler: [authenticate] },
+    async (request, reply) => {
+      if (!request.user) {
+        return reply.code(401).send({ error: '未认证' })
+      }
+
+      const { currentPassword, newPassword } = request.body as {
+        currentPassword?: string
+        newPassword?: string
+      }
+
+      // 参数校验
+      if (!currentPassword || !newPassword) {
+        return reply.code(400).send({ error: '请输入当前密码和新密码' })
+      }
+      if (typeof currentPassword !== 'string' || typeof newPassword !== 'string') {
+        return reply.code(400).send({ error: '密码格式不正确' })
+      }
+      if (newPassword.length < 6 || newPassword.length > 50) {
+        return reply.code(400).send({ error: '新密码长度需为 6-50 位' })
+      }
+      if (currentPassword === newPassword) {
+        return reply.code(400).send({ error: '新密码不能与当前密码相同' })
+      }
+
+      // 查询账户并校验当前密码
+      const account = await prisma.account.findUnique({
+        where: { id: request.user.id },
+      })
+      if (!account) {
+        return reply.code(404).send({ error: '用户不存在' })
+      }
+
+      const valid = await comparePassword(currentPassword, account.passwordHash)
+      if (!valid) {
+        return reply.code(400).send({ error: '当前密码错误' })
+      }
+
+      // 更新密码
+      const newHash = await hashPassword(newPassword)
+      await prisma.account.update({
+        where: { id: account.id },
+        data: { passwordHash: newHash },
+      })
+
+      return reply.send({ message: '密码修改成功' })
     }
   )
 }
