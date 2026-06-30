@@ -15,13 +15,14 @@ import { useAuth } from "../hooks/useAuth";
 import {
   formatDate,
   getWeekStart,
+  getPreviousWeekStart,
   getWeekRangeText,
   getMonthRangeText,
   matchNamePinyin,
 } from "../utils";
 import { Skeleton } from "../components/Skeleton";
 import ThemeToggle from "../components/ThemeToggle";
-import type { RankingItem, Branch, PublicPersonnelItem } from "../types";
+import type { RankingItem, Branch } from "../types";
 
 const rankBadgeColors = ["#F59E0B", "#94A3B8", "#CD7F32"];
 const rankRowBg = [
