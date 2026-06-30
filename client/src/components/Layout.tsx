@@ -173,7 +173,7 @@ export default function Layout({ children }: LayoutProps) {
 
   const handleLogout = () => {
     logout()
-    navigate('/login')
+    navigate('/')
   }
 
   const handleMarkRead = async (id: number) => {
