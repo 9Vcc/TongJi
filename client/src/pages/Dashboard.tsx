@@ -137,6 +137,7 @@ function KpiCard({
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const isHuizhang = user?.role === "HUIZHANG";
   const { resolvedTheme } = useTheme();
   const toast = useToast();
   // 初始 weekStart 设为本月1日（而非本周周一）
@@ -154,9 +155,9 @@ export default function Dashboard() {
   const [top3, setTop3] = useState<RankingItem[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [availableWeeks, setAvailableWeeks] = useState<string[]>([]);
-  // 非会长默认锁定到自己所在厅；会长等厅列表加载后默认选第一个厅
+  // 非会长默认锁定到自己所在厅；会长默认未选厅
   const [branchId, setBranchId] = useState<number | undefined>(() =>
-    user?.role === "HUIZHANG" ? undefined : (user?.branchId ?? undefined),
+    isHuizhang ? undefined : (user?.branchId ?? undefined),
   );
   // 本周数据汇总卡片专用排名数据（跟随页面顶部全局 branchId 切换）
   const [chartRanking, setChartRanking] = useState<RankingItem[]>([]);
@@ -617,7 +618,7 @@ export default function Dashboard() {
           aria-label="选择厅"
           className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/50 cursor-pointer"
         >
-          {branches.length === 0 && <option value="">暂无厅</option>}
+          {isHuizhang && <option value="">未选厅</option>}
           {branches.map((b) => (
             <option key={b.id} value={b.id}>
               {b.name}
