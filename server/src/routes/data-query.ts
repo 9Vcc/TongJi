@@ -151,6 +151,7 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
           finalWelfare: welfare - deduction,
           namings,
           remark: r.remark,
+          updatedAt: r.updatedAt,
         }
       })
 
@@ -301,6 +302,63 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
       }
 
       return reply.send([...map.values()])
+    }
+  )
+
+  // GET /api/data-records/latest-remark - 查询当前厅最近一次操作的备注
+  // 从 DataHistory 查询（含录入/修改/删除），所有已认证用户可访问
+  // 查询参数：branchId
+  // 注意：不按 weekStart 过滤，返回该厅最近一次有备注的操作（周/月统计厅通用）
+  //       删除操作后 DataRecord 被删除，DataHistory.recordId 变 null（onDelete: SetNull）
+  //       删除操作的备注通过 modifier.branchId 限定本厅范围
+  fastify.get(
+    '/api/data-records/latest-remark',
+    { preHandler: [authenticate] },
+    async (request, reply) => {
+      const currentUser = request.user
+      const { branchId: branchIdParam } =
+        request.query as { branchId?: string }
+
+      // 分部权限：会长可指定任意厅；超管/管理限定本厅
+      let branchFilter: number | undefined
+      if (currentUser.role === Role.HUIZHANG) {
+        if (branchIdParam) {
+          const n = Number(branchIdParam)
+          branchFilter = Number.isNaN(n) ? undefined : n
+        }
+      } else {
+        branchFilter = currentUser.branchId ?? undefined
+      }
+
+      // 查询该厅最近一条有备注的操作记录
+      // record 存在时按 branchId 过滤（录入/修改）
+      // record 为 null 时为删除操作，通过 modifier.branchId 限定本厅范围
+      const latest = await prisma.dataHistory.findFirst({
+        where: {
+          remark: { not: null },
+          OR: [
+            {
+              ...(branchFilter
+                ? { record: { branchId: branchFilter } }
+                : {}),
+            },
+            // 删除操作：record 已被删除，通过操作者限定本厅范围
+            ...(branchFilter
+              ? [{
+                  recordId: null,
+                  modifier: { branchId: branchFilter },
+                }]
+              : [{ recordId: null }]),
+          ],
+        },
+        orderBy: { modifyTime: 'desc' },
+        select: { remark: true },
+      })
+
+      if (!latest || !latest.remark) {
+        return reply.send({ remark: null })
+      }
+      return reply.send({ remark: latest.remark })
     }
   )
 }

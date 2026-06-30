@@ -201,6 +201,13 @@ export const dataQueryApi = {
       params: { week1, week2, branchId },
     })
   },
+  // 查询当前厅最近一次操作（录入/修改/删除）的备注
+  getLatestRemark(branchId?: number) {
+    return request.get<unknown, { remark: string | null }>(
+      '/data-records/latest-remark',
+      { params: branchId ? { branchId } : {} }
+    )
+  },
 }
 
 // ============ 奖励规则 ============

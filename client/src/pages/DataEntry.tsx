@@ -112,6 +112,8 @@ export default function DataEntry() {
 
   const [weekStart, setWeekStart] = useState(getWeekStart());
   const [records, setRecords] = useState<DataRecord[]>([]);
+  // 最近一次操作（录入/修改/删除）的备注：从后端 latest-remark 接口获取
+  const [latestRemark, setLatestRemark] = useState<string | null>(null);
   const [personnel, setPersonnel] = useState<Personnel[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [branchId, setBranchId] = useState<number | undefined>(undefined);
@@ -225,20 +227,15 @@ export default function DataEntry() {
     return formatDate(weekStart);
   }, [branchCycle, weekStart]);
 
-  // 最近一条录入的备注：按更新时间倒序取第一条有 remark 的记录
-  // 显示在搜索框后面，让用户快速看到当前周最近一次录入的备注
-  const latestRemark = useMemo(() => {
-    const withRemark = records
-      .filter((r) => r.remark && r.remark.trim().length > 0)
-      .sort((a, b) => (b.id - a.id)); // id 越大越新（自增主键）
-    return withRemark[0]?.remark ?? null;
-  }, [records]);
+  // 最近一条操作（录入/修改/删除）的备注：从后端 latest-remark 接口获取
+  // 显示在搜索框后面，让用户快速看到当前周最近一次操作的备注
 
   const loadData = async () => {
     // 会长未选择厅时不加载任何数据（数据录入页面仅支持独立厅显示）
     if (!effectiveBranchId) {
       loadIdRef.current++;
       setRecords([]);
+      setLatestRemark(null);
       setLoading(false);
       return;
     }
@@ -246,6 +243,7 @@ export default function DataEntry() {
     const loadId = ++loadIdRef.current;
     // 切换条件变化时先清空旧数据，避免显示上一个厅/周/月的残留数据
     setRecords([]);
+    setLatestRemark(null);
     setLoading(true);
     try {
       if (isMonthCycle) {
@@ -317,6 +315,18 @@ export default function DataEntry() {
         // 竞态保护：若期间又有新的 loadData 调用，丢弃本次结果
         if (loadId !== loadIdRef.current) return;
         setRecords(recs);
+      }
+
+      // 查询当前厅最近一次操作（录入/修改/删除）的备注
+      try {
+        const remarkRes = await dataQueryApi.getLatestRemark(
+          effectiveBranchId,
+        );
+        if (loadId === loadIdRef.current) {
+          setLatestRemark(remarkRes.remark);
+        }
+      } catch {
+        // 备注查询失败不影响主流程
       }
     } catch (err) {
       if (loadId !== loadIdRef.current) return;

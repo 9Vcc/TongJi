@@ -87,6 +87,8 @@ export interface DataRecord {
   namings?: NamingItem[]
   // 最近一次录入/修改的备注（覆盖式存储）
   remark?: string | null
+  // 最后更新时间（用于按最近修改排序）
+  updatedAt?: string
 }
 
 // 福利扣减记录
