@@ -164,7 +164,6 @@ export default function Dashboard() {
   const [rules, setRules] = useState<RewardRule[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const isHuizhang = user?.role === "HUIZHANG";
   const isDark = resolvedTheme === "dark";
 
   // 主题相关颜色
