@@ -204,10 +204,6 @@ export default function Dashboard() {
       .list()
       .then((list) => {
         setBranches(list);
-        // 会长无 branchId，默认选第一个厅
-        if (isHuizhang && list.length > 0) {
-          setBranchId((cur) => cur ?? list[0].id);
-        }
       })
       .catch(() => {});
   }, []);
@@ -642,6 +638,12 @@ export default function Dashboard() {
           transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
           className="space-y-5"
         >
+          {!branchId ? (
+            <div className="bg-card border border-border rounded-xl px-5 py-16 text-center text-sm text-textMuted">
+              请先选择厅
+            </div>
+          ) : (
+          <>
           {/* KPI 卡片 */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {!summary ? (
@@ -787,6 +789,8 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
+          )}
+          </>
           )}
         </motion.div>
       </AnimatePresence>

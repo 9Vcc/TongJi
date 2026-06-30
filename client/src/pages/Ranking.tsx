@@ -113,9 +113,12 @@ export default function Ranking() {
             ))
           )}
         </div>
-      ) : (
+      ) : selectedBranch ? (
         // 单厅模式：单卡片，含日期选择
-        <BranchRankingCard branch={selectedBranch!} toast={toast} />
+        <BranchRankingCard branch={selectedBranch} toast={toast} />
+      ) : (
+        // 厅列表加载中
+        <RankingCardSkeleton />
       )}
 
       {/* 福利计算说明：仅在选择具体厅时显示 */}
@@ -143,10 +146,18 @@ function BranchRankingCard({
   )
   const [weeks, setWeeks] = useState<string[]>([])
   const [ranking, setRanking] = useState<RankingItem[]>([])
+  const [rules, setRules] = useState<RewardRule[]>([])
   const [loading, setLoading] = useState(false)
+
+  // 全麦是否计入：依据该厅奖励规则 qmEnabled，未加载完成前默认显示
+  const qmEnabled = useMemo(() => {
+    const rule = rules.find((r) => r.branchId === branch.id)
+    return rule ? rule.qmEnabled : true
+  }, [rules, branch.id])
 
   useEffect(() => {
     dataQueryApi.getWeeks(branch.id).then(setWeeks).catch(() => {})
+    rewardRulesApi.get(branch.id).then(setRules).catch(() => {})
   }, [branch.id])
 
   useEffect(() => {
@@ -297,7 +308,9 @@ function BranchRankingCard({
               <th className="px-3 py-2 font-medium">人员</th>
               <th className="px-3 py-2 font-medium">收光</th>
               <th className="px-3 py-2 font-medium">麦序</th>
-              <th className="px-3 py-2 font-medium">全麦</th>
+              {qmEnabled && (
+                <th className="px-3 py-2 font-medium">全麦</th>
+              )}
               {isMonthCycle && (
                 <th className="px-3 py-2 font-medium">冠名</th>
               )}
@@ -308,7 +321,7 @@ function BranchRankingCard({
             {top10.length === 0 && !loading ? (
               <tr>
                 <td
-                  colSpan={isMonthCycle ? 7 : 6}
+                  colSpan={(isMonthCycle ? 1 : 0) + (qmEnabled ? 5 : 4) + 2}
                   className="px-3 py-8 text-center text-textMuted"
                 >
                   暂无数据
@@ -317,7 +330,9 @@ function BranchRankingCard({
             ) : top10.length === 0 ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <tr key={i} className="border-b border-border last:border-0">
-                  {Array.from({ length: isMonthCycle ? 7 : 6 }).map((_, j) => (
+                  {Array.from({
+                    length: (isMonthCycle ? 1 : 0) + (qmEnabled ? 5 : 4) + 2,
+                  }).map((_, j) => (
                     <td key={j} className="px-3 py-2">
                       <Skeleton className="h-5 w-full" />
                     </td>
@@ -353,7 +368,9 @@ function BranchRankingCard({
                     </td>
                     <td className="px-3 py-2 text-textPrimary font-mono">{item.sg}</td>
                     <td className="px-3 py-2 text-textPrimary font-mono">{item.mx}</td>
-                    <td className="px-3 py-2 text-textPrimary font-mono">{item.qm}</td>
+                    {qmEnabled && (
+                      <td className="px-3 py-2 text-textPrimary font-mono">{item.qm}</td>
+                    )}
                     {isMonthCycle && (
                       <td className="px-3 py-2 text-textPrimary text-xs whitespace-nowrap">
                         {formatNamings(item.namings)}
