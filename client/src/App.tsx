@@ -1,4 +1,4 @@
-import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import { useAuth } from './hooks/useAuth'
 import Layout from './components/Layout'
@@ -23,7 +23,6 @@ import PublicRanking from './pages/PublicRanking'
  */
 function ProtectedLayout() {
   const { user, loading } = useAuth()
-  const location = useLocation()
 
   if (loading) {
     return (
@@ -34,7 +33,7 @@ function ProtectedLayout() {
   }
 
   if (!user) {
-    return <Navigate to="/login" state={{ from: location }} replace />
+    return <Navigate to="/" replace />
   }
 
   return (

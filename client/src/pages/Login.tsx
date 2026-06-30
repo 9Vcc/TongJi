@@ -1,21 +1,16 @@
 import { useState, type FormEvent } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { BarChart3, LogIn, AlertCircle } from 'lucide-react'
+import { BarChart3, LogIn, AlertCircle, Home } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
 import { getErrorMessage } from '../api'
 import { Spinner } from '../components/Skeleton'
 
-interface LocationState {
-  from?: { pathname: string }
-}
-
 export default function Login() {
   const { login } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
-  const location = useLocation()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -32,9 +27,7 @@ export default function Login() {
     try {
       await login(username, password)
       toast.success('登录成功')
-      // 登录后跳回来源页，默认进入数据看板后台
-      const from = (location.state as LocationState)?.from?.pathname
-      navigate(from || '/dashboard')
+      navigate('/dashboard')
     } catch (err) {
       const msg = getErrorMessage(err)
       setError(msg)
@@ -45,6 +38,15 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-surface via-surface to-primary/5 dark:from-surface dark:via-surface dark:to-surface flex items-center justify-center p-4">
+      {/* 右上角返回首页按钮 */}
+      <button
+        onClick={() => navigate('/')}
+        aria-label="返回首页"
+        className="absolute top-4 right-4 flex items-center gap-1.5 px-3 py-1.5 text-xs text-textSecondary hover:text-primary border border-border rounded-md bg-card hover:border-primary/50 transition-colors duration-200 cursor-pointer"
+      >
+        <Home size={14} />
+        首页
+      </button>
       <div className="w-full max-w-sm">
         {/* Logo */}
         <motion.div
