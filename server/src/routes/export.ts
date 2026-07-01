@@ -49,6 +49,7 @@ export default async function exportRoutes(fastify: FastifyInstance) {
           })
         : null
       const qmEnabled = rewardRule?.qmEnabled ?? true
+      const zcEnabled = rewardRule?.zcEnabled ?? false
       // 厅名用于导出文件名
       const branchName = rewardRule?.branch?.name ?? ranking[0]?.branchName ?? '全部厅'
 
@@ -75,7 +76,14 @@ export default async function exportRoutes(fastify: FastifyInstance) {
         if (qmEnabled) {
           row['全麦'] = r.qm
         }
+        // 开启主持福利的厅才包含主持天数和主持福利列
+        if (zcEnabled) {
+          row['主持天数'] = r.zcDays
+        }
         row['基础福利'] = r.baseWelfare
+        if (zcEnabled) {
+          row['主持福利'] = r.zcWelfare
+        }
         row['排名奖励'] = r.rankReward
         // 动态添加冠名列：每等级一列，值为该人员该等级的 count
         if (hasNaming) {
@@ -141,6 +149,7 @@ export default async function exportRoutes(fastify: FastifyInstance) {
           })
         : null
       const qmEnabled = rewardRule?.qmEnabled ?? true
+      const zcEnabled = rewardRule?.zcEnabled ?? false
       // 厅名用于导出文件名
       const branchName = rewardRule?.branch?.name ?? ranking[0]?.branchName ?? '全部厅'
 
@@ -167,7 +176,13 @@ export default async function exportRoutes(fastify: FastifyInstance) {
       if (qmEnabled) {
         fields.push({ label: '全麦', value: 'qm' })
       }
+      if (zcEnabled) {
+        fields.push({ label: '主持天数', value: 'zcDays' })
+      }
       fields.push({ label: '基础福利', value: 'baseWelfare' })
+      if (zcEnabled) {
+        fields.push({ label: '主持福利', value: 'zcWelfare' })
+      }
       fields.push({ label: '排名奖励', value: 'rankReward' })
       if (hasNaming) {
         for (const [, levelName] of namingLevels) {
@@ -190,7 +205,13 @@ export default async function exportRoutes(fastify: FastifyInstance) {
         if (qmEnabled) {
           row['qm'] = r.qm
         }
+        if (zcEnabled) {
+          row['zcDays'] = r.zcDays
+        }
         row['baseWelfare'] = r.baseWelfare
+        if (zcEnabled) {
+          row['zcWelfare'] = r.zcWelfare
+        }
         row['rankReward'] = r.rankReward
         if (hasNaming) {
           const namingMap = new Map<number, number>()

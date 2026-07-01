@@ -155,6 +155,12 @@ function BranchRankingCard({
     return rule ? rule.qmEnabled : true
   }, [rules, branch.id])
 
+  // 主持福利是否开启
+  const zcEnabled = useMemo(() => {
+    const rule = rules.find((r) => r.branchId === branch.id)
+    return rule ? rule.zcEnabled : false
+  }, [rules, branch.id])
+
   useEffect(() => {
     dataQueryApi.getWeeks(branch.id).then(setWeeks).catch(() => {})
     rewardRulesApi.get(branch.id).then(setRules).catch(() => {})
@@ -311,6 +317,9 @@ function BranchRankingCard({
               {qmEnabled && (
                 <th className="px-3 py-2 font-medium">全麦</th>
               )}
+              {zcEnabled && (
+                <th className="px-3 py-2 font-medium">主持</th>
+              )}
               {isMonthCycle && (
                 <th className="px-3 py-2 font-medium">冠名</th>
               )}
@@ -321,7 +330,7 @@ function BranchRankingCard({
             {top10.length === 0 && !loading ? (
               <tr>
                 <td
-                  colSpan={(isMonthCycle ? 1 : 0) + (qmEnabled ? 5 : 4) + 2}
+                  colSpan={5 + (qmEnabled ? 1 : 0) + (zcEnabled ? 1 : 0) + (isMonthCycle ? 1 : 0)}
                   className="px-3 py-8 text-center text-textMuted"
                 >
                   暂无数据
@@ -331,7 +340,7 @@ function BranchRankingCard({
               Array.from({ length: 5 }).map((_, i) => (
                 <tr key={i} className="border-b border-border last:border-0">
                   {Array.from({
-                    length: (isMonthCycle ? 1 : 0) + (qmEnabled ? 5 : 4) + 2,
+                    length: 5 + (qmEnabled ? 1 : 0) + (zcEnabled ? 1 : 0) + (isMonthCycle ? 1 : 0),
                   }).map((_, j) => (
                     <td key={j} className="px-3 py-2">
                       <Skeleton className="h-5 w-full" />
@@ -370,6 +379,9 @@ function BranchRankingCard({
                     <td className="px-3 py-2 text-textPrimary font-mono">{item.mx}</td>
                     {qmEnabled && (
                       <td className="px-3 py-2 text-textPrimary font-mono">{item.qm}</td>
+                    )}
+                    {zcEnabled && (
+                      <td className="px-3 py-2 text-textPrimary font-mono">{item.zcDays}</td>
                     )}
                     {isMonthCycle && (
                       <td className="px-3 py-2 text-textPrimary text-xs whitespace-nowrap">

@@ -95,6 +95,7 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
         sg?: number
         mx?: number
         qm?: number
+        zcDays?: number
         // 备注信息（DataRecord.remark 或 DataHistory.remark）
         remark?: string | null
       }
@@ -150,7 +151,7 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
 
         // 解析 newValue JSON 还原本次录入的增量值
         const createItems: LogItem[] = createHistories.map((h) => {
-          let parsedNew: { sg?: number; mx?: number; qm?: number } = {}
+          let parsedNew: { sg?: number; mx?: number; qm?: number; zcDays?: number } = {}
           try {
             parsedNew = JSON.parse(h.newValue || '{}')
           } catch {
@@ -171,6 +172,7 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
             sg: parsedNew.sg,
             mx: parsedNew.mx,
             qm: parsedNew.qm,
+            zcDays: parsedNew.zcDays,
             remark: h.remark,
           }
         })

@@ -12,6 +12,7 @@ interface RecordInput {
   sg: number
   mx: number
   qm: number
+  zcDays: number
 }
 
 /**
@@ -68,10 +69,13 @@ function validateRecordInput(input: Partial<RecordInput>): string | null {
   if (!input.personnelId || !input.branchId) {
     return '人员ID和分部ID不能为空'
   }
+  // zcDays 未传时默认为 0
+  if (input.zcDays === undefined || input.zcDays === null) input.zcDays = 0
   const fields: [string, unknown][] = [
     ['sg', input.sg],
     ['mx', input.mx],
     ['qm', input.qm],
+    ['zcDays', input.zcDays],
   ]
   for (const [k, v] of fields) {
     if (!isNonNegInt(v)) {
@@ -138,6 +142,7 @@ async function upsertRecord(
         sg: existing.sg + sgToStore,
         mx: existing.mx + input.mx,
         qm: existing.qm + input.qm,
+        zcDays: existing.zcDays + input.zcDays,
         // 覆盖式更新备注：最近一次录入的备注
         ...(remark !== null ? { remark } : {}),
       },
@@ -158,8 +163,8 @@ async function upsertRecord(
         modifierId: createdBy,
         action: HistoryAction.CREATE,
         field: null,
-        oldValue: JSON.stringify({ sg: existing.sg, mx: existing.mx, qm: existing.qm }),
-        newValue: JSON.stringify({ sg: sgToStore, mx: input.mx, qm: input.qm }),
+        oldValue: JSON.stringify({ sg: existing.sg, mx: existing.mx, qm: existing.qm, zcDays: existing.zcDays }),
+        newValue: JSON.stringify({ sg: sgToStore, mx: input.mx, qm: input.qm, zcDays: input.zcDays }),
         remark,
       },
     })
@@ -173,6 +178,7 @@ async function upsertRecord(
       sg: sgToStore,
       mx: input.mx,
       qm: input.qm,
+      zcDays: input.zcDays,
       createdBy,
       remark,
     },
@@ -192,7 +198,7 @@ async function upsertRecord(
       action: HistoryAction.CREATE,
       field: null,
       oldValue: null,
-      newValue: JSON.stringify({ sg: sgToStore, mx: input.mx, qm: input.qm }),
+      newValue: JSON.stringify({ sg: sgToStore, mx: input.mx, qm: input.qm, zcDays: input.zcDays }),
       remark,
     },
   })
@@ -459,10 +465,11 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         const sg = row[1] === undefined || row[1] === '' ? 0 : toNonNegInt(row[1])
         const mx = row[2] === undefined || row[2] === '' ? 0 : toNonNegInt(row[2])
         const qm = row[3] === undefined || row[3] === '' ? 0 : toNonNegInt(row[3])
+        const zcDays = row[4] === undefined || row[4] === '' ? 0 : toNonNegInt(row[4])
 
-        if (Number.isNaN(sg) || Number.isNaN(mx) || Number.isNaN(qm)) {
+        if (Number.isNaN(sg) || Number.isNaN(mx) || Number.isNaN(qm) || Number.isNaN(zcDays)) {
           failed++
-          failures.push({ row: i + 1, name, reason: '收光/麦序/全麦必须为非负整数' })
+          failures.push({ row: i + 1, name, reason: '收光/麦序/全麦/主持天数必须为非负整数' })
           continue
         }
 
@@ -481,7 +488,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         try {
           await upsertRecord(
             prismaClient as unknown as Prisma.TransactionClient,
-            { personnelId, branchId, sg, mx, qm },
+            { personnelId, branchId, sg, mx, qm, zcDays },
             currentUser.id,
             weekStart,
             namingLevels,
@@ -562,10 +569,11 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         const sg = parts[1] === undefined || parts[1].trim() === '' ? 0 : toNonNegInt(parts[1])
         const mx = parts[2] === undefined || parts[2].trim() === '' ? 0 : toNonNegInt(parts[2])
         const qm = parts[3] === undefined || parts[3].trim() === '' ? 0 : toNonNegInt(parts[3])
+        const zcDays = parts[4] === undefined || parts[4].trim() === '' ? 0 : toNonNegInt(parts[4])
 
-        if (Number.isNaN(sg) || Number.isNaN(mx) || Number.isNaN(qm)) {
+        if (Number.isNaN(sg) || Number.isNaN(mx) || Number.isNaN(qm) || Number.isNaN(zcDays)) {
           failed++
-          failures.push({ row: i + 1, name, reason: '收光/麦序/全麦必须为非负整数' })
+          failures.push({ row: i + 1, name, reason: '收光/麦序/全麦/主持天数必须为非负整数' })
           continue
         }
 
@@ -584,7 +592,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         try {
           await upsertRecord(
             prismaClient as unknown as Prisma.TransactionClient,
-            { personnelId, branchId, sg, mx, qm },
+            { personnelId, branchId, sg, mx, qm, zcDays },
             currentUser.id,
             weekStart,
             namingLevels,
@@ -612,6 +620,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         sg?: number
         mx?: number
         qm?: number
+        zcDays?: number
         personnelId?: number
         namings?: { levelId: number; count: number }[]
         remark?: string
@@ -640,9 +649,9 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         }
       }
 
-      // 校验 sg/mx/qm 字段合法性（仅记录值实际发生变化的字段）
-      const updates: { field: 'sg' | 'mx' | 'qm'; value: number }[] = []
-      for (const field of ['sg', 'mx', 'qm'] as const) {
+      // 校验 sg/mx/qm/zcDays 字段合法性（仅记录值实际发生变化的字段）
+      const updates: { field: 'sg' | 'mx' | 'qm' | 'zcDays'; value: number }[] = []
+      for (const field of ['sg', 'mx', 'qm', 'zcDays'] as const) {
         if (body[field] !== undefined) {
           if (!isNonNegInt(body[field])) {
             return reply.code(400).send({ error: `${field} 必须为非负整数` })
@@ -799,10 +808,11 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
             },
           })
 
-          // 计算新值（应用本次 sg/mx/qm 更新）
+          // 计算新值（应用本次 sg/mx/qm/zcDays 更新）
           const newSg = body.sg ?? record.sg
           const newMx = body.mx ?? record.mx
           const newQm = body.qm ?? record.qm
+          const newZcDays = body.zcDays ?? record.zcDays
 
           // 获取当前记录最新的冠名（已覆盖更新或保留原有）
           const currentNamings =
@@ -821,6 +831,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
                 sg: target.sg + newSg,
                 mx: target.mx + newMx,
                 qm: target.qm + newQm,
+                zcDays: target.zcDays + newZcDays,
                 // 覆盖式更新备注
                 ...(remarkChanged ? { remark } : {}),
               },
@@ -846,6 +857,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
                 sg: body.sg ?? undefined,
                 mx: body.mx ?? undefined,
                 qm: body.qm ?? undefined,
+                zcDays: body.zcDays ?? undefined,
                 // 覆盖式更新备注
                 ...(remarkChanged ? { remark } : {}),
               },
@@ -859,6 +871,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
             sg: body.sg ?? undefined,
             mx: body.mx ?? undefined,
             qm: body.qm ?? undefined,
+            zcDays: body.zcDays ?? undefined,
             // 覆盖式更新备注
             ...(remarkChanged ? { remark } : {}),
           },
@@ -916,6 +929,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
               sg: record.sg,
               mx: record.mx,
               qm: record.qm,
+              zcDays: record.zcDays,
             }),
             newValue: null,
             remark,

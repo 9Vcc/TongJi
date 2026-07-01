@@ -14,17 +14,20 @@ interface RewardRuleLike {
   sgEnabled: boolean
   qmEnabled: boolean
   maixuEnabled: boolean
+  zcEnabled: boolean
+  zcDayReward: number
 }
 
 /**
- * 福利计算：收光*收光系数 + 全麦*全麦系数 + 麦序达标奖励
+ * 福利计算：收光*收光系数 + 全麦*全麦系数 + 主持天数*每日福利 + 麦序达标奖励
  * 麦序最低标准门控：启用且麦序未达标则福利为0
  */
-function calcWelfare(sg: number, mx: number, qm: number, rule: RewardRuleLike): number {
+function calcWelfare(sg: number, mx: number, qm: number, zcDays: number, rule: RewardRuleLike): number {
   if (rule.maixuMinEnabled && mx < rule.maixuMinStandard) return 0
   const sgPart = rule.sgEnabled ? sg * rule.sgRatio : 0
   const qmPart = rule.qmEnabled ? qm * rule.qmRatio : 0
-  const base = sgPart + qmPart
+  const zcPart = rule.zcEnabled ? zcDays * rule.zcDayReward : 0
+  const base = sgPart + qmPart + zcPart
   const maixuBonus =
     rule.maixuEnabled && mx >= rule.maixuThreshold ? rule.maixuReward : 0
   return base + maixuBonus
@@ -134,7 +137,7 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
         }))
         const namingWelfare = namings.reduce((s, n) => s + n.count * n.reward, 0)
         const baseWelfare = rule
-          ? calcWelfare(r.sg, r.mx, r.qm, rule)
+          ? calcWelfare(r.sg, r.mx, r.qm, r.zcDays, rule)
           : r.sg * 3 + r.qm * 3
         const welfare = baseWelfare + namingWelfare
         const deduction = deductionMap.get(`${r.branchId}:${r.personnelId}`) ?? 0
@@ -148,6 +151,7 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
           sg: r.sg,
           mx: r.mx,
           qm: r.qm,
+          zcDays: r.zcDays,
           welfare,
           deduction,
           finalWelfare: welfare - deduction,
@@ -248,13 +252,14 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
         if (!r) return null
         const rule = ruleMap.get(r.branchId)
         const welfare = rule
-          ? calcWelfare(r.sg, r.mx, r.qm, rule)
+          ? calcWelfare(r.sg, r.mx, r.qm, r.zcDays, rule)
           : r.sg * 3 + r.qm * 3
         return {
           id: r.id,
           sg: r.sg,
           mx: r.mx,
           qm: r.qm,
+          zcDays: r.zcDays,
           welfare,
         }
       }

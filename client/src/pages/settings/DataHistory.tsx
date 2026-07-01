@@ -116,7 +116,9 @@ function DetailView({
   // 渲染详情文本
   const renderDetail = (log: DataLogItem): string => {
     if (log.type === 'create') {
-      return `收光 ${log.sg ?? 0} · 麦序 ${log.mx ?? 0} · 全麦 ${log.qm ?? 0}`
+      const parts = [`收光 ${log.sg ?? 0}`, `麦序 ${log.mx ?? 0}`, `全麦 ${log.qm ?? 0}`]
+      if (log.zcDays !== undefined) parts.push(`主持 ${log.zcDays}`)
+      return parts.join(' · ')
     }
     if (log.type === 'delete') {
       try {
@@ -124,8 +126,11 @@ function DetailView({
           sg?: number
           mx?: number
           qm?: number
+          zcDays?: number
         }
-        return `删除前：收光 ${parsed.sg ?? 0} · 麦序 ${parsed.mx ?? 0} · 全麦 ${parsed.qm ?? 0}`
+        const parts = [`收光 ${parsed.sg ?? 0}`, `麦序 ${parsed.mx ?? 0}`, `全麦 ${parsed.qm ?? 0}`]
+        if (parsed.zcDays !== undefined) parts.push(`主持 ${parsed.zcDays}`)
+        return `删除前：${parts.join(' · ')}`
       } catch {
         return log.oldValue || '-'
       }

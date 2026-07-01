@@ -71,6 +71,7 @@ export interface DataRecord {
   sg: number
   mx: number
   qm: number
+  zcDays: number
   createdBy: number
   createdAt: string
   personnel?: { id: number; name: string }
@@ -155,6 +156,8 @@ export interface RewardRule {
   rankEnabled: boolean
   maixuEnabled: boolean
   stackRankAndMaixu: boolean
+  zcEnabled: boolean
+  zcDayReward: number
   branch?: { id: number; name: string }
 }
 
@@ -179,7 +182,9 @@ export interface RankingItem {
   sg: number
   mx: number
   qm: number
+  zcDays: number
   baseWelfare: number
+  zcWelfare: number
   rankReward: number
   totalWelfare: number
   // 冠名福利总额
@@ -219,6 +224,7 @@ export interface WeekCompareItem {
     sg: number
     mx: number
     qm: number
+    zcDays: number
     welfare: number
   } | null
   week2: {
@@ -226,6 +232,7 @@ export interface WeekCompareItem {
     sg: number
     mx: number
     qm: number
+    zcDays: number
     welfare: number
   } | null
 }
@@ -298,6 +305,7 @@ export interface CreateRecordInput {
   sg: number
   mx: number
   qm: number
+  zcDays: number
   // 录入目标周的周一（YYYY-MM-DD）
   // 不传则由后端使用服务器当前周（不推荐，存在时区 bug）
   // 周统计厅：传用户查看的周；月统计厅：传当前周的周一
@@ -311,6 +319,7 @@ export interface UpdateRecordInput {
   sg?: number
   mx?: number
   qm?: number
+  zcDays?: number
   personnelId?: number
   // 冠名数量（覆盖语义）：传入即覆盖该记录所有等级的冠名数量
   namings?: { levelId: number; count: number }[]
@@ -334,6 +343,8 @@ export interface UpdateRewardRuleInput {
   maixuEnabled?: boolean
   maixuMinEnabled?: boolean
   stackRankAndMaixu?: boolean
+  zcEnabled?: boolean
+  zcDayReward?: number
 }
 
 // 录入历史记录日志项（创建/修改/删除统一结构）
@@ -359,6 +370,7 @@ export interface DataLogItem {
   sg?: number
   mx?: number
   qm?: number
+  zcDays?: number
   // 操作备注（DataRecord.remark 或 DataHistory.remark）
   remark?: string | null
 }

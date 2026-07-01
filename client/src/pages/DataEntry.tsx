@@ -55,6 +55,8 @@ type RecordForm = {
   sg: string;
   mx: string;
   qm: string;
+  // 主持天数（字符串便于输入控制）
+  zcDays: string;
   // 冠名数量：levelId -> count（字符串便于输入控制）
   namings: Record<string, string>;
   // 福利扣减金额（字符串便于输入控制）
@@ -68,6 +70,7 @@ const emptyForm: RecordForm = {
   sg: "",
   mx: "",
   qm: "",
+  zcDays: "",
   namings: {},
   deduction: "",
   remark: "",
@@ -161,9 +164,9 @@ export default function DataEntry() {
   const rowKey = (branchId: number | undefined, personnelId: number) =>
     `${branchId ?? 0}:${personnelId}`;
   const [batchEditOpen, setBatchEditOpen] = useState(false);
-  // 每行的编辑表单：行 key（`${branchId}:${personnelId}`）-> { sg, mx, qm }
+  // 每行的编辑表单：行 key（`${branchId}:${personnelId}`）-> { sg, mx, qm, zcDays }
   const [batchForms, setBatchForms] = useState<
-    Record<string, { sg: string; mx: string; qm: string }>
+    Record<string, { sg: string; mx: string; qm: string; zcDays: string }>
   >({});
   const [batchSubmitting, setBatchSubmitting] = useState(false);
   // 批量编辑/添加的共用备注
@@ -172,7 +175,7 @@ export default function DataEntry() {
   // 批量添加状态：表格化批量录入
   const [batchAddOpen, setBatchAddOpen] = useState(false);
   const [batchAddForms, setBatchAddForms] = useState<
-    Record<string, { sg: string; mx: string; qm: string }>
+    Record<string, { sg: string; mx: string; qm: string; zcDays: string }>
   >({});
   const [batchAddSubmitting, setBatchAddSubmitting] = useState(false);
 
@@ -187,6 +190,8 @@ export default function DataEntry() {
   // 收光/全麦是否可录入（厅规则关闭时禁用对应输入）
   const sgInputEnabled = rewardRule ? rewardRule.sgEnabled : true;
   const qmInputEnabled = rewardRule ? rewardRule.qmEnabled : true;
+  // 主持天数是否可录入（厅管理页开启主持福利后才启用，默认关闭）
+  const zcInputEnabled = rewardRule ? rewardRule.zcEnabled : false;
 
   // 当前厅的冠名等级（仅按月统计厅有配置时加载）
   const [namingLevels, setNamingLevels] = useState<NamingLevel[]>([]);
@@ -463,6 +468,7 @@ export default function DataEntry() {
       sg: record.sg ? String(record.sg) : "",
       mx: record.mx ? String(record.mx) : "",
       qm: record.qm ? String(record.qm) : "",
+      zcDays: String(record.zcDays ?? 0),
       namings: namingMap,
       deduction: record.deduction ? String(record.deduction) : "",
       // 备注不预填历史值，每次编辑都需要重新填写
@@ -487,13 +493,15 @@ export default function DataEntry() {
     const sg = sgInputEnabled ? Number(editForm.sg) : 0;
     const mx = Number(editForm.mx);
     const qm = qmInputEnabled ? Number(editForm.qm) : 0;
+    const zcDays = zcInputEnabled ? Number(editForm.zcDays) : 0;
     if (
       (sgInputEnabled && (!Number.isInteger(sg) || sg < 0)) ||
       !Number.isInteger(mx) ||
       mx < 0 ||
-      (qmInputEnabled && (!Number.isInteger(qm) || qm < 0))
+      (qmInputEnabled && (!Number.isInteger(qm) || qm < 0)) ||
+      (zcInputEnabled && (!Number.isInteger(zcDays) || zcDays < 0))
     ) {
-      toast.error("收光/麦序/全麦必须为非负整数");
+      toast.error("收光/麦序/全麦/主持天数必须为非负整数");
       return;
     }
 
@@ -527,10 +535,11 @@ export default function DataEntry() {
         sg: number;
         mx: number;
         qm: number;
+        zcDays: number;
         personnelId?: number;
         namings?: { levelId: number; count: number }[];
         remark?: string;
-      } = { sg, mx, qm };
+      } = { sg, mx, qm, zcDays };
       if (namings) payload.namings = namings;
       // 备注始终传递（覆盖式存储：空字符串会清空备注）
       payload.remark = editForm.remark.trim();
@@ -800,6 +809,7 @@ export default function DataEntry() {
     sg: number;
     mx: number;
     qm: number;
+    zcDays: number;
     welfare?: number;
     deduction?: number;
     finalWelfare?: number;
@@ -845,6 +855,7 @@ export default function DataEntry() {
         sg: r.sg,
         mx: r.mx,
         qm: r.qm,
+        zcDays: r.zcDays ?? 0,
         welfare: r.welfare,
         deduction: r.deduction,
         finalWelfare: r.finalWelfare,
@@ -865,6 +876,7 @@ export default function DataEntry() {
         sg: 0,
         mx: 0,
         qm: 0,
+        zcDays: 0,
         welfare: undefined,
         createdAt: undefined,
         isRecorded: false,
@@ -917,7 +929,7 @@ export default function DataEntry() {
       toast.error("请先勾选要批量编辑的人员");
       return;
     }
-    const forms: Record<string, { sg: string; mx: string; qm: string }> = {};
+    const forms: Record<string, { sg: string; mx: string; qm: string; zcDays: string }> = {};
     allRows.forEach((r) => {
       const key = rowKey(r.branchId, r.personnelId);
       if (selectedKeys.has(key)) {
@@ -926,6 +938,7 @@ export default function DataEntry() {
           sg: r.isRecorded && r.sg ? String(r.sg) : "",
           mx: r.isRecorded && r.mx ? String(r.mx) : "",
           qm: r.isRecorded && r.qm ? String(r.qm) : "",
+          zcDays: r.isRecorded && r.zcDays ? String(r.zcDays) : "",
         };
       }
     });
@@ -936,7 +949,7 @@ export default function DataEntry() {
   // 批量编辑：更新某行某字段
   const handleBatchFieldChange = (
     key: string,
-    field: "sg" | "mx" | "qm",
+    field: "sg" | "mx" | "qm" | "zcDays",
     value: string,
   ) => {
     setBatchForms((prev) => ({
@@ -972,6 +985,7 @@ export default function DataEntry() {
       sg: number;
       mx: number;
       qm: number;
+      zcDays: number;
       recordId: number; // 0 表示未录入需新建
     }> = [];
     for (const [key, f] of entries) {
@@ -982,13 +996,15 @@ export default function DataEntry() {
       const sg = sgInputEnabled ? Number(f.sg) : 0;
       const mx = Number(f.mx);
       const qm = qmInputEnabled ? Number(f.qm) : 0;
+      const zcDays = !zcInputEnabled ? 0 : f.zcDays === "" ? 0 : Number(f.zcDays);
       if (
         (sgInputEnabled && (!Number.isInteger(sg) || sg < 0)) ||
         !Number.isInteger(mx) ||
         mx < 0 ||
-        (qmInputEnabled && (!Number.isInteger(qm) || qm < 0))
+        (qmInputEnabled && (!Number.isInteger(qm) || qm < 0)) ||
+        (zcInputEnabled && (!Number.isInteger(zcDays) || zcDays < 0))
       ) {
-        toast.error("收光/麦序/全麦必须为非负整数");
+        toast.error("收光/麦序/全麦/主持天数必须为非负整数");
         return;
       }
       const row = allRows.find(
@@ -1000,6 +1016,7 @@ export default function DataEntry() {
         sg,
         mx,
         qm,
+        zcDays,
         recordId: row?.id ?? 0,
       });
     }
@@ -1017,6 +1034,7 @@ export default function DataEntry() {
               sg: item.sg,
               mx: item.mx,
               qm: item.qm,
+              zcDays: item.zcDays,
               remark: batchRemark.trim(),
             });
           } else {
@@ -1027,6 +1045,7 @@ export default function DataEntry() {
               sg: item.sg,
               mx: item.mx,
               qm: item.qm,
+              zcDays: item.zcDays,
               weekStart: recordWeekStart,
               remark: batchRemark.trim() || undefined,
             });
@@ -1062,12 +1081,12 @@ export default function DataEntry() {
       toast.error("请先勾选要批量添加的人员");
       return;
     }
-    const forms: Record<string, { sg: string; mx: string; qm: string }> = {};
+    const forms: Record<string, { sg: string; mx: string; qm: string; zcDays: string }> = {};
     allRows.forEach((r) => {
       const key = rowKey(r.branchId, r.personnelId);
       if (selectedKeys.has(key)) {
         // 输入框初始为空，输入的是要累加的数值
-        forms[key] = { sg: "", mx: "", qm: "" };
+        forms[key] = { sg: "", mx: "", qm: "", zcDays: "" };
       }
     });
     setBatchAddForms(forms);
@@ -1077,7 +1096,7 @@ export default function DataEntry() {
   // 批量添加：更新某行某字段
   const handleBatchAddFieldChange = (
     key: string,
-    field: "sg" | "mx" | "qm",
+    field: "sg" | "mx" | "qm" | "zcDays",
     value: string,
   ) => {
     setBatchAddForms((prev) => ({
@@ -1113,6 +1132,7 @@ export default function DataEntry() {
       sg: number;
       mx: number;
       qm: number;
+      zcDays: number;
     }> = [];
     for (const [key, f] of entries) {
       const [bidStr, pidStr] = key.split(":");
@@ -1122,23 +1142,26 @@ export default function DataEntry() {
       const addSg = !sgInputEnabled ? 0 : f.sg === "" ? 0 : Number(f.sg);
       const addMx = f.mx === "" ? 0 : Number(f.mx);
       const addQm = !qmInputEnabled ? 0 : f.qm === "" ? 0 : Number(f.qm);
+      const addZcDays = !zcInputEnabled ? 0 : f.zcDays === "" ? 0 : Number(f.zcDays);
       if (
         (sgInputEnabled && (!Number.isInteger(addSg) || addSg < 0)) ||
         !Number.isInteger(addMx) ||
         addMx < 0 ||
-        (qmInputEnabled && (!Number.isInteger(addQm) || addQm < 0))
+        (qmInputEnabled && (!Number.isInteger(addQm) || addQm < 0)) ||
+        (zcInputEnabled && (!Number.isInteger(addZcDays) || addZcDays < 0))
       ) {
-        toast.error("收光/麦序/全麦必须为非负整数");
+        toast.error("收光/麦序/全麦/主持天数必须为非负整数");
         return;
       }
       // 跳过无输入的（避免创建全 0 的空记录）
-      if (addSg === 0 && addMx === 0 && addQm === 0) continue;
+      if (addSg === 0 && addMx === 0 && addQm === 0 && addZcDays === 0) continue;
       parsed.push({
         personnelId,
         branchId,
         sg: addSg,
         mx: addMx,
         qm: addQm,
+        zcDays: addZcDays,
       });
     }
 
@@ -1160,6 +1183,7 @@ export default function DataEntry() {
             sg: item.sg,
             mx: item.mx,
             qm: item.qm,
+            zcDays: item.zcDays,
             weekStart: recordWeekStart,
             remark: batchRemark.trim() || undefined,
           });
@@ -1396,6 +1420,9 @@ export default function DataEntry() {
                       {qmInputEnabled && (
                         <th className="px-4 py-3 font-medium">全麦</th>
                       )}
+                      {zcInputEnabled && (
+                        <th className="px-4 py-3 font-medium">主持</th>
+                      )}
                       {branchCycle === "MONTH" && (
                         <th className="px-4 py-3 font-medium">冠名</th>
                       )}
@@ -1408,9 +1435,10 @@ export default function DataEntry() {
                       <tr>
                         <td
                           colSpan={
-                            // 勾选框 + 人员 + 收光 + 麦序 + (全麦) + (冠名) + 福利 + 操作
+                            // 勾选框 + 人员 + 收光 + 麦序 + (全麦) + (主持) + (冠名) + 福利 + 操作
                             5 +
                             (qmInputEnabled ? 1 : 0) +
+                            (zcInputEnabled ? 1 : 0) +
                             (branchCycle === "MONTH" ? 1 : 0)
                           }
                           className="px-4 py-12 text-center text-textMuted"
@@ -1463,6 +1491,11 @@ export default function DataEntry() {
                               {r.isRecorded ? r.qm : "-"}
                             </td>
                           )}
+                          {zcInputEnabled && (
+                            <td className="px-4 py-3 text-textPrimary font-mono">
+                              {r.isRecorded ? r.zcDays : "-"}
+                            </td>
+                          )}
                           {branchCycle === "MONTH" && (
                             <td className="px-4 py-3 text-textPrimary text-xs whitespace-nowrap">
                               {r.isRecorded ? formatNamings(r.namings) : "-"}
@@ -1486,6 +1519,7 @@ export default function DataEntry() {
                                       sg: r.sg,
                                       mx: r.mx,
                                       qm: r.qm,
+                                      zcDays: r.zcDays,
                                       namings: r.namings,
                                     } as DataRecord)
                                   }
@@ -1764,6 +1798,26 @@ export default function DataEntry() {
             </div>
           </div>
 
+          {/* 主持天数：仅厅管理页开启主持福利时显示 */}
+          {zcInputEnabled && (
+            <div>
+              <label className="block text-xs text-textSecondary mb-1">
+                主持天数
+              </label>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={editForm.zcDays}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, zcDays: e.target.value })
+                }
+                placeholder="0"
+                className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+              />
+            </div>
+          )}
+
           {/* 冠名数量：仅按月统计厅且已配置冠名等级时显示 */}
           {editNamingsEnabled && (
             <div>
@@ -1989,7 +2043,9 @@ export default function DataEntry() {
                         {r.branchName || "-"}
                       </span>
                     </div>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div
+                      className={`grid gap-2 ${zcInputEnabled ? "grid-cols-4" : "grid-cols-3"}`}
+                    >
                       <div>
                         <label className="block text-[10px] text-textSecondary mb-0.5">
                           收光
@@ -2050,6 +2106,24 @@ export default function DataEntry() {
                           className="w-full px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       </div>
+                      {zcInputEnabled && (
+                        <div>
+                          <label className="block text-[10px] text-textSecondary mb-0.5">
+                            主持天数
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={batchForms[k]?.zcDays ?? ""}
+                            onChange={(e) =>
+                              handleBatchFieldChange(k, "zcDays", e.target.value)
+                            }
+                            placeholder="0"
+                            className="w-full px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -2117,6 +2191,9 @@ export default function DataEntry() {
                   <th className="px-3 py-2 font-medium text-center">收光</th>
                   <th className="px-3 py-2 font-medium text-center">麦序</th>
                   <th className="px-3 py-2 font-medium text-center">全麦</th>
+                  {zcInputEnabled && (
+                    <th className="px-3 py-2 font-medium text-center">主持天数</th>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -2199,6 +2276,21 @@ export default function DataEntry() {
                             className="w-20 px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono text-center focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                           />
                         </td>
+                        {zcInputEnabled && (
+                          <td className="px-2 py-2">
+                            <input
+                              type="number"
+                              min={0}
+                              step={1}
+                              value={batchAddForms[k]?.zcDays ?? ""}
+                              onChange={(e) =>
+                                handleBatchAddFieldChange(k, "zcDays", e.target.value)
+                              }
+                              placeholder="0"
+                              className="w-20 px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono text-center focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+                            />
+                          </td>
+                        )}
                       </tr>
                     );
                   })}

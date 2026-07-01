@@ -14,7 +14,9 @@ export interface RankingItem {
   sg: number
   mx: number
   qm: number
+  zcDays: number
   baseWelfare: number
+  zcWelfare: number
   rankReward: number
   namingWelfare: number
   deduction: number
@@ -38,6 +40,9 @@ interface RewardRuleLike {
   maixuEnabled: boolean
   // 排名奖金与麦序达标奖励是否叠加（true=前3名达标时叠加两者）
   stackRankAndMaixu: boolean
+  // 主持福利：启用后按主持天数 × 每日福利计入基础福利
+  zcEnabled: boolean
+  zcDayReward: number
 }
 
 // 默认奖励规则（分部未配置时使用，与 schema 默认值一致）
@@ -56,6 +61,8 @@ const DEFAULT_RULE: RewardRuleLike = {
   rankEnabled: true,
   maixuEnabled: true,
   stackRankAndMaixu: true,
+  zcEnabled: false,
+  zcDayReward: 0,
 }
 
 /**
@@ -70,6 +77,16 @@ export function computeBaseWelfare(
   const sgPart = rule.sgEnabled ? sg * rule.sgRatio : 0
   const qmPart = rule.qmEnabled ? qm * rule.qmRatio : 0
   return sgPart + qmPart
+}
+
+/**
+ * 计算主持福利：主持天数 × 每日福利（尊重 zcEnabled 开关）
+ */
+export function computeZcWelfare(
+  zcDays: number,
+  rule: RewardRuleLike
+): number {
+  return rule.zcEnabled ? zcDays * rule.zcDayReward : 0
 }
 
 /**
@@ -247,6 +264,7 @@ export async function computeRanking(
         sg: number
         mx: number
         qm: number
+        zcDays: number
         namings: Map<number, number> // levelId -> count
       }
     >
@@ -263,6 +281,7 @@ export async function computeRanking(
       existing.sg += r.sg
       existing.mx += r.mx
       existing.qm += r.qm
+      existing.zcDays += r.zcDays
       for (const n of r.namings) {
         existing.namings.set(n.levelId, (existing.namings.get(n.levelId) ?? 0) + n.count)
       }
@@ -277,6 +296,7 @@ export async function computeRanking(
         sg: r.sg,
         mx: r.mx,
         qm: r.qm,
+        zcDays: r.zcDays,
         namings: namingsMap,
       })
     }
@@ -304,6 +324,9 @@ export async function computeRanking(
       const baseWelfare = maixuDisqualified
         ? 0
         : computeBaseWelfare(p.sg, p.qm, rule)
+      const zcWelfare = maixuDisqualified
+        ? 0
+        : computeZcWelfare(p.zcDays, rule)
       const rankReward = maixuDisqualified
         ? 0
         : computeRankReward(rank, p.mx, rule)
@@ -328,11 +351,13 @@ export async function computeRanking(
         sg: p.sg,
         mx: p.mx,
         qm: p.qm,
+        zcDays: p.zcDays,
         baseWelfare,
+        zcWelfare,
         rankReward,
         namingWelfare,
         deduction: deductionMap.get(`${branchId}:${p.personnelId}`) ?? 0,
-        totalWelfare: Math.max(0, baseWelfare + rankReward + namingWelfare - (deductionMap.get(`${branchId}:${p.personnelId}`) ?? 0)),
+        totalWelfare: Math.max(0, baseWelfare + zcWelfare + rankReward + namingWelfare - (deductionMap.get(`${branchId}:${p.personnelId}`) ?? 0)),
         namings,
       })
     })

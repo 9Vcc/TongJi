@@ -35,6 +35,8 @@ type RuleForm = {
   maixuEnabled: boolean
   maixuMinEnabled: boolean
   stackRankAndMaixu: boolean
+  zcEnabled: boolean
+  zcDayReward: number
 }
 
 const defaultRuleForm: RuleForm = {
@@ -52,6 +54,8 @@ const defaultRuleForm: RuleForm = {
   maixuEnabled: true,
   maixuMinEnabled: false,
   stackRankAndMaixu: true,
+  zcEnabled: false,
+  zcDayReward: 0,
 }
 
 // 开关行：左侧标签 + 右侧 toggle
@@ -275,6 +279,8 @@ export default function BranchesPage() {
           maixuEnabled: r.maixuEnabled,
           maixuMinEnabled: r.maixuMinEnabled,
           stackRankAndMaixu: r.stackRankAndMaixu,
+          zcEnabled: r.zcEnabled,
+          zcDayReward: r.zcDayReward,
         })
       }
     } catch (err) {
@@ -766,6 +772,25 @@ export default function BranchesPage() {
                 setRuleForm({ ...ruleForm, stackRankAndMaixu: v })
               }
             />
+
+            {/* 主持福利 */}
+            <ToggleRow
+              label="主持福利"
+              desc="开启后按录入的主持天数 × 每日福利计入基础福利"
+              checked={ruleForm.zcEnabled}
+              onChange={(v) => setRuleForm({ ...ruleForm, zcEnabled: v })}
+            />
+            {ruleForm.zcEnabled && (
+              <div className="pl-4 border-l-2 border-primary/30 ml-1">
+                <NumberInput
+                  label="每日主持福利"
+                  value={ruleForm.zcDayReward}
+                  onChange={(v) =>
+                    setRuleForm({ ...ruleForm, zcDayReward: v })
+                  }
+                />
+              </div>
+            )}
           </div>
         )}
       </Modal>

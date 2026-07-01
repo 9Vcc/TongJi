@@ -19,6 +19,8 @@ interface RewardRuleInput {
   maixuEnabled?: boolean
   maixuMinEnabled?: boolean
   stackRankAndMaixu?: boolean
+  zcEnabled?: boolean
+  zcDayReward?: number
 }
 
 function isNonNegInt(v: unknown): boolean {
@@ -97,6 +99,7 @@ export default async function rewardRuleRoutes(fastify: FastifyInstance) {
         'maixuThreshold',
         'maixuReward',
         'maixuMinStandard',
+        'zcDayReward',
       ]
       // 校验布尔开关字段
       const boolFields: (keyof RewardRuleInput)[] = [
@@ -106,6 +109,7 @@ export default async function rewardRuleRoutes(fastify: FastifyInstance) {
         'maixuEnabled',
         'maixuMinEnabled',
         'stackRankAndMaixu',
+        'zcEnabled',
       ]
 
       const data: Record<string, number | boolean> = {}

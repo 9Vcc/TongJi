@@ -140,6 +140,7 @@ model DataRecord {
   sg          Int      @default(0)
   mx          Int      @default(0)
   qm          Int      @default(0)
+  zcDays      Int      @default(0)
   createdBy   Int
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -223,6 +224,9 @@ model RewardRule {
   // true：前3名达标时排名奖金 + 麦序达标奖励叠加
   // false：前3名只拿排名奖金，不叠加麦序达标奖励
   stackRankAndMaixu Boolean @default(true)
+  // 主持天数福利：启用后按录入的主持天数 × 每日福利计入基础福利
+  zcEnabled   Boolean  @default(false)
+  zcDayReward Int      @default(0)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
