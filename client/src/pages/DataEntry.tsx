@@ -2187,7 +2187,6 @@ export default function DataEntry() {
               <thead className="bg-surface border-b border-border sticky top-0 z-10">
                 <tr className="text-left text-textSecondary">
                   <th className="px-3 py-2 font-medium">人员</th>
-                  <th className="px-3 py-2 font-medium">厅</th>
                   <th className="px-3 py-2 font-medium text-center">收光</th>
                   <th className="px-3 py-2 font-medium text-center">麦序</th>
                   <th className="px-3 py-2 font-medium text-center">全麦</th>
@@ -2213,23 +2212,9 @@ export default function DataEntry() {
                         }`}
                       >
                         <td className="px-3 py-2 text-textPrimary align-middle">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">
-                              {r.personnelName}
-                            </span>
-                            {!r.isRecorded ? (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
-                                未录入
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
-                                已录入
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2 text-textSecondary text-xs align-middle">
-                          {r.branchName || "-"}
+                          <span className="font-medium">
+                            {r.personnelName}
+                          </span>
                         </td>
                         <td className="px-2 py-2">
                           <input
