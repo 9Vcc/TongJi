@@ -31,9 +31,11 @@ export default function Personnel() {
   const { user } = useAuth()
   const toast = useToast()
   const isHuizhang = user?.role === 'HUIZHANG'
-  const canDelete = isHuizhang || user?.role === 'CHAOGUAN'
-  const canAdd = isHuizhang || user?.role === 'CHAOGUAN'
-  const canEdit = isHuizhang || user?.role === 'CHAOGUAN'
+  const isChaoguan = user?.role === 'CHAOGUAN'
+  const canSelectBranch = isHuizhang || isChaoguan
+  const canDelete = isHuizhang || isChaoguan
+  const canAdd = isHuizhang || isChaoguan
+  const canEdit = isHuizhang || isChaoguan
 
   const [personnel, setPersonnel] = useState<PersonnelType[]>([])
   const [branches, setBranches] = useState<Branch[]>([])
@@ -66,8 +68,9 @@ export default function Personnel() {
 
   const effectiveBranchId = useMemo(() => {
     if (isHuizhang) return branchId
+    if (isChaoguan) return branchId ?? user?.branchId ?? undefined
     return user?.branchId ?? undefined
-  }, [isHuizhang, branchId, user])
+  }, [isHuizhang, isChaoguan, branchId, user])
 
   const loadPersonnel = async () => {
     setLoading(true)
@@ -82,10 +85,10 @@ export default function Personnel() {
   }
 
   useEffect(() => {
-    if (isHuizhang) {
+    if (isHuizhang || isChaoguan) {
       branchesApi.list().then(setBranches).catch(() => {})
     }
-  }, [isHuizhang])
+  }, [isHuizhang, isChaoguan])
 
   // 仅在选了厅时加载人员（会长需选厅；超管/管理有默认 branchId）
   useEffect(() => {
@@ -120,12 +123,12 @@ export default function Personnel() {
     setName('')
     setBatchText('')
     setAddTab('single')
-    setAddBranchId(isHuizhang ? undefined : user?.branchId ?? undefined)
+    setAddBranchId(canSelectBranch ? undefined : user?.branchId ?? undefined)
     setAddOpen(true)
   }
 
   const handleSubmit = async () => {
-    const targetBranchId = isHuizhang ? addBranchId : user?.branchId
+    const targetBranchId = canSelectBranch ? addBranchId : user?.branchId
     if (!targetBranchId) {
       toast.error(isHuizhang ? '请选择厅' : '当前账户未关联厅')
       return
@@ -256,15 +259,15 @@ export default function Personnel() {
           <h3 className="text-base font-semibold text-textPrimary">人员名单</h3>
         </div>
         <div className="flex items-center gap-2">
-          {isHuizhang && (
+          {canSelectBranch && (
             <select
-              value={branchId ?? ''}
+              value={branchId ?? (isChaoguan ? user?.branchId ?? '' : '')}
               onChange={(e) =>
                 setBranchId(e.target.value ? Number(e.target.value) : undefined)
               }
               className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer"
             >
-              <option value="">选择厅</option>
+              {isHuizhang && <option value="">选择厅</option>}
               {branches.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}
@@ -544,7 +547,7 @@ export default function Personnel() {
           )}
 
           {/* 所属厅选择 */}
-          {isHuizhang ? (
+          {canSelectBranch ? (
             <div>
               <label className="block text-xs text-textSecondary mb-1">
                 所属厅

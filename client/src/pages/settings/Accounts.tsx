@@ -41,7 +41,8 @@ export default function AccountsPage() {
     nickname: '',
     password: '',
     role: 'GUANLI' as Role,
-    branchId: '',
+    // 所有授权厅（包含主厅）；第一个勾选的为主厅，其余为额外授权厅
+    branchIds: [] as number[],
   })
   const [showPassword, setShowPassword] = useState(false)
   const [accountSubmitting, setAccountSubmitting] = useState(false)
@@ -93,7 +94,7 @@ export default function AccountsPage() {
       nickname: '',
       password: '',
       role: 'GUANLI',
-      branchId: isHuizhang ? '' : String(user?.branchId ?? ''),
+      branchIds: [],
     })
     setShowPassword(false)
     setAccountModalOpen(true)
@@ -101,12 +102,16 @@ export default function AccountsPage() {
 
   const openEditAccountModal = (account: User) => {
     setEditingAccount(account)
+    // 合并主厅 + 额外授权厅为统一列表（主厅放第一位）
+    const allBranchIds = account.branchId
+      ? [account.branchId, ...(account.branchIds ?? []).filter((id) => id !== account.branchId)]
+      : (account.branchIds ?? [])
     setAccountForm({
       username: account.username,
       nickname: account.nickname ?? '',
       password: '',
       role: account.role,
-      branchId: account.branchId ? String(account.branchId) : '',
+      branchIds: allBranchIds,
     })
     setShowPassword(false)
     setAccountModalOpen(true)
@@ -122,14 +127,16 @@ export default function AccountsPage() {
       return
     }
 
-    const targetBranchId = isHuizhang
-      ? accountForm.branchId
-        ? Number(accountForm.branchId)
-        : undefined
-      : user?.branchId ?? undefined
+    // 第一个勾选的厅为主厅，其余为额外授权厅
+    const mainBranchId = accountForm.branchIds[0]
+    const extraBranchIds = accountForm.branchIds.slice(1)
 
+    // 会长使用勾选的第一个厅作为主厅；超管/管理自动绑定到自己所在厅
+    const targetBranchId = isHuizhang ? mainBranchId : (user?.branchId ?? undefined)
+
+    // 非会长角色必须至少选一个厅
     if (accountForm.role !== 'HUIZHANG' && !targetBranchId) {
-      toast.error(isHuizhang ? '请选择厅' : '当前账户未关联厅')
+      toast.error('请至少选择一个授权厅')
       return
     }
 
@@ -151,9 +158,21 @@ export default function AccountsPage() {
         if (accountForm.role !== editingAccount.role) {
           payload.role = accountForm.role
         }
-        const newBranchId = targetBranchId
-        if (newBranchId !== editingAccount.branchId) {
-          payload.branchId = newBranchId
+        // 主厅变化
+        if (targetBranchId !== editingAccount.branchId) {
+          payload.branchId = targetBranchId
+        }
+        // 额外授权厅变化（仅 CHAOGUAN 角色）
+        if (accountForm.role === 'CHAOGUAN') {
+          const originalExtra = editingAccount.branchId
+            ? (editingAccount.branchIds ?? []).filter((id) => id !== editingAccount.branchId)
+            : (editingAccount.branchIds ?? [])
+          const isSame =
+            extraBranchIds.length === originalExtra.length &&
+            extraBranchIds.every((id) => originalExtra.includes(id))
+          if (!isSame) {
+            payload.branchIds = extraBranchIds
+          }
         }
         if (Object.keys(payload).length === 0) {
           toast.info('没有需要更新的字段')
@@ -169,6 +188,7 @@ export default function AccountsPage() {
           password: accountForm.password,
           role: accountForm.role,
           branchId: targetBranchId,
+          branchIds: accountForm.role === 'CHAOGUAN' ? extraBranchIds : undefined,
         })
         toast.success('账户创建成功')
       }
@@ -216,6 +236,9 @@ export default function AccountsPage() {
   }
 
   const getBranchName = (account: User) => {
+    if (account.branches && account.branches.length > 0) {
+      return account.branches.map((b) => b.name).join('、')
+    }
     return account.branch?.name || branches.find((b) => b.id === account.branchId)?.name || '-'
   }
 
@@ -477,33 +500,64 @@ export default function AccountsPage() {
             </select>
           </div>
 
-          {/* 所属厅 */}
+          {/* 授权厅（合并原"所属厅"和"额外授权厅"：勾选即授权，第一个勾选的为主厅） */}
           {isHuizhang && (
             <div>
               <label className="block text-xs text-textSecondary mb-1">
-                所属厅
-                {accountForm.role === 'HUIZHANG' && (
-                  <span className="text-textMuted">（会长可不绑定厅）</span>
+                授权厅
+                {accountForm.role === 'HUIZHANG' ? (
+                  <span className="text-textMuted">（会长可不绑定厅；第一个勾选的为主厅）</span>
+                ) : (
+                  <span className="text-textMuted">（至少勾选一个；第一个勾选的为主厅）</span>
                 )}
               </label>
-              <select
-                value={accountForm.branchId}
-                onChange={(e) =>
-                  setAccountForm({ ...accountForm, branchId: e.target.value })
-                }
-                className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer"
-              >
-                <option value="">
-                  {accountForm.role === 'HUIZHANG'
-                    ? '不绑定厅'
-                    : '请选择厅'}
-                </option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
+              <div className="max-h-32 overflow-auto border border-border rounded-lg p-2 space-y-1">
+                {branches.map((b) => {
+                  const checked = accountForm.branchIds.includes(b.id)
+                  const isMain = accountForm.branchIds[0] === b.id
+                  return (
+                    <label
+                      key={b.id}
+                      className="flex items-center gap-2 text-sm cursor-pointer hover:bg-surface rounded px-2 py-1"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setAccountForm({
+                              ...accountForm,
+                              branchIds: [...accountForm.branchIds, b.id],
+                            })
+                          } else {
+                            // 非会长角色至少保留一个授权厅
+                            if (
+                              accountForm.role !== 'HUIZHANG' &&
+                              accountForm.branchIds.length === 1
+                            ) {
+                              toast.error('请至少保留一个授权厅')
+                              return
+                            }
+                            setAccountForm({
+                              ...accountForm,
+                              branchIds: accountForm.branchIds.filter(
+                                (id) => id !== b.id,
+                              ),
+                            })
+                          }
+                        }}
+                        className="checkbox-round"
+                      />
+                      <span>{b.name}</span>
+                      {isMain && (
+                        <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                          主厅
+                        </span>
+                      )}
+                    </label>
+                  )
+                })}
+              </div>
             </div>
           )}
         </div>

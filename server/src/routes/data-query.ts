@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import prisma from '../lib/prisma'
-import { authenticate } from '../middleware/auth'
+import { authenticate, canAccessBranch, getAccessibleBranchIds } from '../middleware/auth'
 import { Role, StatCycle } from '../../generated/prisma/client'
 import { getWeekStart } from '../utils/week'
 
@@ -35,10 +35,10 @@ function calcWelfare(sg: number, mx: number, qm: number, zcDays: number, rule: R
 
 /**
  * 解析查询参数中的分部过滤
- * 会长可指定 branchId 或查看全部；超管/管理只能查看自己分部
+ * 会长可指定 branchId 或查看全部；超管可查看指定授权厅或全部授权厅；管理只能查看自己分部
  */
 function resolveQueryBranchId(
-  currentUser: { role: Role; branchId: number | null },
+  currentUser: { role: Role; branchId: number | null; branchIds: number[] },
   requestedBranchId: string | undefined
 ): number | undefined {
   if (currentUser.role === Role.HUIZHANG) {
@@ -48,7 +48,34 @@ function resolveQueryBranchId(
     }
     return undefined
   }
+  // 超管：可查看指定授权厅
+  if (currentUser.role === Role.CHAOGUAN) {
+    if (requestedBranchId) {
+      const n = Number(requestedBranchId)
+      if (!Number.isNaN(n) && canAccessBranch(currentUser, n)) {
+        return n
+      }
+    }
+    return undefined
+  }
   return currentUser.branchId ?? undefined
+}
+
+/**
+ * 构建 Prisma where 的分部过滤条件
+ * - 指定单厅：{ branchId: n }
+ * - 会长全部厅：{} (无过滤)
+ * - 超管全部授权厅：{ branchId: { in: branchIds } }
+ * - 管理本厅：{ branchId: branchId }
+ */
+function buildBranchWhere(
+  branchFilter: number | undefined,
+  currentUser: { role: Role; branchId: number | null; branchIds: number[] }
+): { branchId?: number | { in: number[] } } {
+  if (branchFilter) return { branchId: branchFilter }
+  const accessibleIds = getAccessibleBranchIds(currentUser)
+  if (accessibleIds === null) return {}
+  return { branchId: { in: accessibleIds } }
 }
 
 export default async function dataQueryRoutes(fastify: FastifyInstance) {
@@ -73,7 +100,7 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
       const records = await prisma.dataRecord.findMany({
         where: {
           weekStart,
-          ...(branchFilter ? { branchId: branchFilter } : {}),
+          ...buildBranchWhere(branchFilter, currentUser),
         },
         include: {
           personnel: { select: { id: true, name: true } },
@@ -103,13 +130,13 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
         prisma.deduction.findMany({
           where: {
             periodStart: weekStart,
-            ...(branchFilter ? { branchId: branchFilter } : {}),
+            ...buildBranchWhere(branchFilter, currentUser),
           },
         }),
         prisma.deduction.findMany({
           where: {
             periodStart: monthStart,
-            ...(branchFilter ? { branchId: branchFilter } : {}),
+            ...buildBranchWhere(branchFilter, currentUser),
           },
         }),
       ])
@@ -178,7 +205,7 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
       const branchFilter = resolveQueryBranchId(currentUser, branchIdParam)
 
       const records = await prisma.dataRecord.findMany({
-        where: branchFilter ? { branchId: branchFilter } : {},
+        where: buildBranchWhere(branchFilter, currentUser),
         select: { weekStart: true },
         distinct: ['weekStart'],
         orderBy: { weekStart: 'desc' },
@@ -213,7 +240,7 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
         prisma.dataRecord.findMany({
           where: {
             weekStart: w1,
-            ...(branchFilter ? { branchId: branchFilter } : {}),
+            ...buildBranchWhere(branchFilter, currentUser),
           },
           include: {
             personnel: { select: { id: true, name: true } },
@@ -223,7 +250,7 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
         prisma.dataRecord.findMany({
           where: {
             weekStart: w2,
-            ...(branchFilter ? { branchId: branchFilter } : {}),
+            ...buildBranchWhere(branchFilter, currentUser),
           },
           include: {
             personnel: { select: { id: true, name: true } },
@@ -326,16 +353,34 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
       const { branchId: branchIdParam } =
         request.query as { branchId?: string }
 
-      // 分部权限：会长可指定任意厅；超管/管理限定本厅
+      // 分部权限：会长可指定任意厅；超管可查看指定授权厅或全部授权厅；管理限定本厅
       let branchFilter: number | undefined
+      let branchInScope: number[] | undefined
       if (currentUser.role === Role.HUIZHANG) {
         if (branchIdParam) {
           const n = Number(branchIdParam)
           branchFilter = Number.isNaN(n) ? undefined : n
         }
+      } else if (currentUser.role === Role.CHAOGUAN) {
+        if (branchIdParam) {
+          const n = Number(branchIdParam)
+          if (!Number.isNaN(n) && canAccessBranch(currentUser, n)) {
+            branchFilter = n
+          }
+        }
+        if (!branchFilter) {
+          branchInScope = currentUser.branchIds
+        }
       } else {
         branchFilter = currentUser.branchId ?? undefined
       }
+
+      // 构建 branchId 过滤值：单厅用 number，多厅用 { in: [...] }，全部厅用 undefined
+      const branchIdValue: number | { in: number[] } | undefined = branchFilter
+        ? branchFilter
+        : branchInScope && branchInScope.length > 0
+          ? { in: branchInScope }
+          : undefined
 
       // 查询该厅最近一条有备注的操作记录
       // record 存在时按 branchId 过滤（录入/修改）
@@ -344,17 +389,12 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
         where: {
           remark: { not: null },
           OR: [
-            {
-              ...(branchFilter
-                ? { record: { branchId: branchFilter } }
-                : {}),
-            },
+            ...(branchIdValue !== undefined
+              ? [{ record: { branchId: branchIdValue } }]
+              : [{}]),
             // 删除操作：record 已被删除，通过操作者限定本厅范围
-            ...(branchFilter
-              ? [{
-                  recordId: null,
-                  modifier: { branchId: branchFilter },
-                }]
+            ...(branchIdValue !== undefined
+              ? [{ recordId: null, modifier: { branchId: branchIdValue } }]
               : [{ recordId: null }]),
           ],
         },

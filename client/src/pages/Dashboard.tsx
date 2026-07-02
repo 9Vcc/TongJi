@@ -138,6 +138,8 @@ function KpiCard({
 export default function Dashboard() {
   const { user } = useAuth();
   const isHuizhang = user?.role === "HUIZHANG";
+  const isChaoguan = user?.role === "CHAOGUAN";
+  const canSelectBranch = isHuizhang || isChaoguan;
   const { resolvedTheme } = useTheme();
   const toast = useToast();
   // 初始 weekStart 设为本月1日（而非本周周一）
@@ -618,7 +620,9 @@ export default function Dashboard() {
           aria-label="选择厅"
           className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/50 cursor-pointer"
         >
-          {isHuizhang && <option value="">未选厅</option>}
+          {canSelectBranch && (
+            <option value="">{isHuizhang ? "未选厅" : "全部授权厅"}</option>
+          )}
           {branches.map((b) => (
             <option key={b.id} value={b.id}>
               {b.name}

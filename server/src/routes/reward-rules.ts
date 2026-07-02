@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import prisma from '../lib/prisma'
-import { authenticate, requireRole } from '../middleware/auth'
+import { authenticate, requireRole, canAccessBranch, getAccessibleBranchIds } from '../middleware/auth'
 import { Role, NotificationType } from '../../generated/prisma/client'
 import { createNotification } from '../services/notification'
 
@@ -42,19 +42,26 @@ export default async function rewardRuleRoutes(fastify: FastifyInstance) {
         branchId?: string
       }
 
-      // 会长可查看所有，超管/管理查看自己分部
+      // 会长可查看所有；超管可查看指定授权厅或全部授权厅；管理查看自己分部
       let branchFilter: number | undefined
+      let branchInFilter: number[] | undefined
       if (currentUser.role === Role.HUIZHANG) {
         if (branchIdParam) {
           const n = Number(branchIdParam)
           branchFilter = Number.isNaN(n) ? undefined : n
+        }
+      } else if (currentUser.role === Role.CHAOGUAN) {
+        if (branchIdParam && canAccessBranch(currentUser, Number(branchIdParam))) {
+          branchFilter = Number(branchIdParam)
+        } else {
+          branchInFilter = currentUser.branchIds
         }
       } else {
         branchFilter = currentUser.branchId ?? undefined
       }
 
       const rules = await prisma.rewardRule.findMany({
-        where: branchFilter ? { branchId: branchFilter } : {},
+        where: branchFilter ? { branchId: branchFilter } : branchInFilter ? { branchId: { in: branchInFilter } } : {},
         include: { branch: { select: { id: true, name: true } } },
         orderBy: { branchId: 'asc' },
       })

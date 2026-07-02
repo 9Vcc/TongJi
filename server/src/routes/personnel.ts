@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import prisma from '../lib/prisma'
-import { authenticate, requireRole } from '../middleware/auth'
+import { authenticate, requireRole, canAccessBranch, getAccessibleBranchIds } from '../middleware/auth'
 import { Role } from '../../generated/prisma/client'
 
 /**
@@ -28,10 +28,10 @@ export default async function personnelRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: '姓名和分部不能为空' })
       }
 
-      // 超管只能添加本分部人员
+      // 超管只能添加授权厅人员
       if (currentUser.role === Role.CHAOGUAN) {
-        if (currentUser.branchId === null || branchId !== currentUser.branchId) {
-          return reply.code(403).send({ error: '只能添加本分部人员' })
+        if (!canAccessBranch(currentUser, branchId)) {
+          return reply.code(403).send({ error: '只能添加授权厅人员' })
         }
       }
 
@@ -124,10 +124,10 @@ export default async function personnelRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: '名单为空或仅包含无效姓名' })
       }
 
-      // 超管只能添加本分部人员
+      // 超管只能添加授权厅人员
       if (currentUser.role === Role.CHAOGUAN) {
-        if (currentUser.branchId === null || branchId !== currentUser.branchId) {
-          return reply.code(403).send({ error: '只能添加本分部人员' })
+        if (!canAccessBranch(currentUser, branchId as number)) {
+          return reply.code(403).send({ error: '只能添加授权厅人员' })
         }
       }
 
@@ -202,19 +202,30 @@ export default async function personnelRoutes(fastify: FastifyInstance) {
       const weekEnd = new Date(weekStart)
       weekEnd.setDate(weekEnd.getDate() + 7)
 
-      // 会长可查看所有（可按 branchId 过滤），超管/管理查看自己分部
+      // 会长可查看所有；超管可查看指定授权厅或全部授权厅；管理查看自己分部
       let branchFilter: number | undefined
+      let branchInFilter: number[] | undefined
       if (currentUser.role === Role.HUIZHANG) {
         if (branchId) {
           branchFilter = Number(branchId)
+        }
+      } else if (currentUser.role === Role.CHAOGUAN) {
+        if (branchId && canAccessBranch(currentUser, Number(branchId))) {
+          branchFilter = Number(branchId)
+        } else {
+          branchInFilter = currentUser.branchIds
         }
       } else {
         branchFilter = currentUser.branchId ?? undefined
       }
 
-      const where = branchFilter
-        ? { personnelBranches: { some: { branchId: branchFilter } } }
-        : {}
+      const where = {
+        ...(branchFilter
+          ? { personnelBranches: { some: { branchId: branchFilter } } }
+          : branchInFilter
+            ? { personnelBranches: { some: { branchId: { in: branchInFilter } } } }
+            : {}),
+      }
 
       const personnel = await prisma.personnel.findMany({
         where,
@@ -234,7 +245,11 @@ export default async function personnelRoutes(fastify: FastifyInstance) {
         where: {
           personnelId: { in: personnelIds },
           weekStart: { gte: weekStart, lt: weekEnd },
-          ...(branchFilter ? { branchId: branchFilter } : {}),
+          ...(branchFilter
+            ? { branchId: branchFilter }
+            : branchInFilter
+              ? { branchId: { in: branchInFilter } }
+              : {}),
         },
         select: {
           id: true,
@@ -305,14 +320,11 @@ export default async function personnelRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: '人员不存在' })
       }
 
-      // 超管只能修改本分部人员：需指定 branchId 且必须是本厅
+      // 超管只能修改授权厅人员
       if (currentUser.role === Role.CHAOGUAN) {
         const targetBranchId = branchId ?? currentUser.branchId
-        if (
-          currentUser.branchId === null ||
-          targetBranchId !== currentUser.branchId
-        ) {
-          return reply.code(403).send({ error: '只能修改本分部人员' })
+        if (targetBranchId === null || !canAccessBranch(currentUser, targetBranchId)) {
+          return reply.code(403).send({ error: '只能修改授权厅人员' })
         }
         const assoc = personnel.personnelBranches.find(
           (pb) => pb.branchId === targetBranchId,
@@ -366,10 +378,10 @@ export default async function personnelRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: '无效的分部ID' })
       }
 
-      // 超管只能操作本分部
+      // 超管只能操作授权厅
       if (currentUser.role === Role.CHAOGUAN) {
-        if (currentUser.branchId === null || targetBranchId !== currentUser.branchId) {
-          return reply.code(403).send({ error: '只能操作本分部人员' })
+        if (!canAccessBranch(currentUser, targetBranchId)) {
+          return reply.code(403).send({ error: '只能操作授权厅人员' })
         }
       }
 

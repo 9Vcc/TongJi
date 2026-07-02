@@ -3,7 +3,24 @@ import prisma from '../lib/prisma'
 import { signToken } from '../utils/jwt'
 import { comparePassword, hashPassword } from '../utils/password'
 import { authenticate } from '../middleware/auth'
+import { Role } from '../../generated/prisma/client'
 import type { JwtPayload } from '../types'
+
+/**
+ * 加载账户的所有授权厅 ID 列表
+ * 超管：主厅 + AccountBranch 额外授权厅
+ * 其他角色：仅主厅（或空数组）
+ */
+async function loadBranchIds(accountId: number, role: Role, branchId: number | null): Promise<number[]> {
+  if (role !== Role.CHAOGUAN || branchId === null) {
+    return branchId !== null ? [branchId] : []
+  }
+  const extra = await prisma.accountBranch.findMany({
+    where: { accountId },
+    select: { branchId: true },
+  })
+  return [branchId, ...extra.map((ab) => ab.branchId)]
+}
 
 export default async function authRoutes(fastify: FastifyInstance) {
   // POST /api/auth/login - 登录
@@ -31,11 +48,14 @@ export default async function authRoutes(fastify: FastifyInstance) {
       return reply.code(401).send({ error: '用户名或密码错误' })
     }
 
+    const branchIds = await loadBranchIds(account.id, account.role, account.branchId)
+
     const payload: JwtPayload = {
       id: account.id,
       username: account.username,
       role: account.role,
       branchId: account.branchId,
+      branchIds,
     }
 
     const token = signToken(payload)
@@ -60,6 +80,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
         nickname: account.nickname,
         role: account.role,
         branchId: account.branchId,
+        branchIds,
         status: account.status,
       },
     })
@@ -82,12 +103,15 @@ export default async function authRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: '用户不存在' })
       }
 
+      const branchIds = await loadBranchIds(account.id, account.role, account.branchId)
+
       return reply.send({
         id: account.id,
         username: account.username,
         nickname: account.nickname,
         role: account.role,
         branchId: account.branchId,
+        branchIds,
         status: account.status,
       })
     }
@@ -121,7 +145,9 @@ export default async function authRoutes(fastify: FastifyInstance) {
         },
       })
 
-      return reply.send(updated)
+      const branchIds = await loadBranchIds(updated.id, updated.role, updated.branchId)
+
+      return reply.send({ ...updated, branchIds })
     }
   )
 

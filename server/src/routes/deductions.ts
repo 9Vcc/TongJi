@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import prisma from '../lib/prisma'
-import { authenticate, requireRole } from '../middleware/auth'
+import { authenticate, requireRole, canAccessBranch } from '../middleware/auth'
 import { Role, StatCycle } from '../../generated/prisma/client'
 import { getWeekStart } from '../utils/week'
 
@@ -89,8 +89,12 @@ export default async function deductionRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: '扣减金额必须为非负整数' })
       }
 
-      // 权限校验：非会长只能操作本厅（超管/管理限定 branchId === currentUser.branchId）
-      if (currentUser.role !== Role.HUIZHANG) {
+      // 权限校验：超管只能操作授权厅；管理只能操作本厅
+      if (currentUser.role === Role.CHAOGUAN) {
+        if (!canAccessBranch(currentUser, body.branchId)) {
+          return reply.code(403).send({ error: '只能操作授权厅扣减' })
+        }
+      } else if (currentUser.role !== Role.HUIZHANG) {
         if (
           currentUser.branchId === null ||
           body.branchId !== currentUser.branchId

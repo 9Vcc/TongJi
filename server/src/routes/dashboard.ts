@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { authenticate } from '../middleware/auth'
+import { authenticate, canAccessBranch, getAccessibleBranchIds } from '../middleware/auth'
 import { StatCycle, Role } from '../../generated/prisma/client'
 import {
   computeRanking,
@@ -22,10 +22,11 @@ async function resolveCycleParam(
 /**
  * 解析看板查询的分部过滤
  * - 会长：可指定任意厅或全部厅
- * - 超管/管理：始终限定本厅；viewAll=true 时仅切换为按月统计本厅数据
+ * - 超管：可查看指定授权厅，未指定时返回 undefined（由调用方用 branchIds 过滤）
+ * - 管理：始终限定本厅
  */
 function resolveDashboardBranchId(
-  currentUser: { role: Role; branchId: number | null },
+  currentUser: { role: Role; branchId: number | null; branchIds: number[] },
   requestedBranchId: string | undefined,
   _viewAll: string | undefined
 ): number | undefined {
@@ -36,8 +37,46 @@ function resolveDashboardBranchId(
     }
     return undefined
   }
-  // 超管/管理：始终限定本厅，不可查看全部厅
+  // 超管：可查看指定授权厅，未指定时返回 undefined（由调用方用 branchIds 过滤）
+  if (currentUser.role === Role.CHAOGUAN) {
+    if (requestedBranchId) {
+      const n = Number(requestedBranchId)
+      if (!Number.isNaN(n) && canAccessBranch(currentUser, n)) {
+        return n
+      }
+    }
+    return undefined
+  }
+  // 管理：始终限定本厅
   return currentUser.branchId ?? undefined
+}
+
+/**
+ * 按用户权限计算排名
+ * - 指定单厅：直接调用 computeRanking
+ * - 全部厅：会长查所有厅，超管仅查授权厅（分别查询后合并）
+ */
+async function computeRankingForUser(
+  refDate: Date,
+  branchFilter: number | undefined,
+  cycle: StatCycle,
+  currentUser: { role: Role; branchId: number | null; branchIds: number[] }
+) {
+  if (branchFilter) {
+    return computeRanking(refDate, branchFilter, cycle)
+  }
+  // 全部厅：会长查所有厅，超管仅查授权厅
+  const accessibleIds = getAccessibleBranchIds(currentUser)
+  if (accessibleIds === null) {
+    // 会长：查所有厅
+    return computeRanking(refDate, undefined, cycle)
+  }
+  if (accessibleIds.length === 0) return []
+  // 超管：分别查询各授权厅后合并
+  const results = await Promise.all(
+    accessibleIds.map((id) => computeRanking(refDate, id, cycle))
+  )
+  return results.flat()
 }
 
 /**
@@ -73,7 +112,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
       const branchFilter = resolveDashboardBranchId(currentUser, branchIdParam, viewAll)
       const cycle = await resolveCycleParam(cycleParam, branchFilter)
 
-      const ranking = await computeRanking(refDate, branchFilter, cycle)
+      const ranking = await computeRankingForUser(refDate, branchFilter, cycle, currentUser)
 
       return reply.send(aggregate(ranking))
     }
@@ -92,7 +131,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
       const branchFilter = resolveDashboardBranchId(currentUser, branchIdParam, viewAll)
       const cycle = await resolveCycleParam(cycleParam, branchFilter)
 
-      const ranking = await computeRanking(refDate, branchFilter, cycle)
+      const ranking = await computeRankingForUser(refDate, branchFilter, cycle, currentUser)
 
       // 返回每个分部的前3名
       const top3 = ranking.filter((r) => r.rank <= 3)
@@ -119,8 +158,8 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
       const lastPeriodStart = getPreviousPeriodStart(cycle, refDate)
 
       const [thisPeriodRanking, lastPeriodRanking] = await Promise.all([
-        computeRanking(refDate, branchFilter, cycle),
-        computeRanking(lastPeriodStart, branchFilter, cycle),
+        computeRankingForUser(refDate, branchFilter, cycle, currentUser),
+        computeRankingForUser(lastPeriodStart, branchFilter, cycle, currentUser),
       ])
 
       return reply.send({

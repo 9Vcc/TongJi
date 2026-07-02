@@ -57,11 +57,13 @@ export default function Ranking() {
   const { user } = useAuth()
   const toast = useToast()
   const isHuizhang = user?.role === 'HUIZHANG'
+  const isChaoguan = user?.role === 'CHAOGUAN'
+  const canSelectBranch = isHuizhang || isChaoguan
 
   const [branches, setBranches] = useState<Branch[]>([])
   // 会长默认全部厅(undefined)；超管/管理锁定本厅
   const [branchId, setBranchId] = useState<number | undefined>(() =>
-    isHuizhang ? undefined : user?.branchId ?? undefined
+    canSelectBranch ? undefined : user?.branchId ?? undefined
   )
 
   useEffect(() => {
@@ -77,7 +79,7 @@ export default function Ranking() {
   return (
     <div className="space-y-5">
       {/* 顶部选择器：仅厅选择（日期选择已整合到卡片） */}
-      {isHuizhang && (
+      {canSelectBranch && (
         <div className="flex items-center justify-end">
           <select
             value={branchId ?? ''}
@@ -86,7 +88,7 @@ export default function Ranking() {
             }
             className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer"
           >
-            <option value="">全部厅</option>
+            <option value="">{isHuizhang ? '全部厅' : '全部授权厅'}</option>
             {branches.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.name}

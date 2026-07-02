@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import prisma from '../lib/prisma'
-import { authenticate, requireRole } from '../middleware/auth'
+import { authenticate, requireRole, canAccessBranch, getAccessibleBranchIds } from '../middleware/auth'
 import { Role, StatCycle } from '../../generated/prisma/client'
 import { createNotification } from '../services/notification'
 import { NotificationType } from '../../generated/prisma/client'
@@ -56,7 +56,7 @@ export default async function namingLevelRoutes(fastify: FastifyInstance) {
       const { name, threshold, reward, sortOrder } = body
       const requestedBranchId = body.branchId
 
-      // 权限：超管只能操作本厅
+      // 权限：超管只能操作授权厅
       const resolvedBranchId =
         currentUser.role === Role.HUIZHANG
           ? requestedBranchId
@@ -64,8 +64,8 @@ export default async function namingLevelRoutes(fastify: FastifyInstance) {
       if (!resolvedBranchId) {
         return reply.code(400).send({ error: '请指定分部' })
       }
-      if (currentUser.role === Role.CHAOGUAN && currentUser.branchId !== resolvedBranchId) {
-        return reply.code(403).send({ error: '只能操作本分部' })
+      if (currentUser.role === Role.CHAOGUAN && !canAccessBranch(currentUser, resolvedBranchId)) {
+        return reply.code(403).send({ error: '只能操作授权厅' })
       }
 
       if (!name || !name.trim()) {
@@ -202,8 +202,8 @@ export default async function namingLevelRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: '冠名等级不存在' })
       }
 
-      if (currentUser.role === Role.CHAOGUAN && currentUser.branchId !== existing.branchId) {
-        return reply.code(403).send({ error: '只能操作本分部' })
+      if (currentUser.role === Role.CHAOGUAN && !canAccessBranch(currentUser, existing.branchId)) {
+        return reply.code(403).send({ error: '只能操作授权厅' })
       }
 
       // 删除等级会级联删除关联的 DataRecordNaming

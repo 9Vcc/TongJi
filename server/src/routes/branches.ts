@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import prisma from '../lib/prisma'
-import { authenticate, requireRole } from '../middleware/auth'
+import { authenticate, requireRole, canAccessBranch, getAccessibleBranchIds } from '../middleware/auth'
 import { Role, StatCycle } from '../../generated/prisma/client'
 import { comparePassword } from '../utils/password'
 
@@ -54,10 +54,11 @@ export default async function branchRoutes(fastify: FastifyInstance) {
     async (request, reply) => {
       const currentUser = request.user
 
-      // 会长查看所有，超管/管理查看自己分部
+      // 会长查看所有；超管查看所有授权厅；管理查看自己分部
+      const accessibleIds = getAccessibleBranchIds(currentUser)
       const where =
-        currentUser.role !== Role.HUIZHANG
-          ? { id: currentUser.branchId ?? -1 }
+        accessibleIds !== null
+          ? { id: { in: accessibleIds } }
           : {}
 
       const branches = await prisma.branch.findMany({
@@ -103,13 +104,10 @@ export default async function branchRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: '无效的分部ID' })
       }
 
-      // 超管只能更新自己分部（会长由 requireRole 放行）
+      // 超管只能更新授权厅（会长由 requireRole 放行）
       if (currentUser.role === Role.CHAOGUAN) {
-        if (
-          currentUser.branchId === null ||
-          branchId !== currentUser.branchId
-        ) {
-          return reply.code(403).send({ error: '只能更新本分部' })
+        if (!canAccessBranch(currentUser, branchId)) {
+          return reply.code(403).send({ error: '只能更新授权厅' })
         }
       }
 
@@ -189,6 +187,13 @@ export default async function branchRoutes(fastify: FastifyInstance) {
       const pwdOk = await comparePassword(password, account.passwordHash)
       if (!pwdOk) {
         return reply.code(403).send({ error: '密码错误，删除已取消' })
+      }
+
+      // 超管只能删除授权厅
+      if (currentUser.role === Role.CHAOGUAN) {
+        if (!canAccessBranch(currentUser, branchId)) {
+          return reply.code(403).send({ error: '只能删除授权厅' })
+        }
       }
 
       const branch = await prisma.branch.findUnique({

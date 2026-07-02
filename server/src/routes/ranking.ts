@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { authenticate } from '../middleware/auth'
+import { authenticate, canAccessBranch, getAccessibleBranchIds } from '../middleware/auth'
 import { StatCycle, Role } from '../../generated/prisma/client'
 import prisma from '../lib/prisma'
 import {
@@ -22,10 +22,11 @@ async function resolveCycleParam(
 /**
  * 解析排名查询的分部过滤
  * - 会长：可指定任意厅或全部厅
- * - 超管/管理：始终限定本厅
+ * - 超管：可查看指定授权厅，未指定时返回 undefined（由调用方用 branchIds 过滤）
+ * - 管理：始终限定本厅
  */
 function resolveRankingBranchId(
-  currentUser: { role: Role; branchId: number | null },
+  currentUser: { role: Role; branchId: number | null; branchIds: number[] },
   requestedBranchId: string | undefined
 ): number | undefined {
   if (currentUser.role === Role.HUIZHANG) {
@@ -35,7 +36,17 @@ function resolveRankingBranchId(
     }
     return undefined
   }
-  // 超管/管理：始终限定本厅，不可查看全部厅
+  // 超管：可查看指定授权厅，未指定时返回 undefined（由调用方用 branchIds 过滤）
+  if (currentUser.role === Role.CHAOGUAN) {
+    if (requestedBranchId) {
+      const n = Number(requestedBranchId)
+      if (!Number.isNaN(n) && canAccessBranch(currentUser, n)) {
+        return n
+      }
+    }
+    return undefined
+  }
+  // 管理：始终限定本厅
   return currentUser.branchId ?? undefined
 }
 
@@ -64,8 +75,10 @@ export default async function rankingRoutes(fastify: FastifyInstance) {
         return reply.send(ranking)
       }
 
-      // 全部厅：分别按各厅 statCycle 查询，合并结果
+      // 全部厅：会长查所有厅，超管仅查授权厅
+      const accessibleIds = getAccessibleBranchIds(currentUser)
       const allBranches = await prisma.branch.findMany({
+        where: accessibleIds ? { id: { in: accessibleIds } } : {},
         select: { id: true, statCycle: true },
       })
       const results = await Promise.all(

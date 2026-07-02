@@ -1,9 +1,11 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
 import { Role } from '../../generated/prisma/client'
 import { verifyToken } from '../utils/jwt'
+import prisma from '../lib/prisma'
 
 /**
  * 认证中间件：验证 JWT，将用户信息挂载到 request.user
+ * 超管的 branchIds 从数据库实时加载（支持多厅授权）
  */
 export async function authenticate(request: FastifyRequest, reply: FastifyReply) {
   const authHeader = request.headers.authorization
@@ -14,10 +16,51 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
   const token = authHeader.substring(7)
   try {
     const payload = verifyToken(token)
-    request.user = payload
+    // 超管：从数据库加载所有授权厅（主厅 + AccountBranch 额外授权厅）
+    let branchIds: number[] = []
+    if (payload.role === Role.CHAOGUAN && payload.branchId !== null) {
+      const extra = await prisma.accountBranch.findMany({
+        where: { accountId: payload.id },
+        select: { branchId: true },
+      })
+      branchIds = [
+        payload.branchId,
+        ...extra.map((ab) => ab.branchId),
+      ]
+    }
+    request.user = { ...payload, branchIds }
   } catch {
     return reply.code(401).send({ error: '无效或过期的认证令牌' })
   }
+}
+
+/**
+ * 检查用户是否有权操作指定厅
+ * 会长：所有厅
+ * 超管：主厅 + AccountBranch 授权厅（branchIds）
+ * 管理：仅主厅（branchId）
+ */
+export function canAccessBranch(
+  user: { role: Role; branchId: number | null; branchIds: number[] },
+  branchId: number
+): boolean {
+  if (user.role === Role.HUIZHANG) return true
+  if (user.role === Role.CHAOGUAN) return user.branchIds.includes(branchId)
+  return user.branchId === branchId
+}
+
+/**
+ * 获取用户可访问的所有厅 ID 列表
+ * 会长：返回 null（表示全部厅）
+ * 超管：返回 branchIds
+ * 管理：返回 [branchId]（或空数组）
+ */
+export function getAccessibleBranchIds(
+  user: { role: Role; branchId: number | null; branchIds: number[] }
+): number[] | null {
+  if (user.role === Role.HUIZHANG) return null
+  if (user.role === Role.CHAOGUAN) return user.branchIds
+  return user.branchId !== null ? [user.branchId] : []
 }
 
 /**

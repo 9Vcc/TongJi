@@ -20,9 +20,11 @@ export interface User {
   nickname?: string | null
   role: Role
   branchId: number | null
+  branchIds?: number[]
   status: AccountStatus
   createdAt?: string
   branch?: { id: number; name: string } | null
+  branches?: { id: number; name: string }[]
 }
 
 // 登录响应
@@ -273,6 +275,7 @@ export interface CreateAccountInput {
   password: string
   role: Role
   branchId?: number
+  branchIds?: number[]
 }
 
 // 更新账户入参
@@ -282,6 +285,7 @@ export interface UpdateAccountInput {
   password?: string
   role?: Role
   branchId?: number | null
+  branchIds?: number[]
 }
 
 // 创建人员入参

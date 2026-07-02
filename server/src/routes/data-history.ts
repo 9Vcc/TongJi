@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import prisma from '../lib/prisma'
-import { authenticate, requireRole } from '../middleware/auth'
+import { authenticate, requireRole, canAccessBranch, getAccessibleBranchIds } from '../middleware/auth'
 import { Role } from '../../generated/prisma/client'
 import type { HistoryAction } from '../../generated/prisma/client'
 
@@ -64,13 +64,18 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
         if (!Number.isNaN(pid)) where.personnelId = pid
       }
 
-      // 超管只能查看本分部
-      const branchScope =
-        currentUser.role === Role.CHAOGUAN
-          ? currentUser.branchId
-          : query.branchId
-            ? Number(query.branchId)
-            : undefined
+      // 超管可查看指定授权厅或全部授权厅；管理仅本厅
+      let branchScope: number | undefined
+      let branchInScope: number[] | undefined
+      if (currentUser.role === Role.CHAOGUAN) {
+        if (query.branchId && canAccessBranch(currentUser, Number(query.branchId))) {
+          branchScope = Number(query.branchId)
+        } else {
+          branchInScope = currentUser.branchIds
+        }
+      } else {
+        branchScope = query.branchId ? Number(query.branchId) : undefined
+      }
 
       const limit = Math.min(Number(query.limit) || 100, 500)
 
@@ -108,7 +113,7 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
           modifyTime?: { gte: Date; lt: Date }
           record?: {
             weekStart?: Date
-            branchId?: number
+            branchId?: number | { in: number[] }
             personnelId?: number
           }
         } = { action: 'CREATE' }
@@ -119,7 +124,7 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
         if (dayRange) {
           createHistoryWhere.modifyTime = { gte: dayRange.start, lt: dayRange.end }
         }
-        if (query.weekStart || query.personnelId || branchScope) {
+        if (query.weekStart || query.personnelId || branchScope || (branchInScope && branchInScope.length > 0)) {
           createHistoryWhere.record = {}
           if (query.weekStart) {
             createHistoryWhere.record.weekStart = new Date(query.weekStart)
@@ -127,8 +132,12 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
           if (query.personnelId) {
             createHistoryWhere.record.personnelId = Number(query.personnelId)
           }
-          if (currentUser.role === Role.CHAOGUAN && currentUser.branchId) {
-            createHistoryWhere.record.branchId = currentUser.branchId
+          if (currentUser.role === Role.CHAOGUAN) {
+            if (branchScope) {
+              createHistoryWhere.record.branchId = branchScope
+            } else if (branchInScope && branchInScope.length > 0) {
+              createHistoryWhere.record.branchId = { in: branchInScope }
+            }
           } else if (branchScope) {
             createHistoryWhere.record.branchId = branchScope
           }
@@ -188,7 +197,7 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
           modifyTime?: { gte: Date; lt: Date }
           record?: {
             weekStart?: Date
-            branchId?: number
+            branchId?: number | { in: number[] }
             personnelId?: number
           }
           action: { not: 'CREATE' }
@@ -200,7 +209,7 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
         if (dayRange) {
           historyWhere.modifyTime = { gte: dayRange.start, lt: dayRange.end }
         }
-        if (query.weekStart || query.personnelId || branchScope) {
+        if (query.weekStart || query.personnelId || branchScope || (branchInScope && branchInScope.length > 0)) {
           historyWhere.record = {}
           if (query.weekStart) {
             historyWhere.record.weekStart = new Date(query.weekStart)
@@ -208,8 +217,12 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
           if (query.personnelId) {
             historyWhere.record.personnelId = Number(query.personnelId)
           }
-          if (currentUser.role === Role.CHAOGUAN && currentUser.branchId) {
-            historyWhere.record.branchId = currentUser.branchId
+          if (currentUser.role === Role.CHAOGUAN) {
+            if (branchScope) {
+              historyWhere.record.branchId = branchScope
+            } else if (branchInScope && branchInScope.length > 0) {
+              historyWhere.record.branchId = { in: branchInScope }
+            }
           } else if (branchScope) {
             historyWhere.record.branchId = branchScope
           }
@@ -277,7 +290,7 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
       if (dayRange) {
         historyWhere.modifyTime = { gte: dayRange.start, lt: dayRange.end }
       }
-      if (query.weekStart || query.personnelId || branchScope) {
+      if (query.weekStart || query.personnelId || branchScope || (branchInScope && branchInScope.length > 0)) {
         historyWhere.record = {}
         if (query.weekStart) {
           historyWhere.record.weekStart = new Date(query.weekStart)

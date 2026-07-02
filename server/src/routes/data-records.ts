@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import prisma, { prisma as prismaClient } from '../lib/prisma'
-import { authenticate, requireRole } from '../middleware/auth'
+import { authenticate, requireRole, canAccessBranch } from '../middleware/auth'
 import { Role, HistoryAction, Prisma, StatCycle } from '../../generated/prisma/client'
 import { getWeekStart } from '../utils/week'
 import { convertNaming, getBranchNamingLevels } from '../utils/naming'
@@ -90,14 +90,21 @@ function validateRecordInput(input: Partial<RecordInput>): string | null {
  * 会长未指定 branchId 时返回 null（调用方需处理）
  */
 function resolveBranchId(
-  currentUser: { role: Role; branchId: number | null },
+  currentUser: { role: Role; branchId: number | null; branchIds: number[] },
   requestedBranchId: number | undefined
 ): { ok: true; branchId: number | null } | { ok: false; error: string } {
   if (currentUser.role === Role.HUIZHANG) {
     if (requestedBranchId) return { ok: true, branchId: requestedBranchId }
     return { ok: true, branchId: null }
   }
-  // 非会长：只能操作自己分部
+  // 超管：可操作 branchIds 中的任意厅
+  if (currentUser.role === Role.CHAOGUAN) {
+    if (requestedBranchId && canAccessBranch(currentUser, requestedBranchId)) {
+      return { ok: true, branchId: requestedBranchId }
+    }
+    return { ok: false, error: '只能操作授权厅数据' }
+  }
+  // 管理：只能操作 branchId
   if (currentUser.branchId === null) {
     return { ok: false, error: '当前账户未关联分部' }
   }
@@ -639,8 +646,12 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: '记录不存在' })
       }
 
-      // 非会长只能修改本分部
-      if (currentUser.role !== Role.HUIZHANG) {
+      // 非会长只能修改本分部/授权厅数据
+      if (currentUser.role === Role.CHAOGUAN) {
+        if (!canAccessBranch(currentUser, record.branchId)) {
+          return reply.code(403).send({ error: '只能修改授权厅数据' })
+        }
+      } else if (currentUser.role !== Role.HUIZHANG) {
         if (
           currentUser.branchId === null ||
           record.branchId !== currentUser.branchId
@@ -904,13 +915,10 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: '记录不存在' })
       }
 
-      // 超管只能删除本分部数据（会长不限）
+      // 超管只能删除授权厅数据（会长不限）
       if (currentUser.role === Role.CHAOGUAN) {
-        if (
-          currentUser.branchId === null ||
-          record.branchId !== currentUser.branchId
-        ) {
-          return reply.code(403).send({ error: '只能删除本分部数据' })
+        if (!canAccessBranch(currentUser, record.branchId)) {
+          return reply.code(403).send({ error: '只能删除授权厅数据' })
         }
       }
 
@@ -962,8 +970,12 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: '记录不存在' })
       }
 
-      // 非会长只能查看本分部
-      if (currentUser.role !== Role.HUIZHANG) {
+      // 非会长只能查看本分部/授权厅数据
+      if (currentUser.role === Role.CHAOGUAN) {
+        if (!canAccessBranch(currentUser, record.branchId)) {
+          return reply.code(403).send({ error: '只能查看授权厅数据' })
+        }
+      } else if (currentUser.role !== Role.HUIZHANG) {
         if (
           currentUser.branchId === null ||
           record.branchId !== currentUser.branchId
