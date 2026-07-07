@@ -57,7 +57,7 @@ export default function PublicRanking() {
   useEffect(() => {
     publicApi
       .listBranches()
-      .then(setBranches)
+      .then((list) => setBranches(list.filter((b) => !b.closed)))
       .catch((err) => toast.error(getPublicErrorMessage(err)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -150,17 +150,21 @@ export default function PublicRanking() {
           <SearchResults query={trimmedQuery} toast={toast} />
         ) : !branchId ? (
           // 全部厅模式：每个厅一个独立卡片
-          <div className="grid gap-5 lg:grid-cols-2">
-            {branches.length === 0 ? (
-              <RankingCardSkeleton />
-            ) : (
-              branches.map((b) => (
+          branches.length === 0 ? (
+            <RankingCardSkeleton />
+          ) : branches.length === 1 ? (
+            // 只有一个厅时：卡片占满宽度
+            <PublicBranchCard branch={branches[0]} toast={toast} />
+          ) : (
+            // 多个厅时：双列网格
+            <div className="grid gap-5 lg:grid-cols-2">
+              {branches.map((b) => (
                 <PublicBranchCard key={b.id} branch={b} toast={toast} />
-              ))
-            )}
-          </div>
+              ))}
+            </div>
+          )
         ) : (
-          // 单厅模式
+          // 单厅模式：单卡片占满宽度
           <PublicBranchCard branch={selectedBranch!} toast={toast} />
         )}
       </main>

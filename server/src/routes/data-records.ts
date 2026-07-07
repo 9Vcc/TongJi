@@ -13,6 +13,8 @@ interface RecordInput {
   mx: number
   qm: number
   zcDays: number
+  // 可选：直接指定冠名数量（导入已含冠名列的数据时使用，跳过收光转换）
+  namings?: { levelId: number; count: number }[]
 }
 
 /**
@@ -115,6 +117,18 @@ function resolveBranchId(
 }
 
 /**
+ * 校验厅是否未关闭：已关闭的厅禁止录入新数据
+ * 返回 true=可录入，false=已关闭
+ */
+async function assertBranchOpen(branchId: number): Promise<boolean> {
+  const branch = await prisma.branch.findUnique({
+    where: { id: branchId },
+    select: { closed: true },
+  })
+  return branch ? !branch.closed : false
+}
+
+/**
  * 同一人员同一周同一分部只能有一条记录，已存在则累加
  * 若厅为按月统计且配置了冠名等级，录入收光时按阈值整除转换为冠名，余数计入收光
  */
@@ -127,9 +141,12 @@ async function upsertRecord(
   remark: string | null = null
 ) {
   // 冠名转换：对本次录入的收光进行逐级扣减转换
+  // 若 input.namings 已指定（导入已含冠名列的数据），则跳过转换，直接使用传入的冠名数量
   let sgToStore = input.sg
   let namingsToApply: { levelId: number; count: number }[] = []
-  if (namingLevels.length > 0) {
+  if (input.namings && input.namings.length > 0) {
+    namingsToApply = input.namings
+  } else if (namingLevels.length > 0) {
     const converted = convertNaming(input.sg, namingLevels)
     sgToStore = converted.remainingSg
     namingsToApply = converted.namings
@@ -254,6 +271,72 @@ async function ensurePersonnelInBranch(
   return { personnelId: personnel.id, created: true }
 }
 
+/**
+ * 表头列索引映射
+ * 支持两种格式：
+ * 1. 简单格式（无表头或表头第一列为"姓名"）：姓名(0), 收光(1), 麦序(2), 全麦(3), 主持天数(4)
+ * 2. 导出格式（表头含"排名"、"姓名"、"分部"等）：按表头名称定位列
+ */
+interface ColumnMap {
+  name: number
+  sg: number
+  mx: number
+  qm: number | null
+  zcDays: number | null
+  // 冠名列：header -> columnIndex（header 形如 "冠名·周冠"）
+  namings: Map<string, number>
+}
+
+function buildColumnMap(headerRow: unknown[]): ColumnMap | null {
+  // 若第一列不是"姓名"或"排名"，认为无表头（简单格式）
+  const firstCell = String(headerRow[0] ?? '').trim()
+  if (firstCell !== '姓名' && firstCell !== '排名') return null
+
+  // 简单格式：第一列为"姓名"
+  if (firstCell === '姓名') {
+    return {
+      name: 0,
+      sg: 1,
+      mx: 2,
+      qm: 3,
+      zcDays: 4,
+      namings: new Map(),
+    }
+  }
+
+  // 导出格式：按表头名称定位
+  const map: ColumnMap = {
+    name: -1,
+    sg: -1,
+    mx: -1,
+    qm: null,
+    zcDays: null,
+    namings: new Map(),
+  }
+  headerRow.forEach((cell, idx) => {
+    const h = String(cell ?? '').trim()
+    if (h === '姓名') map.name = idx
+    else if (h === '收光') map.sg = idx
+    else if (h === '麦序') map.mx = idx
+    else if (h === '全麦') map.qm = idx
+    else if (h === '主持天数') map.zcDays = idx
+    else if (h.startsWith('冠名·')) map.namings.set(h, idx)
+  })
+  // 必须至少找到姓名和收光列
+  if (map.name === -1 || map.sg === -1) return null
+  return map
+}
+
+/**
+ * 从行数据中按列索引提取值，缺失或空值返回 0
+ */
+function getCell(row: unknown[], idx: number | null): number {
+  if (idx === null || idx === -1) return 0
+  const v = row[idx]
+  if (v === undefined || v === '' || v === null) return 0
+  return toNonNegInt(v)
+}
+
 export default async function dataRecordRoutes(fastify: FastifyInstance) {
   // POST /api/data-records - 手动录入（单条和批量）
   fastify.post(
@@ -290,6 +373,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
 
         // 校验分部权限与人员归属
         const branchLevelsMap = new Map<number, { id: number; threshold: number }[]>()
+        const branchOpenCache = new Map<number, boolean>()
         for (let i = 0; i < inputs.length; i++) {
           const input = inputs[i] as RecordInput
           const resolved = resolveBranchId(currentUser, input.branchId)
@@ -300,6 +384,14 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
             return reply.code(400).send({ error: `第${i + 1}条记录：请指定分部` })
           }
           input.branchId = resolved.branchId
+
+          // 校验厅未关闭（缓存避免重复查询）
+          if (!branchOpenCache.has(input.branchId)) {
+            branchOpenCache.set(input.branchId, await assertBranchOpen(input.branchId))
+          }
+          if (!branchOpenCache.get(input.branchId)) {
+            return reply.code(403).send({ error: `第${i + 1}条记录：该厅已关闭，无法录入数据` })
+          }
 
           const assoc = await prisma.personnelBranch.findUnique({
             where: {
@@ -357,6 +449,11 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: '请指定分部' })
       }
       input.branchId = resolved.branchId
+
+      // 校验厅未关闭
+      if (!(await assertBranchOpen(input.branchId))) {
+        return reply.code(403).send({ error: '该厅已关闭，无法录入数据' })
+      }
 
       const assoc = await prisma.personnelBranch.findUnique({
         where: {
@@ -433,6 +530,11 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: '请指定分部' })
       }
 
+      // 校验厅未关闭
+      if (!(await assertBranchOpen(branchId))) {
+        return reply.code(403).send({ error: '该厅已关闭，无法录入数据' })
+      }
+
       const workbook = xlsx.read(fileBuffer, { type: 'buffer' })
       const sheet = workbook.Sheets[workbook.SheetNames[0]]
       if (!sheet) {
@@ -464,15 +566,47 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         ? await getBranchNamingLevels(branchId)
         : []
 
+      // 解析表头，构建列索引映射（支持导出格式和简单格式）
+      const headerRow = rows[0] as unknown[]
+      const colMap = buildColumnMap(headerRow)
+
       for (let i = 1; i < rows.length; i++) {
         const row = rows[i] as unknown[]
-        const name = String(row[0] ?? '').trim()
+        const name = colMap
+          ? String(row[colMap.name] ?? '').trim()
+          : String(row[0] ?? '').trim()
         if (!name) continue
-        // 数据列缺失时默认为 0（支持仅导入人员名单）
-        const sg = row[1] === undefined || row[1] === '' ? 0 : toNonNegInt(row[1])
-        const mx = row[2] === undefined || row[2] === '' ? 0 : toNonNegInt(row[2])
-        const qm = row[3] === undefined || row[3] === '' ? 0 : toNonNegInt(row[3])
-        const zcDays = row[4] === undefined || row[4] === '' ? 0 : toNonNegInt(row[4])
+
+        let sg: number, mx: number, qm: number, zcDays: number
+        let inputNamings: { levelId: number; count: number }[] | undefined
+
+        if (colMap) {
+          // 导出格式：按表头列索引提取
+          sg = getCell(row, colMap.sg)
+          mx = getCell(row, colMap.mx)
+          qm = getCell(row, colMap.qm)
+          zcDays = getCell(row, colMap.zcDays)
+          // 冠名列：按等级名匹配 levelId
+          if (colMap.namings.size > 0 && namingLevels.length > 0) {
+            inputNamings = []
+            for (const [header, idx] of colMap.namings) {
+              // header 形如 "冠名·周冠"，提取等级名 "周冠"
+              const levelName = header.replace(/^冠名·/, '')
+              const level = namingLevels.find((l) => l.name === levelName)
+              if (level) {
+                const count = getCell(row, idx)
+                if (count > 0) inputNamings.push({ levelId: level.id, count })
+              }
+            }
+            if (inputNamings.length === 0) inputNamings = undefined
+          }
+        } else {
+          // 简单格式：姓名(0), 收光(1), 麦序(2), 全麦(3), 主持天数(4)
+          sg = row[1] === undefined || row[1] === '' ? 0 : toNonNegInt(row[1])
+          mx = row[2] === undefined || row[2] === '' ? 0 : toNonNegInt(row[2])
+          qm = row[3] === undefined || row[3] === '' ? 0 : toNonNegInt(row[3])
+          zcDays = row[4] === undefined || row[4] === '' ? 0 : toNonNegInt(row[4])
+        }
 
         if (Number.isNaN(sg) || Number.isNaN(mx) || Number.isNaN(qm) || Number.isNaN(zcDays)) {
           failed++
@@ -495,7 +629,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         try {
           await upsertRecord(
             prismaClient as unknown as Prisma.TransactionClient,
-            { personnelId, branchId, sg, mx, qm, zcDays },
+            { personnelId, branchId, sg, mx, qm, zcDays, namings: inputNamings },
             currentUser.id,
             weekStart,
             namingLevels,
@@ -538,6 +672,11 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: '请指定分部' })
       }
 
+      // 校验厅未关闭
+      if (!(await assertBranchOpen(branchId))) {
+        return reply.code(403).send({ error: '该厅已关闭，无法录入数据' })
+      }
+
       // 解析前端传入的 weekStart（修复时区 bug + 支持编辑历史周）
       const parsedWeekStartPaste = parseWeekStart(requestedWeekStart)
       if (parsedWeekStartPaste && !parsedWeekStartPaste.ok) {
@@ -564,19 +703,49 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         .map((l) => l.trim())
         .filter((l) => l.length > 0)
 
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i]
-        // 跳过表头行
-        if (i === 0 && line.includes('姓名')) continue
+      // 解析表头，构建列索引映射（支持导出格式和简单格式）
+      const delimiter = lines[0]?.includes('\t') ? '\t' : ','
+      const headerParts = lines[0].split(delimiter)
+      const colMap = buildColumnMap(headerParts)
+      const startIdx = colMap ? 1 : 0
 
-        const parts = line.includes('\t') ? line.split('\t') : line.split(',')
-        const name = (parts[0] ?? '').trim()
+      for (let i = startIdx; i < lines.length; i++) {
+        const line = lines[i]
+        const parts = line.split(delimiter)
+
+        const name = colMap
+          ? String(parts[colMap.name] ?? '').trim()
+          : (parts[0] ?? '').trim()
         if (!name) continue
-        // 数据列缺失时默认为 0（支持仅导入人员名单）
-        const sg = parts[1] === undefined || parts[1].trim() === '' ? 0 : toNonNegInt(parts[1])
-        const mx = parts[2] === undefined || parts[2].trim() === '' ? 0 : toNonNegInt(parts[2])
-        const qm = parts[3] === undefined || parts[3].trim() === '' ? 0 : toNonNegInt(parts[3])
-        const zcDays = parts[4] === undefined || parts[4].trim() === '' ? 0 : toNonNegInt(parts[4])
+
+        let sg: number, mx: number, qm: number, zcDays: number
+        let inputNamings: { levelId: number; count: number }[] | undefined
+
+        if (colMap) {
+          sg = colMap.sg >= 0 && parts[colMap.sg] ? toNonNegInt(parts[colMap.sg].trim()) : 0
+          mx = colMap.mx >= 0 && parts[colMap.mx] ? toNonNegInt(parts[colMap.mx].trim()) : 0
+          qm = colMap.qm !== null && colMap.qm >= 0 && parts[colMap.qm] ? toNonNegInt(parts[colMap.qm].trim()) : 0
+          zcDays = colMap.zcDays !== null && colMap.zcDays >= 0 && parts[colMap.zcDays] ? toNonNegInt(parts[colMap.zcDays].trim()) : 0
+          // 冠名列
+          if (colMap.namings.size > 0 && namingLevels.length > 0) {
+            inputNamings = []
+            for (const [header, idx] of colMap.namings) {
+              const levelName = header.replace(/^冠名·/, '')
+              const level = namingLevels.find((l) => l.name === levelName)
+              if (level && parts[idx]) {
+                const count = toNonNegInt(parts[idx].trim())
+                if (count > 0) inputNamings.push({ levelId: level.id, count })
+              }
+            }
+            if (inputNamings.length === 0) inputNamings = undefined
+          }
+        } else {
+          // 简单格式
+          sg = parts[1] === undefined || parts[1].trim() === '' ? 0 : toNonNegInt(parts[1])
+          mx = parts[2] === undefined || parts[2].trim() === '' ? 0 : toNonNegInt(parts[2])
+          qm = parts[3] === undefined || parts[3].trim() === '' ? 0 : toNonNegInt(parts[3])
+          zcDays = parts[4] === undefined || parts[4].trim() === '' ? 0 : toNonNegInt(parts[4])
+        }
 
         if (Number.isNaN(sg) || Number.isNaN(mx) || Number.isNaN(qm) || Number.isNaN(zcDays)) {
           failed++
@@ -599,7 +768,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         try {
           await upsertRecord(
             prismaClient as unknown as Prisma.TransactionClient,
-            { personnelId, branchId, sg, mx, qm, zcDays },
+            { personnelId, branchId, sg, mx, qm, zcDays, namings: inputNamings },
             currentUser.id,
             weekStart,
             namingLevels,

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Building2, Plus, Trash2, Pencil, Gift, Crown } from 'lucide-react'
+import { Building2, Plus, Trash2, Pencil, Gift, Crown, Power } from 'lucide-react'
 import {
   branchesApi,
   rewardRulesApi,
@@ -145,6 +145,10 @@ export default function BranchesPage() {
   const [deletePassword, setDeletePassword] = useState('')
   const [deleting, setDeleting] = useState(false)
 
+  // 关闭/开启厅
+  const [toggleTarget, setToggleTarget] = useState<Branch | null>(null)
+  const [toggling, setToggling] = useState(false)
+
   // 奖励规则弹窗
   const [ruleModalOpen, setRuleModalOpen] = useState(false)
   const [ruleBranch, setRuleBranch] = useState<Branch | null>(null)
@@ -251,6 +255,27 @@ export default function BranchesPage() {
       toast.error(getErrorMessage(err))
     } finally {
       setDeleting(false)
+    }
+  }
+
+  // 打开关闭/开启确认弹窗
+  const openToggleModal = (branch: Branch) => {
+    setToggleTarget(branch)
+  }
+
+  // 确认关闭/开启厅
+  const handleConfirmToggle = async () => {
+    if (!toggleTarget) return
+    setToggling(true)
+    try {
+      const result = await branchesApi.toggleClose(toggleTarget.id)
+      toast.success(result.closed ? '厅已关闭' : '厅已开启')
+      setToggleTarget(null)
+      await loadBranches()
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setToggling(false)
     }
   }
 
@@ -445,6 +470,7 @@ export default function BranchesPage() {
               <tr className="text-left text-textSecondary">
                 <th className="px-4 py-3 font-medium">名称</th>
                 <th className="px-4 py-3 font-medium">统计周期</th>
+                <th className="px-4 py-3 font-medium">状态</th>
                 <th className="px-4 py-3 font-medium">人员数</th>
                 <th className="px-4 py-3 font-medium">数据数</th>
                 <th className="px-4 py-3 font-medium text-right">操作</th>
@@ -454,7 +480,7 @@ export default function BranchesPage() {
               {branchesLoading ? (
                 Array.from({ length: 4 }).map((_, i) => (
                   <tr key={i} className="border-b border-border last:border-0">
-                    {Array.from({ length: 5 }).map((_, j) => (
+                    {Array.from({ length: 6 }).map((_, j) => (
                       <td key={j} className="px-4 py-3">
                         <Skeleton className="h-5 w-full" />
                       </td>
@@ -464,7 +490,7 @@ export default function BranchesPage() {
               ) : branches.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="px-4 py-12 text-center text-textMuted"
                   >
                     暂无厅
@@ -484,6 +510,17 @@ export default function BranchesPage() {
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-surface border border-border">
                           {b.statCycle === 'MONTH' ? '按月' : '按周'}
                         </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {b.closed ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-danger/10 text-danger border border-danger/20">
+                            已关闭
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-success/10 text-success border border-success/20">
+                            正常
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-textSecondary font-mono">
                         {b.personnelCount ?? 0}
@@ -516,6 +553,19 @@ export default function BranchesPage() {
                           >
                             <Pencil size={16} />
                           </button>
+                          {canManage && (
+                            <button
+                              onClick={() => openToggleModal(b)}
+                              className={`p-1.5 rounded transition-colors duration-200 cursor-pointer ${
+                                b.closed
+                                  ? 'text-textSecondary hover:text-success hover:bg-success/10'
+                                  : 'text-textSecondary hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20'
+                              }`}
+                              title={b.closed ? '开启厅' : '关闭厅'}
+                            >
+                              <Power size={16} />
+                            </button>
+                          )}
                           {isHuizhang && (
                             <button
                               onClick={() => openDeleteModal(b)}
@@ -1028,6 +1078,53 @@ export default function BranchesPage() {
               className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-danger focus:ring-1 focus:ring-danger transition-colors duration-200"
             />
           </div>
+        </div>
+      </Modal>
+
+      {/* 关闭/开启厅确认弹窗 */}
+      <Modal
+        open={toggleTarget !== null}
+        title={toggleTarget?.closed ? '开启厅' : '关闭厅'}
+        onClose={() => setToggleTarget(null)}
+        footer={
+          <>
+            <button
+              onClick={() => setToggleTarget(null)}
+              disabled={toggling}
+              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer disabled:opacity-60"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleConfirmToggle}
+              disabled={toggling}
+              className={`flex items-center gap-1.5 px-4 py-2 text-white rounded-lg text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer ${
+                toggleTarget?.closed
+                  ? 'bg-success hover:bg-success/90'
+                  : 'bg-amber-600 hover:bg-amber-700'
+              }`}
+            >
+              {toggling ? <Spinner className="h-4 w-4" /> : <Power size={16} />}
+              {toggling ? '处理中...' : toggleTarget?.closed ? '确认开启' : '确认关闭'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          {toggleTarget?.closed ? (
+            <p className="text-sm text-textSecondary leading-relaxed">
+              确认开启厅「{toggleTarget.name}」？开启后该厅将恢复在公开看板/排名中显示，并允许录入新数据。
+            </p>
+          ) : (
+            <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+              <p className="text-sm text-amber-700 dark:text-amber-400 font-medium">
+                关闭厅「{toggleTarget?.name}」
+              </p>
+              <p className="text-xs text-textSecondary mt-1 leading-relaxed">
+                关闭后，该厅将不在公开看板/排名中显示，且无法录入新数据。历史数据保留，可随时重新开启。
+              </p>
+            </div>
+          )}
         </div>
       </Modal>
     </div>

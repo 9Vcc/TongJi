@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { authenticate, requireRole } from '../middleware/auth'
+import { authenticate, requireRole, canAccessBranch } from '../middleware/auth'
 import { StatCycle, Role } from '../../generated/prisma/client'
 import { getWeekStart } from '../utils/week'
 import { computeRanking, resolveQueryBranchId } from '../utils/welfare'
@@ -235,6 +235,141 @@ export default async function exportRoutes(fastify: FastifyInstance) {
       const bom = '\uFEFF'
       const prefix = cycle === StatCycle.MONTH ? '月排名' : '周排名'
       const filename = `${branchName}_${prefix}_${formatDate(refDate)}.csv`
+      reply.header('Content-Type', 'text/csv; charset=utf-8')
+      reply.header(
+        'Content-Disposition',
+        `attachment; filename="${encodeURIComponent(filename)}"`
+      )
+      return reply.send(bom + csv)
+    }
+  )
+
+  // GET /api/export/personnel-excel - 导出人员名单 Excel（仅超管及以上可访问）
+  fastify.get(
+    '/api/export/personnel-excel',
+    { preHandler: [authenticate, requireRole(Role.CHAOGUAN)] },
+    async (request, reply) => {
+      const currentUser = request.user
+      const { branchId: branchIdParam } = request.query as { branchId?: string }
+
+      // 权限过滤：会长可指定任意厅；超管只能导出授权厅
+      let branchFilter: number | undefined
+      let branchInFilter: number[] | undefined
+      if (currentUser.role === Role.HUIZHANG) {
+        if (branchIdParam) branchFilter = Number(branchIdParam)
+      } else if (currentUser.role === Role.CHAOGUAN) {
+        if (branchIdParam && canAccessBranch(currentUser, Number(branchIdParam))) {
+          branchFilter = Number(branchIdParam)
+        } else {
+          branchInFilter = currentUser.branchIds
+        }
+      }
+
+      const where = {
+        ...(branchFilter
+          ? { personnelBranches: { some: { branchId: branchFilter } } }
+          : branchInFilter
+            ? { personnelBranches: { some: { branchId: { in: branchInFilter } } } }
+            : {}),
+      }
+
+      const personnel = await prisma.personnel.findMany({
+        where,
+        include: {
+          personnelBranches: {
+            include: { branch: { select: { id: true, name: true } } },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      })
+
+      // 厅名用于文件名
+      const branchName = branchFilter
+        ? personnel[0]?.personnelBranches.find((pb) => pb.branchId === branchFilter)?.branch.name ?? '全部厅'
+        : '全部授权厅'
+
+      const data = personnel.map((p, idx) => ({
+        序号: idx + 1,
+        姓名: p.name,
+        所属厅: p.personnelBranches.map((pb) => pb.branch.name).join('、') || '-',
+      }))
+
+      const worksheet = xlsx.utils.json_to_sheet(data)
+      const workbook = xlsx.utils.book_new()
+      xlsx.utils.book_append_sheet(workbook, worksheet, '人员名单')
+      const buffer = xlsx.write(workbook, { type: 'buffer', bookType: 'xlsx' })
+
+      const filename = `${branchName}_人员名单_${formatDate(new Date())}.xlsx`
+      reply.header(
+        'Content-Type',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      )
+      reply.header(
+        'Content-Disposition',
+        `attachment; filename="${encodeURIComponent(filename)}"`
+      )
+      return reply.send(buffer)
+    }
+  )
+
+  // GET /api/export/personnel-csv - 导出人员名单 CSV（仅超管及以上可访问）
+  fastify.get(
+    '/api/export/personnel-csv',
+    { preHandler: [authenticate, requireRole(Role.CHAOGUAN)] },
+    async (request, reply) => {
+      const currentUser = request.user
+      const { branchId: branchIdParam } = request.query as { branchId?: string }
+
+      let branchFilter: number | undefined
+      let branchInFilter: number[] | undefined
+      if (currentUser.role === Role.HUIZHANG) {
+        if (branchIdParam) branchFilter = Number(branchIdParam)
+      } else if (currentUser.role === Role.CHAOGUAN) {
+        if (branchIdParam && canAccessBranch(currentUser, Number(branchIdParam))) {
+          branchFilter = Number(branchIdParam)
+        } else {
+          branchInFilter = currentUser.branchIds
+        }
+      }
+
+      const where = {
+        ...(branchFilter
+          ? { personnelBranches: { some: { branchId: branchFilter } } }
+          : branchInFilter
+            ? { personnelBranches: { some: { branchId: { in: branchInFilter } } } }
+            : {}),
+      }
+
+      const personnel = await prisma.personnel.findMany({
+        where,
+        include: {
+          personnelBranches: {
+            include: { branch: { select: { id: true, name: true } } },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      })
+
+      const branchName = branchFilter
+        ? personnel[0]?.personnelBranches.find((pb) => pb.branchId === branchFilter)?.branch.name ?? '全部厅'
+        : '全部授权厅'
+
+      const data = personnel.map((p, idx) => ({
+        序号: idx + 1,
+        姓名: p.name,
+        所属厅: p.personnelBranches.map((pb) => pb.branch.name).join('、') || '-',
+      }))
+
+      const fields = [
+        { label: '序号', value: '序号' },
+        { label: '姓名', value: '姓名' },
+        { label: '所属厅', value: '所属厅' },
+      ]
+      const parser = new Json2CSVParser({ fields })
+      const csv = parser.parse(data)
+      const bom = '\uFEFF'
+
+      const filename = `${branchName}_人员名单_${formatDate(new Date())}.csv`
       reply.header('Content-Type', 'text/csv; charset=utf-8')
       reply.header(
         'Content-Disposition',

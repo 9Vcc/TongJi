@@ -91,6 +91,8 @@ model Branch {
   id        Int       @id @default(autoincrement())
   name      String
   statCycle StatCycle @default(WEEK)
+  // 厅关闭状态：true=已关闭（公开看板/排名不显示，禁止录入新数据），false=正常
+  closed    Boolean   @default(false)
   createdAt DateTime  @default(now())
 
   accounts          Account[]

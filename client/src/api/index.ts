@@ -132,6 +132,11 @@ export const branchesApi = {
       data: { password },
     })
   },
+  toggleClose(id: number) {
+    return request.patch<unknown, { id: number; name: string; closed: boolean }>(
+      `/branches/${id}/toggle-close`,
+    )
+  },
 }
 
 // ============ 人员管理 ============
@@ -334,6 +339,18 @@ export const exportApi = {
   exportCSV(weekStart?: string, branchId?: number, cycle?: 'WEEK' | 'MONTH') {
     return request.get<unknown, Blob>('/export/csv', {
       params: { weekStart, branchId, cycle },
+      responseType: 'blob',
+    })
+  },
+  exportPersonnelExcel(branchId?: number) {
+    return request.get<unknown, Blob>('/export/personnel-excel', {
+      params: branchId ? { branchId } : undefined,
+      responseType: 'blob',
+    })
+  },
+  exportPersonnelCSV(branchId?: number) {
+    return request.get<unknown, Blob>('/export/personnel-csv', {
+      params: branchId ? { branchId } : undefined,
       responseType: 'blob',
     })
   },

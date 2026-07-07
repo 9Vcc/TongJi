@@ -202,6 +202,11 @@ export default async function personnelRoutes(fastify: FastifyInstance) {
       const weekEnd = new Date(weekStart)
       weekEnd.setDate(weekEnd.getDate() + 7)
 
+      // 按月统计厅的本月范围（weekStart 归一化为当月1日）
+      const now = new Date()
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+      const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+
       // 会长可查看所有；超管可查看指定授权厅或全部授权厅；管理查看自己分部
       let branchFilter: number | undefined
       let branchInFilter: number[] | undefined
@@ -232,24 +237,49 @@ export default async function personnelRoutes(fastify: FastifyInstance) {
         include: {
           personnelBranches: {
             include: {
-              branch: { select: { id: true, name: true } },
+              branch: { select: { id: true, name: true, statCycle: true } },
             },
           },
         },
         orderBy: { createdAt: 'desc' },
       })
 
-      // 查询本周数据记录
+      // 收集所有涉及的 branchId，查询其 statCycle
+      const involvedBranchIds = new Set<number>()
+      for (const p of personnel) {
+        for (const pb of p.personnelBranches) {
+          involvedBranchIds.add(pb.branchId)
+        }
+      }
+      const branchCycleMap = new Map<number, string>()
+      if (involvedBranchIds.size > 0) {
+        const branchList = await prisma.branch.findMany({
+          where: { id: { in: Array.from(involvedBranchIds) } },
+          select: { id: true, statCycle: true },
+        })
+        for (const b of branchList) {
+          branchCycleMap.set(b.id, b.statCycle)
+        }
+      }
+
+      // 查询当前周期数据记录
+      // 周统计厅：weekStart 在 [本周一, 下周一) 范围
+      // 月统计厅：weekStart 精确匹配 [当月1日, 下月1日) 范围（数据存储时归一化为月初1日）
       const personnelIds = personnel.map((p) => p.id)
+      const branchCondition = branchFilter
+        ? { branchId: branchFilter }
+        : branchInFilter
+          ? { branchId: { in: branchInFilter } }
+          : {}
+
+      // 查询范围取并集（周 + 月），后续在 JS 中按厅 statCycle 精确过滤
+      const rangeStart = weekStart < monthStart ? weekStart : monthStart
+      const rangeEnd = weekEnd > nextMonthStart ? weekEnd : nextMonthStart
       const dataRecords = await prisma.dataRecord.findMany({
         where: {
           personnelId: { in: personnelIds },
-          weekStart: { gte: weekStart, lt: weekEnd },
-          ...(branchFilter
-            ? { branchId: branchFilter }
-            : branchInFilter
-              ? { branchId: { in: branchInFilter } }
-              : {}),
+          weekStart: { gte: rangeStart, lt: rangeEnd },
+          ...branchCondition,
         },
         select: {
           id: true,
@@ -262,9 +292,20 @@ export default async function personnelRoutes(fastify: FastifyInstance) {
         },
       })
 
-      // 按人员分组本周数据
-      const dataByPersonnel = new Map<number, typeof dataRecords>()
-      for (const dr of dataRecords) {
+      // 按厅 statCycle 精确过滤
+      const filteredRecords = dataRecords.filter((dr) => {
+        const cycle = branchCycleMap.get(dr.branchId)
+        if (cycle === 'MONTH') {
+          // 月统计厅：weekStart 必须落在 [当月1日, 下月1日) 范围
+          return dr.weekStart >= monthStart && dr.weekStart < nextMonthStart
+        }
+        // 周统计厅（默认）：weekStart 落在本周
+        return dr.weekStart >= weekStart && dr.weekStart < weekEnd
+      })
+
+      // 按人员分组当前周期数据
+      const dataByPersonnel = new Map<number, typeof filteredRecords>()
+      for (const dr of filteredRecords) {
         let list = dataByPersonnel.get(dr.personnelId)
         if (!list) {
           list = []

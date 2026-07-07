@@ -78,6 +78,7 @@ export default async function branchRoutes(fastify: FastifyInstance) {
         id: b.id,
         name: b.name,
         statCycle: b.statCycle,
+        closed: b.closed,
         createdAt: b.createdAt,
         personnelCount: b._count.personnelBranches,
         dataRecordCount: b._count.dataRecords,
@@ -153,6 +154,45 @@ export default async function branchRoutes(fastify: FastifyInstance) {
       const updated = await prisma.branch.update({
         where: { id: branchId },
         data,
+      })
+
+      return reply.send(updated)
+    }
+  )
+
+  // PATCH /api/branches/:id/toggle-close - 关闭/开启厅
+  // 关闭后：公开看板/排名不显示该厅，数据录入禁止选择该厅录入新数据，历史数据保留
+  fastify.patch(
+    '/api/branches/:id/toggle-close',
+    { preHandler: [authenticate, requireRole(Role.CHAOGUAN)] },
+    async (request, reply) => {
+      const currentUser = request.user
+      const { id } = request.params as { id: string }
+      const branchId = Number(id)
+
+      if (Number.isNaN(branchId)) {
+        return reply.code(400).send({ error: '无效的分部ID' })
+      }
+
+      // 超管只能操作授权厅
+      if (currentUser.role === Role.CHAOGUAN) {
+        if (!canAccessBranch(currentUser, branchId)) {
+          return reply.code(403).send({ error: '只能操作授权厅' })
+        }
+      }
+
+      const branch = await prisma.branch.findUnique({
+        where: { id: branchId },
+        select: { id: true, name: true, closed: true },
+      })
+      if (!branch) {
+        return reply.code(404).send({ error: '分部不存在' })
+      }
+
+      const updated = await prisma.branch.update({
+        where: { id: branchId },
+        data: { closed: !branch.closed },
+        select: { id: true, name: true, closed: true },
       })
 
       return reply.send(updated)

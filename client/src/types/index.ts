@@ -38,6 +38,7 @@ export interface Branch {
   id: number
   name: string
   statCycle: StatCycle
+  closed?: boolean
   createdAt: string
   personnelCount?: number
   dataRecordCount?: number
@@ -59,7 +60,7 @@ export interface Personnel {
   id: number
   name: string
   createdAt: string
-  branches?: { id: number; name: string }[]
+  branches?: { id: number; name: string; statCycle?: StatCycle }[]
   hasDataThisWeek?: boolean
   weekData?: PersonnelWeekData[]
 }

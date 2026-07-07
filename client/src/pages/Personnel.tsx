@@ -10,15 +10,17 @@ import {
   Pencil,
   ChevronLeft,
   ChevronRight,
+  Download,
 } from 'lucide-react'
 import {
   personnelApi,
   branchesApi,
+  exportApi,
   getErrorMessage,
 } from '../api'
 import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
-import { matchNamePinyin } from '../utils'
+import { matchNamePinyin, formatDate } from '../utils'
 import Modal from '../components/Modal'
 import { Skeleton, Spinner } from '../components/Skeleton'
 import type { Personnel as PersonnelType, Branch } from '../types'
@@ -66,6 +68,10 @@ export default function Personnel() {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<PersonnelType | null>(null)
 
+  // 导出人员名单
+  const [exporting, setExporting] = useState<'excel' | 'csv' | null>(null)
+  const [exportDropdownOpen, setExportDropdownOpen] = useState(false)
+
   const effectiveBranchId = useMemo(() => {
     if (isHuizhang) return branchId
     if (isChaoguan) return branchId ?? user?.branchId ?? undefined
@@ -85,10 +91,9 @@ export default function Personnel() {
   }
 
   useEffect(() => {
-    if (isHuizhang || isChaoguan) {
-      branchesApi.list().then(setBranches).catch(() => {})
-    }
-  }, [isHuizhang, isChaoguan])
+    // 所有角色都加载厅列表（用于判断 statCycle 和厅选择器）
+    branchesApi.list().then(setBranches).catch(() => {})
+  }, [])
 
   // 仅在选了厅时加载人员（会长需选厅；超管/管理有默认 branchId）
   useEffect(() => {
@@ -239,6 +244,34 @@ export default function Personnel() {
     }
   }
 
+  // 导出人员名单（Excel/CSV）
+  const handleExportPersonnel = async (type: 'excel' | 'csv') => {
+    setExportDropdownOpen(false)
+    setExporting(type)
+    try {
+      const blob =
+        type === 'excel'
+          ? await exportApi.exportPersonnelExcel(effectiveBranchId)
+          : await exportApi.exportPersonnelCSV(effectiveBranchId)
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const branchName = effectiveBranchId
+        ? branches.find((b) => b.id === effectiveBranchId)?.name ?? '全部厅'
+        : '全部授权厅'
+      a.download = `${branchName}_人员名单_${formatDate(new Date())}.${type === 'excel' ? 'xlsx' : 'csv'}`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
+      toast.success('导出成功')
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setExporting(null)
+    }
+  }
+
   // 批量导入名单预览
   const batchPreviewCount = useMemo(() => {
     const names = batchText
@@ -249,6 +282,16 @@ export default function Personnel() {
   }, [batchText])
 
   const hasBranchSelected = effectiveBranchId !== undefined
+
+  // 当前选中厅的统计周期（按月统计厅显示"本月数据状态"）
+  // 优先从 branches 列表获取，回退到 personnel 数据中的 branches 字段
+  const currentBranch = branches.find((b) => b.id === effectiveBranchId)
+  const currentPersonnelBranch = personnel
+    .flatMap((p) => p.branches ?? [])
+    .find((b) => b.id === effectiveBranchId)
+  const branchStatCycle = currentBranch?.statCycle ?? currentPersonnelBranch?.statCycle
+  const isMonthCycle = branchStatCycle === 'MONTH'
+  const dataStatusLabel = isMonthCycle ? '本月数据状态' : '本周数据状态'
 
   return (
     <div className="space-y-5">
@@ -284,6 +327,41 @@ export default function Personnel() {
             <Plus size={16} />
             添加人员
           </button>
+          {canAdd && (
+            <div className="relative">
+              <button
+                onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
+                disabled={!hasBranchSelected || exporting !== null}
+                className="flex items-center gap-1.5 px-3 py-2 border border-border bg-card text-textPrimary rounded-lg text-sm font-medium hover:bg-surface disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+                title={!hasBranchSelected ? '请先选择厅' : undefined}
+              >
+                <Download size={16} />
+                {exporting ? '导出中...' : '导出名单'}
+              </button>
+              {exportDropdownOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setExportDropdownOpen(false)}
+                  />
+                  <div className="absolute right-0 mt-1 w-32 bg-card border border-border rounded-lg shadow-lg z-20 overflow-hidden">
+                    <button
+                      onClick={() => handleExportPersonnel('excel')}
+                      className="w-full text-left px-3 py-2 text-sm text-textPrimary hover:bg-surface transition-colors duration-200 cursor-pointer"
+                    >
+                      Excel (.xlsx)
+                    </button>
+                    <button
+                      onClick={() => handleExportPersonnel('csv')}
+                      className="w-full text-left px-3 py-2 text-sm text-textPrimary hover:bg-surface transition-colors duration-200 cursor-pointer border-t border-border"
+                    >
+                      CSV (.csv)
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -328,7 +406,7 @@ export default function Personnel() {
                     <th className="px-4 py-3 font-medium">序号</th>
                     <th className="px-4 py-3 font-medium">姓名</th>
                     <th className="px-4 py-3 font-medium">所属厅</th>
-                    <th className="px-4 py-3 font-medium">本周数据状态</th>
+                    <th className="px-4 py-3 font-medium">{dataStatusLabel}</th>
                     {(canEdit || canDelete) && (
                       <th className="px-4 py-3 font-medium text-right">操作</th>
                     )}

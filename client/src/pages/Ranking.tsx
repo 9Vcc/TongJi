@@ -76,6 +76,12 @@ export default function Ranking() {
   )
   const currentCycle: StatCycle = selectedBranch?.statCycle ?? 'WEEK'
 
+  // 可用厅列表：过滤已关闭的厅
+  const openBranches = useMemo(
+    () => branches.filter((b) => !b.closed),
+    [branches]
+  )
+
   return (
     <div className="space-y-5">
       {/* 顶部选择器：仅厅选择（日期选择已整合到卡片） */}
@@ -89,7 +95,7 @@ export default function Ranking() {
             className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer"
           >
             <option value="">{isHuizhang ? '全部厅' : '全部授权厅'}</option>
-            {branches.map((b) => (
+            {openBranches.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.name}
                 {b.statCycle === 'MONTH' ? '（按月）' : ''}
@@ -102,21 +108,23 @@ export default function Ranking() {
       {/* 排名区域 */}
       {!branchId ? (
         // 全部厅模式：每个厅一个独立卡片，含独立日期选择
-        <div className="grid gap-5 lg:grid-cols-2">
-          {branches.length === 0 ? (
-            <RankingCardSkeleton />
-          ) : (
-            branches.map((b) => (
-              <BranchRankingCard
-                key={b.id}
-                branch={b}
-                toast={toast}
-              />
-            ))
-          )}
-        </div>
+        branches.length === 0 ? (
+          <RankingCardSkeleton />
+        ) : openBranches.length === 0 ? (
+          <div className="py-12 text-center text-textMuted">暂无可用厅</div>
+        ) : openBranches.length === 1 ? (
+          // 只有一个厅时：卡片占满宽度
+          <BranchRankingCard branch={openBranches[0]} toast={toast} />
+        ) : (
+          // 多个厅时：双列网格
+          <div className="grid gap-5 lg:grid-cols-2">
+            {openBranches.map((b) => (
+              <BranchRankingCard key={b.id} branch={b} toast={toast} />
+            ))}
+          </div>
+        )
       ) : selectedBranch ? (
-        // 单厅模式：单卡片，含日期选择
+        // 单厅模式：单卡片占满宽度
         <BranchRankingCard branch={selectedBranch} toast={toast} />
       ) : (
         // 厅列表加载中

@@ -87,26 +87,6 @@ function formatNamings(namings?: NamingItem[]): string {
   );
 }
 
-// 累加两个 namings 数组（按 levelId 合并 count，reward 取首次出现的值）
-function mergeNamings(
-  a?: NamingItem[],
-  b?: NamingItem[],
-): NamingItem[] | undefined {
-  if (!a || a.length === 0) return b;
-  if (!b || b.length === 0) return a;
-  const map = new Map<number, NamingItem>();
-  for (const n of a) map.set(n.levelId, { ...n });
-  for (const n of b) {
-    const cur = map.get(n.levelId);
-    if (cur) {
-      cur.count += n.count;
-    } else {
-      map.set(n.levelId, { ...n });
-    }
-  }
-  return Array.from(map.values());
-}
-
 export default function DataEntry() {
   const { user } = useAuth();
   const toast = useToast();
@@ -266,59 +246,14 @@ export default function DataEntry() {
     setLoading(true);
     try {
       if (isMonthCycle) {
-        // 月模式：月统计厅数据存储在月初1日（recordWeekStart）
-        // 兼容旧数据：同时查询该月所有周一，合并结果
-        const year = weekStart.getFullYear();
-        const month = weekStart.getMonth();
-        const monthStart = new Date(year, month, 1);
-        const monthEnd = new Date(year, month + 1, 0);
-        const firstWeekStart = getWeekStart(monthStart);
-        const lastWeekStart = getWeekStart(monthEnd);
-        // 收集查询日期：月初1日 + 该月所有周一（兼容旧数据按周存储）
-        const queryDates = new Set<string>();
-        queryDates.add(formatDate(monthStart));
-        let cur = new Date(firstWeekStart);
-        while (cur <= lastWeekStart) {
-          queryDates.add(formatDate(cur));
-          const next = new Date(cur);
-          next.setDate(next.getDate() + 7);
-          cur = next;
-        }
-        // 并发查询所有日期数据
-        const allResults = await Promise.all(
-          [...queryDates].map((w) => dataQueryApi.listByWeek(w, effectiveBranchId)),
+        // 月模式：月统计厅数据存储在月初1日，只查 recordWeekStart 这一天
+        const recs = await dataQueryApi.listByWeek(
+          recordWeekStart,
+          effectiveBranchId,
         );
         // 竞态保护：若期间又有新的 loadData 调用，丢弃本次结果
         if (loadId !== loadIdRef.current) return;
-        // 按 (branchId, personnelId) 合并累加，避免多厅数据混合
-        const mergedMap = new Map<
-          string,
-          DataRecord & { sg: number; mx: number; qm: number; weekStart: string }
-        >();
-        for (const weekRecs of allResults) {
-          for (const r of weekRecs) {
-            const key = `${r.branchId}:${r.personnelId}`;
-            const existing = mergedMap.get(key);
-            if (existing) {
-              existing.sg += r.sg;
-              existing.mx += r.mx;
-              existing.qm += r.qm;
-              existing.welfare = (existing.welfare ?? 0) + (r.welfare ?? 0);
-              existing.namings = mergeNamings(existing.namings, r.namings);
-              if (!existing.deduction) existing.deduction = r.deduction;
-            } else {
-              mergedMap.set(key, { ...r });
-            }
-          }
-        }
-        const mergedRecords = [...mergedMap.values()].map((r) => ({
-          ...r,
-          finalWelfare:
-            r.welfare !== undefined && r.deduction !== undefined
-              ? r.welfare - r.deduction
-              : r.welfare,
-        }));
-        setRecords(mergedRecords);
+        setRecords(recs);
       } else {
         // 周模式：查询单周数据
         const weekParam = formatDate(weekStart);
@@ -1327,7 +1262,7 @@ export default function DataEntry() {
               className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer"
             >
               {isHuizhang && <option value="">选择厅</option>}
-              {branches.map((b) => (
+              {branches.filter((b) => !b.closed).map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}
                 </option>
