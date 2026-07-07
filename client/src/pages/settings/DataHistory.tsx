@@ -168,8 +168,8 @@ function renderChangeCell(log: DataLogItem, personnelMap: Map<number, string>) {
   const after = log.after
   if (!before || !after) {
     // 兼容旧数据：解析 oldValue/newValue
-    let oldParsed: typeof before = {}
-    let newParsed: typeof after = {}
+    let oldParsed: NonNullable<typeof before> = {}
+    let newParsed: NonNullable<typeof after> = {}
     try {
       oldParsed = JSON.parse(log.oldValue || '{}')
     } catch {
