@@ -101,8 +101,21 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
         mx?: number
         qm?: number
         zcDays?: number
+        // 修改操作：变更前后的结构化数值（type=update 时使用）
+        before?: { sg?: number; mx?: number; qm?: number; zcDays?: number; personnelId?: number } | null
+        after?: { sg?: number; mx?: number; qm?: number; zcDays?: number; personnelId?: number } | null
         // 备注信息（DataRecord.remark 或 DataHistory.remark）
         remark?: string | null
+      }
+
+      // 解析 JSON 字符串为结构化对象
+      const parseValues = (str: string | null): { sg?: number; mx?: number; qm?: number; zcDays?: number; personnelId?: number } | null => {
+        if (!str) return null
+        try {
+          return JSON.parse(str)
+        } catch {
+          return null
+        }
       }
 
       // 取录入历史记录（从 DataHistory action=CREATE 查询，每次录入独立一条）
@@ -259,6 +272,9 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
           oldValue: h.oldValue,
           newValue: h.newValue,
           recordId: h.recordId,
+          // 修改操作：解析 oldValue/newValue 为结构化对象
+          before: h.action === 'UPDATE' ? parseValues(h.oldValue) : null,
+          after: h.action === 'UPDATE' ? parseValues(h.newValue) : null,
           remark: h.remark,
         }))
 
@@ -336,6 +352,8 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
         oldValue: h.oldValue,
         newValue: h.newValue,
         recordId: h.recordId,
+        before: h.action === 'UPDATE' ? parseValues(h.oldValue) : null,
+        after: h.action === 'UPDATE' ? parseValues(h.newValue) : null,
         remark: h.remark,
       }))
 

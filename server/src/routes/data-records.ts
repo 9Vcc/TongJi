@@ -936,18 +936,42 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
 
       // 记录修改历史并更新
       const updated = await prismaClient.$transaction(async (tx) => {
-        // 记录 sg/mx/qm 字段历史
-        for (const { field, value } of updates) {
-          const oldValue = record[field]
-          if (oldValue === value) continue
+        // 聚合记录本次修改历史：单条记录包含所有字段变更前后值
+        // oldValue: 变更前全量值, newValue: 变更后全量值
+        const beforeValues = {
+          sg: record.sg,
+          mx: record.mx,
+          qm: record.qm,
+          zcDays: record.zcDays,
+        }
+        const afterValues = {
+          sg: body.sg ?? record.sg,
+          mx: body.mx ?? record.mx,
+          qm: body.qm ?? record.qm,
+          zcDays: body.zcDays ?? record.zcDays,
+        }
+        // 检查是否有数值变化或人员变更
+        const hasValueChange =
+          beforeValues.sg !== afterValues.sg ||
+          beforeValues.mx !== afterValues.mx ||
+          beforeValues.qm !== afterValues.qm ||
+          beforeValues.zcDays !== afterValues.zcDays ||
+          personnelChanged
+        if (hasValueChange) {
           await tx.dataHistory.create({
             data: {
               recordId: record.id,
               modifierId: currentUser.id,
               action: HistoryAction.UPDATE,
-              field,
-              oldValue: String(oldValue),
-              newValue: String(value),
+              field: personnelChanged ? 'personnelId' : null,
+              oldValue: JSON.stringify({
+                ...beforeValues,
+                ...(personnelChanged ? { personnelId: record.personnelId } : {}),
+              }),
+              newValue: JSON.stringify({
+                ...afterValues,
+                ...(personnelChanged ? { personnelId: body.personnelId } : {}),
+              }),
               remark,
             },
           })
@@ -967,18 +991,6 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         // 人员变更：合并到目标人员本周记录
         if (personnelChanged) {
           const newPersonnelId = body.personnelId!
-          // 记录人员变更历史
-          await tx.dataHistory.create({
-            data: {
-              recordId: record.id,
-              modifierId: currentUser.id,
-              action: HistoryAction.UPDATE,
-              field: 'personnelId',
-              oldValue: String(record.personnelId),
-              newValue: String(newPersonnelId),
-              remark,
-            },
-          })
 
           const target = await tx.dataRecord.findFirst({
             where: {

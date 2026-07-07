@@ -201,11 +201,11 @@ export default function Dashboard() {
   }, [isMonthCycle]);
 
   useEffect(() => {
-    // 所有用户都需加载厅列表以获取统计周期
+    // 所有用户都需加载厅列表以获取统计周期（过滤已关闭的厅）
     branchesApi
       .list()
       .then((list) => {
-        setBranches(list);
+        setBranches(list.filter((b) => !b.closed));
       })
       .catch(() => {});
   }, []);

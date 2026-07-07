@@ -11,6 +11,7 @@ import {
   ChevronRight,
   MessageSquare,
   ArrowLeft,
+  ArrowRight,
 } from 'lucide-react'
 import {
   dataHistoryApi,
@@ -23,7 +24,7 @@ import { useToast } from '../../hooks/useToast'
 import { Skeleton } from '../../components/Skeleton'
 import SubPageHeader from '../../components/SubPageHeader'
 import SearchableSelect from '../../components/SearchableSelect'
-import { formatDateTime, getWeekRangeText } from '../../utils'
+import { formatDateTime, getWeekRangeText, getMonthRangeText } from '../../utils'
 import type {
   Branch,
   Personnel,
@@ -70,12 +71,12 @@ const SECTION_CONFIG: Record<
 }
 
 // 字段中文名映射
-const FIELD_MAP: Record<string, string> = {
-  sg: '收光',
-  mx: '麦序',
-  qm: '全麦',
-  personnelId: '人员',
-}
+const FIELD_LABELS: { key: 'sg' | 'mx' | 'qm' | 'zcDays'; label: string }[] = [
+  { key: 'sg', label: '收光' },
+  { key: 'mx', label: '麦序' },
+  { key: 'qm', label: '全麦' },
+  { key: 'zcDays', label: '主持' },
+]
 
 // 详情视图属性
 interface DetailProps {
@@ -88,6 +89,155 @@ interface DetailProps {
 
 // 详情视图分页大小
 const DETAIL_PAGE_SIZE = 10
+
+/**
+ * 判断 weekStart 是否为月初1日（月统计厅的数据归属日）
+ */
+function isMonthStart(weekStart: string): boolean {
+  const d = new Date(weekStart)
+  return d.getDate() === 1
+}
+
+/**
+ * 格式化所属周期：月统计厅显示月份，周统计厅显示周次
+ */
+function formatPeriod(weekStart: string): string {
+  if (isMonthStart(weekStart)) {
+    return getMonthRangeText(weekStart)
+  }
+  return getWeekRangeText(weekStart)
+}
+
+/**
+ * 渲染数值变更单元格：create/update/delete 三种场景统一展示
+ * - create：显示录入数值（绿色标签）
+ * - update：显示 before → after 对比，仅列出变化字段
+ * - delete：显示删除前数值（红色标签）
+ */
+function renderChangeCell(log: DataLogItem, personnelMap: Map<number, string>) {
+  if (log.type === 'create') {
+    // 录入：显示本次录入值
+    const fields = FIELD_LABELS.filter(
+      (f) => log[f.key] !== undefined && log[f.key] !== 0,
+    )
+    if (fields.length === 0) {
+      return <span className="text-textMuted text-xs">无变更数据</span>
+    }
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {fields.map((f) => (
+          <span
+            key={f.key}
+            className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-success/10 text-success font-mono"
+          >
+            {f.label} {log[f.key]}
+          </span>
+        ))}
+      </div>
+    )
+  }
+
+  if (log.type === 'delete') {
+    // 删除：显示删除前数值
+    let parsed: { sg?: number; mx?: number; qm?: number; zcDays?: number } = {}
+    try {
+      parsed = JSON.parse(log.oldValue || '{}')
+    } catch {
+      parsed = {}
+    }
+    const fields = FIELD_LABELS.filter((f) => parsed[f.key] !== undefined)
+    if (fields.length === 0) {
+      return <span className="text-textMuted text-xs">-</span>
+    }
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        {fields.map((f) => (
+          <span
+            key={f.key}
+            className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-danger/10 text-danger font-mono line-through"
+          >
+            {f.label} {parsed[f.key]}
+          </span>
+        ))}
+      </div>
+    )
+  }
+
+  // 修改：显示 before → after 对比
+  const before = log.before
+  const after = log.after
+  if (!before || !after) {
+    // 兼容旧数据：解析 oldValue/newValue
+    let oldParsed: typeof before = {}
+    let newParsed: typeof after = {}
+    try {
+      oldParsed = JSON.parse(log.oldValue || '{}')
+    } catch {
+      oldParsed = {}
+    }
+    try {
+      newParsed = JSON.parse(log.newValue || '{}')
+    } catch {
+      newParsed = {}
+    }
+    return renderUpdateComparison(oldParsed, newParsed, personnelMap)
+  }
+  return renderUpdateComparison(before, after, personnelMap)
+}
+
+/**
+ * 渲染修改对比：仅显示变更字段，before → after
+ */
+function renderUpdateComparison(
+  before: { sg?: number; mx?: number; qm?: number; zcDays?: number; personnelId?: number } | null,
+  after: { sg?: number; mx?: number; qm?: number; zcDays?: number; personnelId?: number } | null,
+  personnelMap: Map<number, string>,
+) {
+  if (!before || !after) {
+    return <span className="text-textMuted text-xs">-</span>
+  }
+  const changes: { label: string; oldVal: string; newVal: string }[] = []
+  // 数值字段对比
+  for (const f of FIELD_LABELS) {
+    const oldV = before[f.key]
+    const newV = after[f.key]
+    if (oldV !== newV) {
+      changes.push({
+        label: f.label,
+        oldVal: String(oldV ?? 0),
+        newVal: String(newV ?? 0),
+      })
+    }
+  }
+  // 人员变更
+  if (before.personnelId !== undefined && after.personnelId !== undefined && before.personnelId !== after.personnelId) {
+    const oldName = personnelMap.get(before.personnelId) || `ID:${before.personnelId}`
+    const newName = personnelMap.get(after.personnelId) || `ID:${after.personnelId}`
+    changes.push({
+      label: '人员',
+      oldVal: oldName,
+      newVal: newName,
+    })
+  }
+  if (changes.length === 0) {
+    return <span className="text-textMuted text-xs">无变更</span>
+  }
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {changes.map((c, idx) => (
+        <span
+          key={idx}
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-warning/10 text-warning font-mono"
+        >
+          <span className="opacity-70">{c.label}</span>
+          <span className="line-through opacity-60">{c.oldVal}</span>
+          <ArrowRight size={10} className="opacity-70" />
+          <span className="font-semibold">{c.newVal}</span>
+        </span>
+      ))}
+    </div>
+  )
+}
 
 function DetailView({
   type,
@@ -112,39 +262,6 @@ function DetailView({
       logs.slice((safePage - 1) * DETAIL_PAGE_SIZE, safePage * DETAIL_PAGE_SIZE),
     [logs, safePage],
   )
-
-  // 渲染详情文本
-  const renderDetail = (log: DataLogItem): string => {
-    if (log.type === 'create') {
-      const parts = [`收光 ${log.sg ?? 0}`, `麦序 ${log.mx ?? 0}`, `全麦 ${log.qm ?? 0}`]
-      if (log.zcDays !== undefined) parts.push(`主持 ${log.zcDays}`)
-      return parts.join(' · ')
-    }
-    if (log.type === 'delete') {
-      try {
-        const parsed = JSON.parse(log.oldValue || '{}') as {
-          sg?: number
-          mx?: number
-          qm?: number
-          zcDays?: number
-        }
-        const parts = [`收光 ${parsed.sg ?? 0}`, `麦序 ${parsed.mx ?? 0}`, `全麦 ${parsed.qm ?? 0}`]
-        if (parsed.zcDays !== undefined) parts.push(`主持 ${parsed.zcDays}`)
-        return `删除前：${parts.join(' · ')}`
-      } catch {
-        return log.oldValue || '-'
-      }
-    }
-    if (log.field === 'personnelId') {
-      const oldId = Number(log.oldValue)
-      const newId = Number(log.newValue)
-      const oldName = personnelMap.get(oldId) || `ID:${oldId}`
-      const newName = personnelMap.get(newId) || `ID:${newId}`
-      return `人员：${oldName} → ${newName}`
-    }
-    const fieldText = log.field ? FIELD_MAP[log.field] || log.field : ''
-    return `${fieldText}: ${log.oldValue ?? '-'} → ${log.newValue ?? '-'}`
-  }
 
   return (
     <motion.div
@@ -188,8 +305,8 @@ function DetailView({
               <th className="px-3 py-2 font-medium whitespace-nowrap">操作人</th>
               <th className="px-3 py-2 font-medium whitespace-nowrap">人员</th>
               <th className="px-3 py-2 font-medium whitespace-nowrap">厅</th>
-              <th className="px-3 py-2 font-medium whitespace-nowrap">所属周</th>
-              <th className="px-3 py-2 font-medium">详情</th>
+              <th className="px-3 py-2 font-medium whitespace-nowrap">周期</th>
+              <th className="px-3 py-2 font-medium">变更内容</th>
               <th className="px-3 py-2 font-medium whitespace-nowrap">备注</th>
             </tr>
           </thead>
@@ -232,10 +349,10 @@ function DetailView({
                     {log.branchName}
                   </td>
                   <td className="px-3 py-2 text-textSecondary whitespace-nowrap text-xs">
-                    {getWeekRangeText(log.weekStart)}
+                    {formatPeriod(log.weekStart)}
                   </td>
-                  <td className="px-3 py-2 text-textSecondary text-xs">
-                    {renderDetail(log)}
+                  <td className="px-3 py-2">
+                    {renderChangeCell(log, personnelMap)}
                   </td>
                   <td className="px-3 py-2 text-textSecondary text-xs max-w-[200px]">
                     {log.remark ? (

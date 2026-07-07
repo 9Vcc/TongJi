@@ -376,6 +376,9 @@ export interface DataLogItem {
   mx?: number
   qm?: number
   zcDays?: number
+  // 修改操作：变更前后的结构化数值（type=update 时使用）
+  before?: { sg?: number; mx?: number; qm?: number; zcDays?: number; personnelId?: number } | null
+  after?: { sg?: number; mx?: number; qm?: number; zcDays?: number; personnelId?: number } | null
   // 操作备注（DataRecord.remark 或 DataHistory.remark）
   remark?: string | null
 }
