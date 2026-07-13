@@ -3,10 +3,7 @@ import prisma from '../lib/prisma'
 import { authenticate, requireRole, canAccessBranch } from '../middleware/auth'
 import { Role, StatCycle } from '../../generated/prisma/client'
 import { getWeekStart } from '../utils/week'
-
-function isNonNegInt(v: unknown): boolean {
-  return typeof v === 'number' && Number.isInteger(v) && v >= 0
-}
+import { isNonNegInt } from '../utils/validation'
 
 /**
  * 根据 cycle 和请求参数解析 periodStart

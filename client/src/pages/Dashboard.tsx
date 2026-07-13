@@ -32,10 +32,11 @@ import {
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../hooks/useToast";
 import { useTheme } from "../hooks/useTheme";
+import { usePeriodNavigator } from "../hooks/usePeriodNavigator";
 import {
   formatDate,
   getWeekStart,
-  getPreviousWeekStart,
+  getMonthStart,
   getWeekRangeText,
   getMonthRangeText,
 } from "../utils";
@@ -142,16 +143,6 @@ export default function Dashboard() {
   const canSelectBranch = isHuizhang || isChaoguan;
   const { resolvedTheme } = useTheme();
   const toast = useToast();
-  // 初始 weekStart 设为本月1日（而非本周周一）
-  // 原因：本月1日对两种周期都能正确查询
-  //   - 月统计厅：getMonthStart(本月1日) = 本月1日 ✓
-  //   - 周统计厅：getWeekStart(本月1日) = 本月1日所在周的周一 = 本周周一 ✓
-  const [weekStart, setWeekStart] = useState(() => {
-    const today = new Date();
-    const d = new Date(today.getFullYear(), today.getMonth(), 1);
-    d.setHours(0, 0, 0, 0);
-    return d;
-  });
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [compare, setCompare] = useState<DashboardCompare | null>(null);
   const [top3, setTop3] = useState<RankingItem[]>([]);
@@ -186,6 +177,24 @@ export default function Dashboard() {
   const periodWord = isMonthCycle ? "月" : "周";
   const thisPeriodWord = isMonthCycle ? "本月" : "本周";
   const lastPeriodWord = isMonthCycle ? "上月" : "上周";
+
+  // 日期导航：统一使用 usePeriodNavigator hook
+  // 初始 weekStart 设为本月1日（对两种周期都能正确查询）
+  // 注意：availableWeeks 状态（原始 API 列表）传入 hook 用于计算 availableMonths，
+  // 但周次下拉仍直接使用原始 availableWeeks 状态（Dashboard 的 weekDisplayStart 逻辑独特）
+  const {
+    weekStart,
+    setWeekStart,
+    handlePrev,
+    handleNext,
+    handleThisPeriod,
+    availableMonths,
+    selectedMonthRef,
+  } = usePeriodNavigator({
+    branch: branches.find((b) => b.id === branchId) ?? null,
+    availableWeeks,
+    initialWeekStart: getMonthStart(new Date()),
+  });
 
   // 月统计厅切换时重置 weekStart 为本月1日
   // 本周周一可能跨月（如7月1日是周二，本周周一是6月29日），导致月查询归属到上月
@@ -258,67 +267,6 @@ export default function Dashboard() {
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekStart, branchId, currentCycle]);
-
-  // 按月统计时，weekStart 始终保持为该月任意一天（用月初1号）
-  // 后端 getMonthStart 会把任意日期归一到月初，无需前端预先转周一
-  const setMonthRef = (d: Date) => {
-    d.setDate(1);
-    d.setHours(0, 0, 0, 0);
-    setWeekStart(d);
-  };
-
-  const handlePrevWeek = () => {
-    if (isMonthCycle) {
-      const d = new Date(weekStart);
-      d.setMonth(d.getMonth() - 1);
-      setMonthRef(d);
-    } else {
-      setWeekStart(getPreviousWeekStart(weekStart));
-    }
-  };
-  const handleNextWeek = () => {
-    if (isMonthCycle) {
-      const d = new Date(weekStart);
-      d.setMonth(d.getMonth() + 1);
-      const thisMonthStart = new Date();
-      thisMonthStart.setDate(1);
-      thisMonthStart.setHours(0, 0, 0, 0);
-      if (d <= thisMonthStart) setMonthRef(d);
-    } else {
-      const next = new Date(weekStart);
-      next.setDate(next.getDate() + 7);
-      if (next <= getWeekStart()) {
-        setWeekStart(next);
-      }
-    }
-  };
-
-  // 按月统计时：从历史周列表提取不重复月份（每月取首个周一作为参考日）
-  // 注意：本月参考日必须用 new Date()（今天），不能用 getWeekStart()（本周周一）
-  // 原因：本周周一可能跨月（如7月1日是周二，本周周一是6月29日），getWeekStart() 会归属到上月
-  // 切换到上月后 weekStart 不再是本月，本月只能靠 new Date() 保证始终可选
-  const availableMonths = useMemo(() => {
-    const monthMap = new Map<string, string>(); // YYYY-MM -> refDate
-    const addMonth = (dateStr: string) => {
-      const d = new Date(dateStr);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      if (!monthMap.has(key)) monthMap.set(key, dateStr);
-    };
-    availableWeeks.forEach(addMonth);
-    addMonth(formatDate(new Date()));
-    addMonth(formatDate(weekStart));
-    return Array.from(monthMap.entries())
-      .map(([key, ref]) => ({ key, ref }))
-      .sort((a, b) => b.key.localeCompare(a.key));
-  }, [availableWeeks, weekStart]);
-
-  // 当前选中月份的参考日（确保 weekStart 落在所选月）
-  const selectedMonthRef = useMemo(() => {
-    const d = new Date(weekStart);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    const found = availableMonths.find((m) => m.key === key);
-    return found?.ref ?? formatDate(weekStart);
-  }, [weekStart, availableMonths]);
 
   // 周统计厅显示用的 weekStart（周一格式）
   // weekStart 可能是本月1日（初始值或月统计厅切换过来），getWeekStart 转为所在周周一
@@ -536,7 +484,7 @@ export default function Dashboard() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <button
-            onClick={handlePrevWeek}
+            onClick={handlePrev}
             aria-label={isMonthCycle ? "上一月" : "上一周"}
             className="p-2 border border-border rounded-lg bg-card text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
           >
@@ -579,23 +527,14 @@ export default function Dashboard() {
             </select>
           )}
           <button
-            onClick={handleNextWeek}
+            onClick={handleNext}
             aria-label={isMonthCycle ? "下一月" : "下一周"}
             className="p-2 border border-border rounded-lg bg-card text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
           >
             <ChevronRight size={16} />
           </button>
           <button
-            onClick={() => {
-              if (isMonthCycle) {
-                const d = new Date();
-                d.setDate(1);
-                d.setHours(0, 0, 0, 0);
-                setWeekStart(d);
-              } else {
-                setWeekStart(getWeekStart());
-              }
-            }}
+            onClick={handleThisPeriod}
             className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
           >
             {isMonthCycle ? "本月" : "本周"}

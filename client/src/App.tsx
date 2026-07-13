@@ -1,20 +1,37 @@
-import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
+import { lazy, Suspense } from 'react'
+import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import { useAuth } from './hooks/useAuth'
 import Layout from './components/Layout'
 import PageTransition from './components/PageTransition'
-import Login from './pages/Login'
-import Dashboard from './pages/Dashboard'
-import DataEntry from './pages/DataEntry'
-import Ranking from './pages/Ranking'
-import Personnel from './pages/Personnel'
-import Settings from './pages/Settings'
-import AccountsPage from './pages/settings/Accounts'
-import BranchesPage from './pages/settings/Branches'
-import NotificationsPage from './pages/settings/Notifications'
-import DataHistoryPage from './pages/settings/DataHistory'
-import LoginRecordsPage from './pages/settings/LoginRecords'
-import PublicRanking from './pages/PublicRanking'
+import { Spinner } from './components/Skeleton'
+
+// 公开页：PublicRanking + Login
+const PublicRanking = lazy(() => import('./pages/PublicRanking'))
+const Login = lazy(() => import('./pages/Login'))
+
+// 后台主体
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const DataEntry = lazy(() => import('./pages/DataEntry'))
+const Ranking = lazy(() => import('./pages/Ranking'))
+const Personnel = lazy(() => import('./pages/Personnel'))
+const Settings = lazy(() => import('./pages/Settings'))
+
+// 设置子页
+const AccountsPage = lazy(() => import('./pages/settings/Accounts'))
+const BranchesPage = lazy(() => import('./pages/settings/Branches'))
+const NotificationsPage = lazy(() => import('./pages/settings/Notifications'))
+const DataHistoryPage = lazy(() => import('./pages/settings/DataHistory'))
+const LoginRecordsPage = lazy(() => import('./pages/settings/LoginRecords'))
+
+/** 路由级懒加载 fallback：居中旋转动画 */
+function RouteFallback() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-surface">
+      <Spinner className="h-8 w-8 text-primary" />
+    </div>
+  )
+}
 
 /**
  * 受保护的布局路由：负责认证校验 + 渲染常驻 Layout
@@ -23,6 +40,7 @@ import PublicRanking from './pages/PublicRanking'
  */
 function ProtectedLayout() {
   const { user, loading } = useAuth()
+  const location = useLocation()
 
   if (loading) {
     return (
@@ -49,24 +67,26 @@ function ProtectedLayout() {
 
 function AppRoutes() {
   return (
-    <Routes>
-      {/* 默认首页：公开排名（无需登录，所有人可访问） */}
-      <Route path="/" element={<PublicRanking />} />
-      <Route path="/login" element={<Login />} />
-      <Route element={<ProtectedLayout />}>
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/data" element={<DataEntry />} />
-        <Route path="/ranking" element={<Ranking />} />
-        <Route path="/personnel" element={<Personnel />} />
-        <Route path="/settings" element={<Settings />} />
-        <Route path="/settings/accounts" element={<AccountsPage />} />
-        <Route path="/settings/branches" element={<BranchesPage />} />
-        <Route path="/settings/notifications" element={<NotificationsPage />} />
-        <Route path="/settings/history" element={<DataHistoryPage />} />
-        <Route path="/settings/login-records" element={<LoginRecordsPage />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <Suspense fallback={<RouteFallback />}>
+      <Routes>
+        {/* 默认首页：公开排名（无需登录，所有人可访问） */}
+        <Route path="/" element={<PublicRanking />} />
+        <Route path="/login" element={<Login />} />
+        <Route element={<ProtectedLayout />}>
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/data" element={<DataEntry />} />
+          <Route path="/ranking" element={<Ranking />} />
+          <Route path="/personnel" element={<Personnel />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/settings/accounts" element={<AccountsPage />} />
+          <Route path="/settings/branches" element={<BranchesPage />} />
+          <Route path="/settings/notifications" element={<NotificationsPage />} />
+          <Route path="/settings/history" element={<DataHistoryPage />} />
+          <Route path="/settings/login-records" element={<LoginRecordsPage />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   )
 }
 

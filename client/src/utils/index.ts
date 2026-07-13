@@ -1,4 +1,5 @@
 import { pinyin } from 'pinyin-pro'
+import type { NamingItem } from '../types'
 
 /**
  * 获取本周一 00:00:00 作为周起始时间
@@ -10,6 +11,42 @@ export function getWeekStart(date = new Date()): Date {
   d.setDate(d.getDate() + diff)
   d.setHours(0, 0, 0, 0)
   return d
+}
+
+/**
+ * 获取月统计厅的月初1日（00:00:00）
+ */
+export function getMonthStart(date = new Date()): Date {
+  const r = new Date(date.getFullYear(), date.getMonth(), 1)
+  r.setHours(0, 0, 0, 0)
+  return r
+}
+
+/**
+ * Top3 排名徽章颜色（金/银/铜）
+ */
+export const rankBadgeColors = ['#F59E0B', '#94A3B8', '#CD7F32']
+
+/**
+ * Top3 排名行背景色（金/银/铜）
+ */
+export const rankRowBg = [
+  'bg-yellow-50 dark:bg-yellow-900/20',
+  'bg-slate-50 dark:bg-slate-700/30',
+  'bg-orange-50 dark:bg-orange-900/20',
+]
+
+/**
+ * 冠名展示格式：如 "周冠×2 月冠×1"，无则返回 '-'
+ */
+export function formatNamings(namings?: NamingItem[]): string {
+  if (!namings || namings.length === 0) return '-'
+  return (
+    namings
+      .filter((n) => n.count > 0)
+      .map((n) => `${n.levelName}×${n.count}`)
+      .join(' ') || '-'
+  )
 }
 
 /**

@@ -7,13 +7,13 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "typecheck": "tsc -b --noEmit",
     "preview": "vite preview"
   },
   "dependencies": {
     "axios": "^1.18.1",
     "chart.js": "^4.5.1",
     "framer-motion": "^12.41.0",
-    "lightweight-charts": "^5.2.0",
     "lucide-react": "^1.21.0",
     "pinyin-pro": "^3.28.1",
     "react": "^19.2.7",
@@ -27,10 +27,11 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
     "autoprefixer": "^10.5.1",
-    "oxlint": "^1.69.0",
+    "oxlint": "^1.73.0",
     "postcss": "^8.5.15",
     "tailwindcss": "^3.4.19",
     "typescript": "~6.0.2",
-    "vite": "^8.1.0"
+    "vite": "^8.1.0",
+    "vite-plugin-compression": "^0.5.1"
   }
 }

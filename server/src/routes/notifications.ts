@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import prisma from '../lib/prisma'
-import { authenticate } from '../middleware/auth'
+import { authenticate, canAccessBranch } from '../middleware/auth'
 import { Role, NotificationType } from '../../generated/prisma/client'
 import { resolveQueryBranchId } from '../utils/welfare'
 
@@ -73,12 +73,9 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: '通知不存在' })
       }
 
-      // 非会长只能查看/操作本分部通知
+      // 非会长用户校验是否对通知所在厅有访问权限（超管可访问所有授权厅）
       if (currentUser.role !== Role.HUIZHANG) {
-        if (
-          currentUser.branchId === null ||
-          notification.branchId !== currentUser.branchId
-        ) {
+        if (!canAccessBranch(currentUser, notification.branchId)) {
           return reply.code(403).send({ error: '只能操作本分部通知' })
         }
       }
@@ -139,12 +136,9 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: '通知不存在' })
       }
 
-      // 非会长只能删除本分部通知
+      // 非会长用户校验是否对通知所在厅有访问权限（超管可访问所有授权厅）
       if (currentUser.role !== Role.HUIZHANG) {
-        if (
-          currentUser.branchId === null ||
-          notification.branchId !== currentUser.branchId
-        ) {
+        if (!canAccessBranch(currentUser, notification.branchId)) {
           return reply.code(403).send({ error: '只能删除本分部通知' })
         }
       }

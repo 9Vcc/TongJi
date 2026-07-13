@@ -1,14 +1,18 @@
 import { createSigner, createVerifier } from 'fast-jwt'
 import type { JwtPayload } from '../types'
 
-// 优先使用环境变量，开发环境回退到默认值
-const JWT_SECRET = process.env.JWT_SECRET || 'tongji-secret-key-2026'
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d'
-
-if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
-  console.error('[安全警告] 生产环境必须设置 JWT_SECRET 环境变量')
+// 启动时校验 JWT_SECRET：必须存在且长度 >= 16，否则拒绝启动
+if (!process.env.JWT_SECRET) {
+  console.error('[安全错误] 缺少环境变量 JWT_SECRET，请在 .env 中配置')
   process.exit(1)
 }
+if (process.env.JWT_SECRET.length < 16) {
+  console.error('[安全错误] JWT_SECRET 长度不足 16 位，请使用更强的密钥')
+  process.exit(1)
+}
+
+export const JWT_SECRET = process.env.JWT_SECRET
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d'
 
 const signer = createSigner({
   key: JWT_SECRET,

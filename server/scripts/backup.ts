@@ -29,7 +29,7 @@ const RETENTION_DAYS = 30
  * 从 DATABASE_URL 解析连接参数
  */
 function parseDbUrl(url: string) {
-  const match = url.match(/^mariadb:\/\/([^:]+):([^@]*)@([^:]+):(\d+)\/(.+)$/)
+  const match = url.match(/^(?:mariadb|mysql):\/\/([^:]+):([^@]*)@([^:]+):(\d+)\/(.+)$/)
   if (match) {
     const [, user, password, host, port, database] = match
     return {
@@ -92,8 +92,8 @@ function cleanOldBackups(): number {
         fs.unlinkSync(filePath)
         deleted++
       }
-    } catch {
-      // 忽略单个文件清理失败
+    } catch (err) {
+      console.error(`[backup][警告] 清理过期备份失败，文件: ${filePath}`, err)
     }
   }
   return deleted
@@ -112,7 +112,7 @@ export function runBackup(): string | null {
 
   const config = parseDbUrl(dbUrl)
   if (!config) {
-    console.error(`[backup] 无法解析 DATABASE_URL: ${dbUrl}`)
+    console.error('[backup][警告] 无法解析 DATABASE_URL，备份已中止。请检查协议格式（需为 mariadb:// 或 mysql://）:', dbUrl)
     return null
   }
 
@@ -167,7 +167,7 @@ export function runBackup(): string | null {
 
     return backupPath
   } catch (err) {
-    console.error('[backup] 备份失败:', err)
+    console.error('[backup][警告] 数据库备份失败，请及时检查并手动备份:', err)
     return null
   }
 }

@@ -3,6 +3,7 @@ import prisma from '../lib/prisma'
 import { authenticate, canAccessBranch, getAccessibleBranchIds } from '../middleware/auth'
 import { Role, StatCycle } from '../../generated/prisma/client'
 import { getWeekStart } from '../utils/week'
+import { resolveQueryBranchId } from '../utils/branch'
 
 interface RewardRuleLike {
   sgRatio: number
@@ -31,34 +32,6 @@ function calcWelfare(sg: number, mx: number, qm: number, zcDays: number, rule: R
   const maixuBonus =
     rule.maixuEnabled && mx >= rule.maixuThreshold ? rule.maixuReward : 0
   return base + maixuBonus
-}
-
-/**
- * 解析查询参数中的分部过滤
- * 会长可指定 branchId 或查看全部；超管可查看指定授权厅或全部授权厅；管理只能查看自己分部
- */
-function resolveQueryBranchId(
-  currentUser: { role: Role; branchId: number | null; branchIds: number[] },
-  requestedBranchId: string | undefined
-): number | undefined {
-  if (currentUser.role === Role.HUIZHANG) {
-    if (requestedBranchId) {
-      const n = Number(requestedBranchId)
-      return Number.isNaN(n) ? undefined : n
-    }
-    return undefined
-  }
-  // 超管：可查看指定授权厅
-  if (currentUser.role === Role.CHAOGUAN) {
-    if (requestedBranchId) {
-      const n = Number(requestedBranchId)
-      if (!Number.isNaN(n) && canAccessBranch(currentUser, n)) {
-        return n
-      }
-    }
-    return undefined
-  }
-  return currentUser.branchId ?? undefined
 }
 
 /**
@@ -110,23 +83,18 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
         orderBy: [{ branchId: 'asc' }, { personnelId: 'asc' }],
       })
 
-      // 获取相关分部的奖励规则
+      // 获取相关分部的奖励规则、统计周期、扣减（周/月，三者互不依赖，并行查询）
       const branchIds = [...new Set(records.map((r) => r.branchId))]
-      const rules = await prisma.rewardRule.findMany({
-        where: { branchId: { in: branchIds } },
-      })
-      const ruleMap = new Map(rules.map((r) => [r.branchId, r]))
-
-      // 获取相关分部的统计周期（决定扣减按周还是按月匹配）
-      const branches = await prisma.branch.findMany({
-        where: { id: { in: branchIds } },
-        select: { id: true, statCycle: true },
-      })
-      const branchCycleMap = new Map(branches.map((b) => [b.id, b.statCycle]))
-
       // 查询扣减：周统计厅按 weekStart 匹配，月统计厅按 weekStart 所在月的1号匹配
       const monthStart = new Date(weekStart.getFullYear(), weekStart.getMonth(), 1)
-      const [weekDeductions, monthDeductions] = await Promise.all([
+      const [rules, branches, weekDeductions, monthDeductions] = await Promise.all([
+        prisma.rewardRule.findMany({
+          where: { branchId: { in: branchIds } },
+        }),
+        prisma.branch.findMany({
+          where: { id: { in: branchIds } },
+          select: { id: true, statCycle: true },
+        }),
         prisma.deduction.findMany({
           where: {
             periodStart: weekStart,
@@ -140,6 +108,8 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
           },
         }),
       ])
+      const ruleMap = new Map(rules.map((r) => [r.branchId, r]))
+      const branchCycleMap = new Map(branches.map((b) => [b.id, b.statCycle]))
       // 按 (branchId, personnelId) 索引扣减金额
       const deductionMap = new Map<string, number>()
       for (const d of weekDeductions) {
@@ -355,7 +325,6 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
 
       // 分部权限：会长可指定任意厅；超管可查看指定授权厅或全部授权厅；管理限定本厅
       let branchFilter: number | undefined
-      let branchInScope: number[] | undefined
       if (currentUser.role === Role.HUIZHANG) {
         if (branchIdParam) {
           const n = Number(branchIdParam)
@@ -368,19 +337,16 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
             branchFilter = n
           }
         }
-        if (!branchFilter) {
-          branchInScope = currentUser.branchIds
-        }
       } else {
         branchFilter = currentUser.branchId ?? undefined
       }
 
-      // 构建 branchId 过滤值：单厅用 number，多厅用 { in: [...] }，全部厅用 undefined
-      const branchIdValue: number | { in: number[] } | undefined = branchFilter
-        ? branchFilter
-        : branchInScope && branchInScope.length > 0
-          ? { in: branchInScope }
-          : undefined
+      // 构建 branchId 过滤值：
+      // - 会长查全部厅：accessibleIds === null，branchIdValue = undefined（OR 中使用 [{}] 无条件匹配）
+      // - 超管/管理：必须使用授权厅列表过滤，禁止空对象 {} 作为匹配条件（防越权）
+      const accessibleIds = getAccessibleBranchIds(currentUser)
+      const branchIdValue: number | { in: number[] } | undefined =
+        branchFilter ?? (accessibleIds === null ? undefined : { in: accessibleIds })
 
       // 查询该厅最近一条有备注的操作记录
       // record 存在时按 branchId 过滤（录入/修改）

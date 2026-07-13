@@ -285,13 +285,15 @@ export default function Personnel() {
 
   // 当前选中厅的统计周期（按月统计厅显示"本月数据状态"）
   // 优先从 branches 列表获取，回退到 personnel 数据中的 branches 字段
-  const currentBranch = branches.find((b) => b.id === effectiveBranchId)
-  const currentPersonnelBranch = personnel
-    .flatMap((p) => p.branches ?? [])
-    .find((b) => b.id === effectiveBranchId)
-  const branchStatCycle = currentBranch?.statCycle ?? currentPersonnelBranch?.statCycle
-  const isMonthCycle = branchStatCycle === 'MONTH'
-  const dataStatusLabel = isMonthCycle ? '本月数据状态' : '本周数据状态'
+  const dataStatusLabel = useMemo(() => {
+    const currentBranch = branches.find((b) => b.id === effectiveBranchId)
+    const currentPersonnelBranch = personnel
+      .flatMap((p) => p.branches ?? [])
+      .find((b) => b.id === effectiveBranchId)
+    const branchStatCycle = currentBranch?.statCycle ?? currentPersonnelBranch?.statCycle
+    const isMonthCycle = branchStatCycle === 'MONTH'
+    return isMonthCycle ? '本月数据状态' : '本周数据状态'
+  }, [branches, effectiveBranchId, personnel])
 
   return (
     <div className="space-y-5">

@@ -20,7 +20,9 @@ async function resolveCycleParam(
 export default async function publicRoutes(fastify: FastifyInstance) {
   // GET /api/public/branches - 公开查询厅列表（仅返回 id/name/statCycle，不含统计计数）
   // 已关闭的厅不在公开页面显示
-  fastify.get('/api/public/branches', async (_request, reply) => {
+  fastify.get('/api/public/branches', {
+    config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+  }, async (_request, reply) => {
     const branches = await prisma.branch.findMany({
       where: { closed: false },
       select: { id: true, name: true, statCycle: true },
@@ -30,7 +32,9 @@ export default async function publicRoutes(fastify: FastifyInstance) {
   })
 
   // GET /api/public/weeks - 公开查询历史周列表（已关闭的厅不显示）
-  fastify.get('/api/public/weeks', async (request, reply) => {
+  fastify.get('/api/public/weeks', {
+    config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
     const { branchId: branchIdParam } = request.query as {
       branchId?: string
     }
@@ -61,7 +65,9 @@ export default async function publicRoutes(fastify: FastifyInstance) {
 
   // GET /api/public/ranking - 公开查询周期排名
   // 全部厅时：按各厅自身统计周期分别查询后合并，确保月统计厅数据也能返回
-  fastify.get('/api/public/ranking', async (request, reply) => {
+  fastify.get('/api/public/ranking', {
+    config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
     const { weekStart: weekStartParam, branchId: branchIdParam, cycle: cycleParam } =
       request.query as {
         weekStart?: string
@@ -108,7 +114,9 @@ export default async function publicRoutes(fastify: FastifyInstance) {
 
   // GET /api/public/personnel - 公开查询所有人员及其所属厅（扁平化）
   // 用于搜索时显示未录入数据的人员（已关闭的厅不显示）
-  fastify.get('/api/public/personnel', async (_request, reply) => {
+  fastify.get('/api/public/personnel', {
+    config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+  }, async (_request, reply) => {
     const branches = await prisma.branch.findMany({
       where: { closed: false },
       select: {
@@ -144,7 +152,9 @@ export default async function publicRoutes(fastify: FastifyInstance) {
   })
 
   // GET /api/public/reward-rules - 公开查询奖励规则（已关闭的厅不显示）
-  fastify.get('/api/public/reward-rules', async (request, reply) => {
+  fastify.get('/api/public/reward-rules', {
+    config: { rateLimit: { max: 60, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
     const { branchId: branchIdParam } = request.query as { branchId?: string }
     const branchFilter =
       branchIdParam && !Number.isNaN(Number(branchIdParam)) ? Number(branchIdParam) : undefined

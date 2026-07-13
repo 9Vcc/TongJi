@@ -3,6 +3,7 @@ import prisma, { prisma as prismaClient } from '../lib/prisma'
 import { authenticate, requireRole, canAccessBranch } from '../middleware/auth'
 import { Role, HistoryAction, Prisma, StatCycle } from '../../generated/prisma/client'
 import { getWeekStart } from '../utils/week'
+import { isNonNegInt } from '../utils/validation'
 import { convertNaming, getBranchNamingLevels } from '../utils/naming'
 import * as xlsx from 'xlsx'
 
@@ -20,7 +21,7 @@ interface RecordInput {
 /**
  * 校验备注字段：最大长度 100，去除首尾空白，空字符串视为 null
  */
-function normalizeRemark(v: unknown): string | null {
+export function normalizeRemark(v: unknown): string | null {
   if (v === undefined || v === null) return null
   const s = String(v).trim()
   if (s.length === 0) return null
@@ -55,10 +56,6 @@ function parseWeekStart(input: unknown): { ok: true; date: Date } | { ok: false;
   }
   date.setHours(0, 0, 0, 0)
   return { ok: true, date }
-}
-
-function isNonNegInt(v: unknown): boolean {
-  return typeof v === 'number' && Number.isInteger(v) && v >= 0
 }
 
 function toNonNegInt(v: unknown): number {
@@ -171,13 +168,37 @@ async function upsertRecord(
         ...(remark !== null ? { remark } : {}),
       },
     })
-    // 累加冠名数量到关联表
-    for (const n of namingsToApply) {
-      await client.dataRecordNaming.upsert({
-        where: { recordId_levelId: { recordId: existing.id, levelId: n.levelId } },
-        update: { count: { increment: n.count } },
-        create: { recordId: existing.id, levelId: n.levelId, count: n.count },
+    // 累加冠名数量到关联表（先查已有，分批更新/创建，避免逐条 upsert）
+    if (namingsToApply.length > 0) {
+      const levelIds = namingsToApply.map((n) => n.levelId)
+      const existingNamings = await client.dataRecordNaming.findMany({
+        where: { recordId: existing.id, levelId: { in: levelIds } },
+        select: { levelId: true },
       })
+      const existingLevelSet = new Set(existingNamings.map((n) => n.levelId))
+      const toCreate = namingsToApply.filter((n) => !existingLevelSet.has(n.levelId))
+      const toUpdate = namingsToApply.filter((n) => existingLevelSet.has(n.levelId))
+
+      // 已存在的：累加（Prisma 不支持批量按 levelId 增量更新，仍需逐条 update）
+      for (const n of toUpdate) {
+        await client.dataRecordNaming.update({
+          where: {
+            recordId_levelId: { recordId: existing.id, levelId: n.levelId },
+          },
+          data: { count: { increment: n.count } },
+        })
+      }
+
+      // 不存在的：批量创建
+      if (toCreate.length > 0) {
+        await client.dataRecordNaming.createMany({
+          data: toCreate.map((n) => ({
+            recordId: existing.id,
+            levelId: n.levelId,
+            count: n.count,
+          })),
+        })
+      }
     }
     // 记录本次录入历史（累加场景也产生独立历史记录）
     // oldValue: 累加前汇总值, newValue: 本次增量值
@@ -207,10 +228,14 @@ async function upsertRecord(
       remark,
     },
   })
-  // 新建冠名记录
-  for (const n of namingsToApply) {
-    await client.dataRecordNaming.create({
-      data: { recordId: created.id, levelId: n.levelId, count: n.count },
+  // 新建冠名记录（批量插入）
+  if (namingsToApply.length > 0) {
+    await client.dataRecordNaming.createMany({
+      data: namingsToApply.map((n) => ({
+        recordId: created.id,
+        levelId: n.levelId,
+        count: n.count,
+      })),
     })
   }
   // 记录本次录入历史（新建场景）
@@ -287,7 +312,7 @@ interface ColumnMap {
   namings: Map<string, number>
 }
 
-function buildColumnMap(headerRow: unknown[]): ColumnMap | null {
+export function buildColumnMap(headerRow: unknown[]): ColumnMap | null {
   // 若第一列不是"姓名"或"排名"，认为无表头（简单格式）
   const firstCell = String(headerRow[0] ?? '').trim()
   if (firstCell !== '姓名' && firstCell !== '排名') return null
@@ -371,9 +396,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
           }
         }
 
-        // 校验分部权限与人员归属
-        const branchLevelsMap = new Map<number, { id: number; threshold: number }[]>()
-        const branchOpenCache = new Map<number, boolean>()
+        // 第一遍：解析 branchId 并校验权限（不涉及 DB 查询）
         for (let i = 0; i < inputs.length; i++) {
           const input = inputs[i] as RecordInput
           const resolved = resolveBranchId(currentUser, input.branchId)
@@ -384,37 +407,61 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
             return reply.code(400).send({ error: `第${i + 1}条记录：请指定分部` })
           }
           input.branchId = resolved.branchId
+        }
 
-          // 校验厅未关闭（缓存避免重复查询）
-          if (!branchOpenCache.has(input.branchId)) {
-            branchOpenCache.set(input.branchId, await assertBranchOpen(input.branchId))
-          }
-          if (!branchOpenCache.get(input.branchId)) {
-            return reply.code(403).send({ error: `第${i + 1}条记录：该厅已关闭，无法录入数据` })
-          }
+        // 预先一次性查询所有人员-分部关联关系和分部信息，避免 N+1 查询
+        const uniquePersonnelIds = Array.from(
+          new Set(inputs.map((i) => (i as RecordInput).personnelId))
+        )
+        const uniqueBranchIds = Array.from(
+          new Set(inputs.map((i) => (i as RecordInput).branchId))
+        )
 
-          const assoc = await prisma.personnelBranch.findUnique({
+        const [associations, branchesInfo] = await Promise.all([
+          prisma.personnelBranch.findMany({
             where: {
-              personnelId_branchId: {
-                personnelId: input.personnelId,
-                branchId: input.branchId,
-              },
+              personnelId: { in: uniquePersonnelIds },
+              branchId: { in: uniqueBranchIds },
             },
-          })
-          if (!assoc) {
+            select: { personnelId: true, branchId: true },
+          }),
+          prisma.branch.findMany({
+            where: { id: { in: uniqueBranchIds } },
+            select: { id: true, closed: true, statCycle: true },
+          }),
+        ])
+        const assocSet = new Set(
+          associations.map((a) => `${a.personnelId}_${a.branchId}`)
+        )
+        const branchInfoMap = new Map(branchesInfo.map((b) => [b.id, b]))
+
+        // 第二遍：使用预取数据校验，并构建各厅冠名等级缓存
+        const branchLevelsMap = new Map<number, { id: number; threshold: number }[]>()
+        for (let i = 0; i < inputs.length; i++) {
+          const input = inputs[i] as RecordInput
+
+          // 校验厅未关闭（使用预取数据）
+          const branchInfo = branchInfoMap.get(input.branchId)
+          if (!branchInfo || branchInfo.closed) {
+            return reply
+              .code(403)
+              .send({ error: `第${i + 1}条记录：该厅已关闭，无法录入数据` })
+          }
+
+          // 校验人员属于该分部（使用预取 Set）
+          if (!assocSet.has(`${input.personnelId}_${input.branchId}`)) {
             return reply
               .code(400)
               .send({ error: `第${i + 1}条记录：人员不属于该分部` })
           }
 
-          // 缓存各厅冠名等级（仅按月统计厅）
+          // 缓存各厅冠名等级（仅按月统计厅，每厅仅查询一次）
           if (!branchLevelsMap.has(input.branchId)) {
-            const branch = await prisma.branch.findUnique({
-              where: { id: input.branchId },
-              select: { statCycle: true },
-            })
-            if (branch?.statCycle === StatCycle.MONTH) {
-              branchLevelsMap.set(input.branchId, await getBranchNamingLevels(input.branchId))
+            if (branchInfo.statCycle === StatCycle.MONTH) {
+              branchLevelsMap.set(
+                input.branchId,
+                await getBranchNamingLevels(input.branchId)
+              )
             } else {
               branchLevelsMap.set(input.branchId, [])
             }
@@ -981,9 +1028,13 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         // 后续若发生人员变更合并，会把这些 namings 累加到目标记录
         if (namingsToUpdate !== null) {
           await tx.dataRecordNaming.deleteMany({ where: { recordId: record.id } })
-          for (const n of namingsToUpdate) {
-            await tx.dataRecordNaming.create({
-              data: { recordId: record.id, levelId: n.levelId, count: n.count },
+          if (namingsToUpdate.length > 0) {
+            await tx.dataRecordNaming.createMany({
+              data: namingsToUpdate.map((n) => ({
+                recordId: record.id,
+                levelId: n.levelId,
+                count: n.count,
+              })),
             })
           }
         }

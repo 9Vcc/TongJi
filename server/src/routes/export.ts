@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { authenticate, requireRole, canAccessBranch } from '../middleware/auth'
+import { authenticate, requireRole, canAccessBranch, getAccessibleBranchIds } from '../middleware/auth'
 import { StatCycle, Role } from '../../generated/prisma/client'
 import { getWeekStart } from '../utils/week'
 import { computeRanking, resolveQueryBranchId } from '../utils/welfare'
@@ -23,6 +23,35 @@ function resolveCycleParam(cycleParam: string | undefined): StatCycle {
   return cycleParam === 'MONTH' ? StatCycle.MONTH : StatCycle.WEEK
 }
 
+/**
+ * 按用户权限计算排名
+ * - 指定单厅：直接调用 computeRanking
+ * - 全部厅：会长查所有厅（branchFilter=undefined），超管仅查授权厅（分别查询后合并）
+ *   修复超管未指定 branchId 时 computeRanking 查所有厅的越权漏洞
+ */
+async function computeRankingForUser(
+  refDate: Date,
+  branchFilter: number | undefined,
+  cycle: StatCycle,
+  currentUser: { role: Role; branchId: number | null; branchIds: number[] }
+) {
+  if (branchFilter) {
+    return computeRanking(refDate, branchFilter, cycle)
+  }
+  // 全部厅：会长查所有厅，超管仅查授权厅
+  const accessibleIds = getAccessibleBranchIds(currentUser)
+  if (accessibleIds === null) {
+    // 会长：查所有厅
+    return computeRanking(refDate, undefined, cycle)
+  }
+  if (accessibleIds.length === 0) return []
+  // 超管：分别查询各授权厅后合并
+  const results = await Promise.all(
+    accessibleIds.map((id) => computeRanking(refDate, id, cycle))
+  )
+  return results.flat()
+}
+
 export default async function exportRoutes(fastify: FastifyInstance) {
   // GET /api/export/excel - 导出Excel（支持按周/按月，仅超管及以上可访问）
   // 有冠名数据的厅：导出包含冠名列（按等级动态生成）和冠名福利列
@@ -38,7 +67,7 @@ export default async function exportRoutes(fastify: FastifyInstance) {
       const refDate = weekStartParam ? new Date(weekStartParam) : new Date()
 
       const branchFilter = resolveQueryBranchId(currentUser, branchIdParam)
-      const ranking = await computeRanking(refDate, branchFilter, cycle)
+      const ranking = await computeRankingForUser(refDate, branchFilter, cycle, currentUser)
 
       // 查询该厅奖励规则，判断全麦转换是否开启
       // 未开启全麦转换的厅：导出列表不包含全麦列
@@ -138,7 +167,7 @@ export default async function exportRoutes(fastify: FastifyInstance) {
       const refDate = weekStartParam ? new Date(weekStartParam) : new Date()
 
       const branchFilter = resolveQueryBranchId(currentUser, branchIdParam)
-      const ranking = await computeRanking(refDate, branchFilter, cycle)
+      const ranking = await computeRankingForUser(refDate, branchFilter, cycle, currentUser)
 
       // 查询该厅奖励规则，判断全麦转换是否开启
       // 未开启全麦转换的厅：导出列表不包含全麦列

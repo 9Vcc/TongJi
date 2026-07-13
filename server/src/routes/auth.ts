@@ -24,7 +24,20 @@ async function loadBranchIds(accountId: number, role: Role, branchId: number | n
 
 export default async function authRoutes(fastify: FastifyInstance) {
   // POST /api/auth/login - 登录
-  fastify.post('/api/auth/login', async (request, reply) => {
+  // 限流：每 IP+用户名组合每分钟最多 5 次，防止暴力破解
+  fastify.post('/api/auth/login', {
+    config: {
+      rateLimit: {
+        max: 5,
+        timeWindow: '1 minute',
+        keyGenerator: (request) => {
+          const body = request.body as { username?: string } | undefined
+          const username = body?.username || 'unknown'
+          return `${request.ip}:${username}`
+        },
+      },
+    },
+  }, async (request, reply) => {
     const { username, password } = request.body as { username: string; password: string }
 
     if (!username || !password) {

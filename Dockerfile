@@ -39,6 +39,10 @@ FROM node:22-alpine AS runtime
 # 安装 nginx + mariadb-client（用于数据库备份 mysqldump）
 RUN apk add --no-cache nginx mariadb-client
 
+# 创建非 root 用户 appuser（UID/GID 1000）
+RUN addgroup -g 1000 -S appgroup && \
+    adduser -u 1000 -S appuser -G appgroup
+
 WORKDIR /app
 
 # 安装生产依赖（prisma CLI 用于 migrate deploy）
@@ -60,6 +64,14 @@ COPY docker/nginx.conf /etc/nginx/http.d/default.conf
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 80
+# 设置目录权限：appuser 需要读写 /app 及子目录
+# nginx 以 appuser 运行，需可写 pid/log/temp 目录
+RUN mkdir -p /run/nginx /var/lib/nginx/logs /var/lib/nginx/tmp /var/log/nginx && \
+    chown -R appuser:appgroup /app /run/nginx /var/lib/nginx /var/log/nginx /etc/nginx/http.d
+
+EXPOSE 8080
+
+# 以非 root 用户运行所有进程（nginx + node）
+USER appuser
 
 ENTRYPOINT ["/entrypoint.sh"]

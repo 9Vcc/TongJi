@@ -1,8 +1,9 @@
 import 'dotenv/config';
+import { randomUUID } from 'node:crypto';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
-import jwt from '@fastify/jwt';
 import multipart from '@fastify/multipart';
+import rateLimit from '@fastify/rate-limit';
 import cron from 'node-cron';
 import prisma from './lib/prisma';
 import { hashPassword } from './utils/password';
@@ -27,6 +28,13 @@ import publicRoutes from './routes/public';
 
 const isDev = process.env.NODE_ENV !== 'production';
 
+// 扩展 FastifyRequest 类型，注入 requestId 用于错误追踪
+declare module 'fastify' {
+  interface FastifyRequest {
+    requestId: string;
+  }
+}
+
 const fastify = Fastify({
   logger: {
     // 开发环境彩色单行输出，生产环境标准 JSON
@@ -49,10 +57,12 @@ const fastify = Fastify({
 });
 
 // 静默路径：频繁轮询的请求不输出日志，避免刷屏
-const SILENT_PATHS = new Set(['/health', '/']);
+const SILENT_PATHS = new Set(['/', '/health', '/health/live', '/health/ready']);
 const requestTimings = new WeakMap<object, bigint>();
 
 fastify.addHook('onRequest', (request, _reply, done) => {
+  // 为每个请求注入唯一 ID，便于错误日志追踪
+  request.requestId = randomUUID();
   if (SILENT_PATHS.has(request.url)) return done();
   requestTimings.set(request, process.hrtime.bigint());
   done();
@@ -71,22 +81,45 @@ fastify.addHook('onResponse', (request, reply, done) => {
   done();
 });
 
-// 配置 CORS：允许所有来源（任意域名/IP/端口），便于内网穿透与公网访问
+// 配置 CORS：生产环境通过 CORS_ORIGINS 白名单校验，开发环境（未配置时）放行所有来源
+const corsOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
+  : null;
+
 fastify.register(cors, {
-  origin: true,
+  origin: (origin, cb) => {
+    // 开发环境未配置 CORS_ORIGINS 时放行所有来源
+    if (!corsOrigins) return cb(null, true);
+    // 同源请求（origin 为 undefined）放行
+    if (!origin || corsOrigins.includes(origin)) return cb(null, true);
+    return cb(new Error('Not allowed by CORS'), false);
+  },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
 });
 
-// 注册 JWT 插件（密钥从环境变量读取，与 utils/jwt.ts 保持一致）
-fastify.register(jwt, {
-  secret: process.env.JWT_SECRET || 'tongji-secret-key-2026',
-});
-
 // 注册 multipart 插件（用于文件上传/Excel导入）
 fastify.register(multipart, {
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+});
+
+// 注册速率限制插件（全局默认：每分钟 500 次）
+// 阈值留足余量：已认证用户正常使用（页面并发加载、切页）不会误触；
+// 公开接口与登录接口已在各自路由文件配置更严格的路由级限流（60/分钟、5/分钟）
+// 使用 preHandler 钩子以便路由级 keyGenerator 可读取 request.body（如登录接口的用户名）
+const rateLimitMax = process.env.RATE_LIMIT_MAX ? Number(process.env.RATE_LIMIT_MAX) : 500;
+const rateLimitWindow = process.env.RATE_LIMIT_WINDOW || '1 minute';
+fastify.register(rateLimit, {
+  global: true,
+  max: rateLimitMax,
+  timeWindow: rateLimitWindow,
+  hook: 'preHandler',
+  errorResponseBuilder: (_request, context) => ({
+    statusCode: 429,
+    error: '请求过于频繁',
+    message: `请求频率超过限制（每 ${context.after} 最多 ${context.max} 次），请稍后再试`,
+  }),
 });
 
 // 注册认证路由
@@ -137,27 +170,124 @@ fastify.register(deductionRoutes);
 // 公开排名路由（无需登录，所有人可查看）
 fastify.register(publicRoutes);
 
-// 全局错误处理：打印完整错误堆栈便于排查
-fastify.setErrorHandler((error: Error & { validation?: unknown }, request, reply) => {
-  request.log.error(
-    {
-      err: {
-        message: error.message,
-        stack: error.stack,
-        name: error.name,
+// Prisma 错误码 → HTTP 状态码映射
+const PRISMA_ERROR_STATUS: Record<string, number> = {
+  P2002: 409, // 唯一约束冲突 → Conflict
+  P2025: 404, // 记录不存在 → Not Found
+  P2003: 409, // 外键约束失败 → Conflict
+};
+
+// Prisma 错误码 → 用户可读消息映射
+const PRISMA_ERROR_MESSAGE: Record<string, string> = {
+  P2002: '资源已存在（唯一约束冲突）',
+  P2025: '资源不存在',
+  P2003: '操作冲突（关联数据约束失败）',
+};
+
+// 全局错误处理：区分 Prisma 错误码，生产环境日志脱敏，附带 requestId
+fastify.setErrorHandler(
+  (error: Error & { validation?: unknown; code?: string; statusCode?: number }, request, reply) => {
+    const prismaCode = error.code;
+    const isPrismaError =
+      typeof prismaCode === 'string' && /^P\d{4}$/.test(prismaCode);
+
+    // Fastify schema 校验错误：保持 400 响应（不破坏现有行为）
+    if (error.validation) {
+      request.log.warn(
+        { requestId: request.requestId },
+        `参数校验失败 ${request.method} ${request.url}: ${error.message}`
+      );
+      return reply.code(400).send({ error: error.message });
+    }
+
+    // 保留 Fastify 插件预设的 4xx 状态码（如 @fastify/rate-limit 的 429、未注册路由的 404）
+    // 这类是客户端错误，不应按服务器 ERROR 级别记录并刷屏
+    if (error.statusCode && error.statusCode >= 400 && error.statusCode < 500) {
+      request.log.warn(
+        { requestId: request.requestId, statusCode: error.statusCode },
+        `客户端错误 ${request.method} ${request.url} ${error.statusCode}: ${error.message}`
+      );
+      return reply.code(error.statusCode).send({ error: error.message });
+    }
+
+    // 服务器端错误（Prisma / 未预期异常）才用 ERROR 级别，生产环境日志脱敏
+    const errLog = isDev
+      ? {
+          message: error.message,
+          stack: error.stack,
+          name: error.name,
+          code: prismaCode,
+        }
+      : {
+          message: error.message,
+          name: error.name,
+          code: prismaCode,
+        };
+
+    request.log.error(
+      {
+        requestId: request.requestId,
+        err: errLog,
       },
-    },
-    `处理请求出错 ${request.method} ${request.url}`
-  );
-  if (error.validation) {
-    return reply.code(400).send({ error: error.message });
+      `处理请求出错 ${request.method} ${request.url}`
+    );
+
+    // Prisma 错误码映射
+    if (isPrismaError && prismaCode && prismaCode in PRISMA_ERROR_STATUS) {
+      const statusCode = PRISMA_ERROR_STATUS[prismaCode];
+      const message = PRISMA_ERROR_MESSAGE[prismaCode];
+      return reply.code(statusCode).send({ error: message });
+    }
+
+    // 其他 Prisma 错误 / 非 Prisma 错误 → 500
+    return reply.code(500).send({ error: '服务器内部错误' });
   }
-  return reply.code(500).send({ error: '服务器内部错误' });
+);
+
+// 健康检查路由（兼容旧路径，行为同 /health/ready：检查 DB 连通性）
+fastify.get('/health', async (_request, reply) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      db: 'connected',
+    };
+  } catch (err) {
+    fastify.log.error({ err }, '健康检查数据库连通性失败');
+    return reply.code(503).send({
+      status: 'error',
+      timestamp: new Date().toISOString(),
+      db: 'disconnected',
+    });
+  }
 });
 
-// 健康检查路由
-fastify.get('/health', async () => {
-  return { status: 'ok', timestamp: new Date().toISOString() };
+// Liveness 探针：仅检查进程存活状态，不检查 DB（用于 k8s liveness probe）
+fastify.get('/health/live', async () => {
+  return {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+  };
+});
+
+// Readiness 探针：检查 DB 连通性，决定是否接流（用于 k8s readiness probe）
+fastify.get('/health/ready', async (_request, reply) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    return {
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      db: 'connected',
+    };
+  } catch (err) {
+    fastify.log.error({ err }, 'Readiness 探针数据库连通性失败');
+    return reply.code(503).send({
+      status: 'error',
+      timestamp: new Date().toISOString(),
+      db: 'disconnected',
+    });
+  }
 });
 
 // 根路由
@@ -166,10 +296,28 @@ fastify.get('/', async () => {
 });
 
 // 种子接口：初始化会长账户（如果不存在）
+// 安全约束：生产环境下严格限制——admin 已存在则拒绝，admin 不存在则必须配置 SEED_ADMIN_PASSWORD
 fastify.post('/api/seed', async (_request, reply) => {
   const existing = await prisma.account.findUnique({
     where: { username: 'admin' },
   });
+
+  // 生产环境加固：admin 账户已存在时拒绝任何调用
+  if (process.env.NODE_ENV === 'production' && existing) {
+    return reply.code(403).send({
+      message: '生产环境禁止使用种子接口初始化账户',
+    });
+  }
+
+  // 密码来源：优先使用环境变量，未设置时非生产环境回退到默认密码
+  const seedPassword = process.env.SEED_ADMIN_PASSWORD || (process.env.NODE_ENV === 'production' ? '' : 'admin123');
+
+  // 生产环境必须显式配置 SEED_ADMIN_PASSWORD，否则视为配置缺失
+  if (process.env.NODE_ENV === 'production' && !seedPassword) {
+    return reply.code(500).send({
+      message: '生产环境未配置 SEED_ADMIN_PASSWORD，拒绝执行种子初始化',
+    });
+  }
 
   if (existing) {
     return reply.send({
@@ -183,7 +331,7 @@ fastify.post('/api/seed', async (_request, reply) => {
     });
   }
 
-  const passwordHash = await hashPassword('admin123');
+  const passwordHash = await hashPassword(seedPassword);
   const admin = await prisma.account.create({
     data: {
       username: 'admin',
@@ -223,3 +371,18 @@ const start = async () => {
 };
 
 start();
+
+// 优雅关闭：收到 SIGTERM/SIGINT 时先关闭 HTTP 服务再断开数据库连接
+process.on('SIGTERM', async () => {
+  console.log('[server] 收到 SIGTERM，开始优雅关闭...');
+  await fastify.close();
+  await prisma.$disconnect();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('[server] 收到 SIGINT，开始优雅关闭...');
+  await fastify.close();
+  await prisma.$disconnect();
+  process.exit(0);
+});

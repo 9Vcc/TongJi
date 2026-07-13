@@ -5,11 +5,12 @@
 #   docker compose -f docker-compose.dev.yml up -d
 #   # 启动后 MariaDB 可通过 127.0.0.1:3306 连接
 #
-# 数据库信息（与 server/.env 一致）：
+# 数据库信息（密码可通过 .env 文件覆盖，以下仅为本地开发默认值）：
 #   数据库：tongji
 #   用户名：tongji
-#   密码：  tongji123
-#   root密码：root123（用于测试创建/删除 tongji_test 数据库）
+#   root 密码：用于测试创建/删除 tongji_test 数据库
+# 如需自定义，请在 .env 中设置：
+#   MARIADB_ROOT_PASSWORD / MARIADB_PASSWORD / MARIADB_USER / MARIADB_DATABASE
 # ============================================
 
 services:
@@ -18,10 +19,11 @@ services:
     container_name: tongji-mariadb-dev
     restart: unless-stopped
     environment:
-      MARIADB_ROOT_PASSWORD: root123
-      MARIADB_DATABASE: tongji
-      MARIADB_USER: tongji
-      MARIADB_PASSWORD: tongji123
+      # 所有凭据均可通过 .env 覆盖；默认值仅供本地开发测试
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-root123}
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-tongji}
+      MARIADB_USER: ${MARIADB_USER:-tongji}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-tongji123}
     ports:
       - "3306:3306"
     volumes:

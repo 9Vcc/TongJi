@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { User } from '../types'
 import { authApi } from '../api'
 
@@ -23,6 +24,7 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const navigate = useNavigate()
 
   const refreshUser = useCallback(async () => {
     const token = localStorage.getItem('token')
@@ -56,6 +58,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('token')
     setUser(null)
   }, [])
+
+  // 监听 axios 401 拦截器派发的强制登出事件：
+  // 清理用户状态避免"已登录但 token 失效"中间态，并跳转到公开看板（/）
+  useEffect(() => {
+    const handleForceLogout = () => {
+      localStorage.removeItem('token')
+      setUser(null)
+      const path = window.location.pathname
+      // 已在公开页面（/ 或 /login）时不重复跳转
+      if (path !== '/' && path !== '/login') {
+        navigate('/', { replace: true })
+      }
+    }
+    window.addEventListener('auth:logout', handleForceLogout)
+    return () => window.removeEventListener('auth:logout', handleForceLogout)
+  }, [navigate])
 
   // 使用 useMemo 稳定 Context value 引用，避免不必要的消费者重渲染
   const value = useMemo(

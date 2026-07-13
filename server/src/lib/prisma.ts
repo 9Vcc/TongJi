@@ -3,7 +3,11 @@ import { PrismaMariaDb } from '@prisma/adapter-mariadb'
 
 // 解析 DATABASE_URL（支持 mariadb:// 和 mysql:// 两种协议格式）
 // Prisma CLI 使用 mysql://，应用运行时通过 MariaDB 适配器连接
-const dbUrl = process.env.DATABASE_URL || 'mysql://root:root@localhost:3306/tongji'
+const dbUrl = process.env.DATABASE_URL
+if (!dbUrl) {
+  console.error('[prisma] 环境变量 DATABASE_URL 未设置，无法连接数据库')
+  process.exit(1)
+}
 
 function parseDbUrl(url: string) {
   const match = url.match(/^(?:mariadb|mysql):\/\/([^:]+):([^@]*)@([^:]+):(\d+)\/(.+)$/)
@@ -11,8 +15,7 @@ function parseDbUrl(url: string) {
     const [, user, password, host, port, database] = match
     return { host, user, password: decodeURIComponent(password), port: Number(port), database }
   }
-  // 回退：使用默认本地连接
-  return { host: 'localhost', user: 'root', password: 'root', port: 3306, database: 'tongji' }
+  throw new Error(`[prisma] DATABASE_URL 格式无效: ${url}`)
 }
 
 const config = parseDbUrl(dbUrl)

@@ -1,10 +1,12 @@
 import prisma from '../lib/prisma'
-import { Role, StatCycle } from '../../generated/prisma/client'
+import { StatCycle } from '../../generated/prisma/client'
 import {
   getPeriodStart,
   getPeriodEnd,
 } from './period'
-import { canAccessBranch } from '../middleware/auth'
+// resolveQueryBranchId 已抽取到 ./branch，此处重新导出以保持向后兼容
+// （export.ts、notifications.ts 仍从此处导入）
+export { resolveQueryBranchId } from './branch'
 
 export interface RankingItem {
   rank: number
@@ -123,34 +125,6 @@ export function computeRankReward(
 }
 
 /**
- * 解析查询参数中的分部过滤
- * 会长可指定 branchId 或查看全部；超管可查看指定授权厅或全部授权厅；管理只能查看自己分部
- */
-export function resolveQueryBranchId(
-  currentUser: { role: Role; branchId: number | null; branchIds: number[] },
-  requestedBranchId: string | undefined
-): number | undefined {
-  if (currentUser.role === Role.HUIZHANG) {
-    if (requestedBranchId) {
-      const n = Number(requestedBranchId)
-      return Number.isNaN(n) ? undefined : n
-    }
-    return undefined
-  }
-  // 超管：可查看指定授权厅
-  if (currentUser.role === Role.CHAOGUAN) {
-    if (requestedBranchId) {
-      const n = Number(requestedBranchId)
-      if (!Number.isNaN(n) && canAccessBranch(currentUser, n)) {
-        return n
-      }
-    }
-    return undefined
-  }
-  return currentUser.branchId ?? undefined
-}
-
-/**
  * 根据分部过滤解析统计周期
  * - 未指定分部（全部厅）：统一按周（混合周期场景下保证一致性）
  * - 指定单厅：按该厅的 statCycle
@@ -231,26 +205,25 @@ export async function computeRanking(
 
   if (records.length === 0) return []
 
-  // 获取相关分部的奖励规则
+  // 获取相关分部的奖励规则、冠名等级、扣减（三者互不依赖，并行查询）
   const branchIds = [...new Set(records.map((r) => r.branchId))]
-  const rules = await prisma.rewardRule.findMany({
-    where: { branchId: { in: branchIds } },
-  })
+  const [rules, namingLevels, deductions] = await Promise.all([
+    prisma.rewardRule.findMany({
+      where: { branchId: { in: branchIds } },
+    }),
+    prisma.namingLevel.findMany({
+      where: { branchId: { in: branchIds } },
+    }),
+    // 查询扣减：按 cycle 决定 periodStart（周=周一，月=月初1号）
+    prisma.deduction.findMany({
+      where: {
+        periodStart,
+        ...(branchFilter ? { branchId: branchFilter } : {}),
+      },
+    }),
+  ])
   const ruleMap = new Map(rules.map((r) => [r.branchId, r]))
-
-  // 获取各厅冠名等级（构建 levelId -> { name, reward } 映射）
-  const namingLevels = await prisma.namingLevel.findMany({
-    where: { branchId: { in: branchIds } },
-  })
   const levelInfoMap = new Map(namingLevels.map((l) => [l.id, { name: l.name, reward: l.reward }]))
-
-  // 查询扣减：按 cycle 决定 periodStart（周=周一，月=月初1号）
-  const deductions = await prisma.deduction.findMany({
-    where: {
-      periodStart,
-      ...(branchFilter ? { branchId: branchFilter } : {}),
-    },
-  })
   // 按 (branchId, personnelId) 索引扣减金额
   const deductionMap = new Map<string, number>()
   for (const d of deductions) {

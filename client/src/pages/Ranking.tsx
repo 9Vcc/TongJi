@@ -10,12 +10,14 @@ import {
 } from '../api'
 import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
+import { usePeriodNavigator } from '../hooks/usePeriodNavigator'
 import {
   formatDate,
-  getWeekStart,
-  getPreviousWeekStart,
   getWeekRangeText,
   getMonthRangeText,
+  rankBadgeColors,
+  rankRowBg,
+  formatNamings,
 } from '../utils'
 import { Skeleton } from '../components/Skeleton'
 import type {
@@ -23,35 +25,7 @@ import type {
   RewardRule,
   Branch,
   StatCycle,
-  NamingItem,
 } from '../types'
-
-const rankBadgeColors = ['#F59E0B', '#94A3B8', '#CD7F32']
-const rankRowBg = [
-  'bg-yellow-50 dark:bg-yellow-900/20',
-  'bg-slate-50 dark:bg-slate-700/30',
-  'bg-orange-50 dark:bg-orange-900/20',
-]
-
-// 冠名展示格式：如 "周冠×2 月冠×1"，无则返回 '-'
-function formatNamings(namings?: NamingItem[]): string {
-  if (!namings || namings.length === 0) return '-'
-  return (
-    namings
-      .filter((n) => n.count > 0)
-      .map((n) => `${n.levelName}×${n.count}`)
-      .join(' ') || '-'
-  )
-}
-
-/**
- * 获取月统计厅的月初1日
- */
-function getMonthStart(d: Date): Date {
-  const r = new Date(d.getFullYear(), d.getMonth(), 1)
-  r.setHours(0, 0, 0, 0)
-  return r
-}
 
 export default function Ranking() {
   const { user } = useAuth()
@@ -149,15 +123,22 @@ function BranchRankingCard({
   branch: Branch
   toast: ReturnType<typeof useToast>
 }) {
-  const isMonthCycle = branch.statCycle === 'MONTH'
-  // 初始 weekStart：周统计厅=本周周一，月统计厅=本月1日
-  const [weekStart, setWeekStart] = useState(() =>
-    isMonthCycle ? getMonthStart(new Date()) : getWeekStart()
-  )
   const [weeks, setWeeks] = useState<string[]>([])
   const [ranking, setRanking] = useState<RankingItem[]>([])
   const [rules, setRules] = useState<RewardRule[]>([])
   const [loading, setLoading] = useState(false)
+
+  const {
+    weekStart,
+    setWeekStart,
+    handlePrev,
+    handleNext,
+    handleThisPeriod,
+    availableWeeks,
+    availableMonths,
+    selectedMonthRef,
+    isMonthCycle,
+  } = usePeriodNavigator({ branch, availableWeeks: weeks })
 
   // 全麦是否计入：依据该厅奖励规则 qmEnabled，未加载完成前默认显示
   const qmEnabled = useMemo(() => {
@@ -185,67 +166,6 @@ function BranchRankingCard({
       .finally(() => setLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekStart, branch.id])
-
-  // 合并历史周次与当前周
-  const allWeeks = useMemo(() => {
-    const set = new Set<string>()
-    weeks.forEach((w) => set.add(formatDate(new Date(w))))
-    set.add(formatDate(getWeekStart()))
-    set.add(formatDate(weekStart))
-    return Array.from(set).sort().reverse()
-  }, [weeks, weekStart])
-
-  // 按月统计时：从周列表提取不重复月份
-  const allMonths = useMemo(() => {
-    const monthMap = new Map<string, string>()
-    const addMonth = (dateStr: string) => {
-      const formatted = formatDate(new Date(dateStr))
-      const d = new Date(formatted)
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-      if (!monthMap.has(key)) monthMap.set(key, formatted)
-    }
-    weeks.forEach(addMonth)
-    addMonth(formatDate(new Date()))
-    addMonth(formatDate(weekStart))
-    return Array.from(monthMap.entries())
-      .map(([key, ref]) => ({ key, ref }))
-      .sort((a, b) => b.key.localeCompare(a.key))
-  }, [weeks, weekStart])
-
-  const selectedMonthRef = useMemo(() => {
-    const d = new Date(weekStart)
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    return allMonths.find((m) => m.key === key)?.ref ?? formatDate(weekStart)
-  }, [weekStart, allMonths])
-
-  const handlePrev = () => {
-    if (isMonthCycle) {
-      const d = new Date(weekStart)
-      d.setMonth(d.getMonth() - 1)
-      d.setDate(1)
-      d.setHours(0, 0, 0, 0)
-      setWeekStart(d)
-    } else {
-      setWeekStart(getPreviousWeekStart(weekStart))
-    }
-  }
-  const handleNext = () => {
-    if (isMonthCycle) {
-      const d = new Date(weekStart)
-      d.setMonth(d.getMonth() + 1)
-      d.setDate(1)
-      d.setHours(0, 0, 0, 0)
-      const thisMonthStart = getMonthStart(new Date())
-      if (d <= thisMonthStart) setWeekStart(d)
-    } else {
-      const next = new Date(weekStart)
-      next.setDate(next.getDate() + 7)
-      if (next <= getWeekStart()) setWeekStart(next)
-    }
-  }
-  const handleThisPeriod = () => {
-    setWeekStart(isMonthCycle ? getMonthStart(new Date()) : getWeekStart())
-  }
 
   const top10 = useMemo(() => ranking.slice(0, 10), [ranking])
 
@@ -281,7 +201,7 @@ function BranchRankingCard({
             aria-label="选择月份"
             className="px-2.5 py-1.5 border border-border rounded-md bg-card text-sm text-textPrimary focus:outline-none focus:border-primary min-w-[200px] cursor-pointer"
           >
-            {allMonths.map((m) => (
+            {availableMonths.map((m) => (
               <option key={m.key} value={m.ref}>
                 {getMonthRangeText(m.ref)}
               </option>
@@ -294,7 +214,7 @@ function BranchRankingCard({
             aria-label="选择周次"
             className="px-2.5 py-1.5 border border-border rounded-md bg-card text-sm text-textPrimary focus:outline-none focus:border-primary min-w-[200px] cursor-pointer"
           >
-            {allWeeks.map((w) => (
+            {availableWeeks.map((w) => (
               <option key={w} value={w}>
                 {getWeekRangeText(w)}
               </option>

@@ -1,11 +1,31 @@
 import type { FastifyRequest, FastifyReply } from 'fastify'
+import { LRUCache } from 'lru-cache'
 import { Role } from '../../generated/prisma/client'
 import { verifyToken } from '../utils/jwt'
 import prisma from '../lib/prisma'
 
 /**
+ * 超管授权厅 LRU 缓存
+ * key: accountId
+ * value: branchIds 数组（主厅 + 额外授权厅）
+ * TTL 60s 平衡时效性与 DB 压力；max 1000 足以容纳所有账户
+ */
+const branchIdsCache = new LRUCache<number, number[]>({
+  max: 1000,
+  ttl: 60_000,
+})
+
+/**
+ * 失效指定账户的授权厅缓存
+ * 在账户状态变更、删除、修改授权厅等场景调用
+ */
+export function invalidateAuthCache(accountId: number): void {
+  branchIdsCache.delete(accountId)
+}
+
+/**
  * 认证中间件：验证 JWT，将用户信息挂载到 request.user
- * 超管的 branchIds 从数据库实时加载（支持多厅授权）
+ * 超管的 branchIds 优先从 LRU 缓存读取，未命中再查 DB 并写入缓存
  */
 export async function authenticate(request: FastifyRequest, reply: FastifyReply) {
   const authHeader = request.headers.authorization
@@ -19,14 +39,20 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
     // 超管：从数据库加载所有授权厅（主厅 + AccountBranch 额外授权厅）
     let branchIds: number[] = []
     if (payload.role === Role.CHAOGUAN && payload.branchId !== null) {
-      const extra = await prisma.accountBranch.findMany({
-        where: { accountId: payload.id },
-        select: { branchId: true },
-      })
-      branchIds = [
-        payload.branchId,
-        ...extra.map((ab) => ab.branchId),
-      ]
+      const cached = branchIdsCache.get(payload.id)
+      if (cached !== undefined) {
+        branchIds = cached
+      } else {
+        const extra = await prisma.accountBranch.findMany({
+          where: { accountId: payload.id },
+          select: { branchId: true },
+        })
+        branchIds = [
+          payload.branchId,
+          ...extra.map((ab) => ab.branchId),
+        ]
+        branchIdsCache.set(payload.id, branchIds)
+      }
     }
     request.user = { ...payload, branchIds }
   } catch {

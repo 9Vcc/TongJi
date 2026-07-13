@@ -44,16 +44,15 @@ request.interceptors.request.use(
   (error) => Promise.reject(error)
 )
 
-// 响应拦截器：401 跳转登录
+// 响应拦截器：401 清理凭证并通知 AuthProvider 跳转公开看板
 request.interceptors.response.use(
   (response) => response.data,
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('token')
-      // 避免在登录页循环跳转
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login'
-      }
+      // 通过事件通知 AuthProvider 清理用户状态并使用 react-router 跳转，
+      // 避免整页刷新（window.location.href）丢失 React 状态
+      window.dispatchEvent(new CustomEvent('auth:logout'))
     }
     return Promise.reject(error)
   }
@@ -403,6 +402,7 @@ export const notificationsApi = {
   markAllRead(branchId?: number) {
     return request.patch<unknown, { message: string; count: number }>(
       '/notifications/read-all',
+      undefined,
       { params: branchId ? { branchId } : undefined }
     )
   },

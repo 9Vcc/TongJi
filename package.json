@@ -8,9 +8,20 @@
     "dev:server": "npm run dev --prefix server",
     "dev:client": "npm run dev --prefix client",
     "build": "npm run build --prefix server && npm run build --prefix client",
-    "test": "npm test --prefix server"
+    "test": "npm test --prefix server",
+    "lint:client": "npm run lint --prefix client",
+    "typecheck:client": "npm run typecheck --prefix client",
+    "typecheck:server": "npm run typecheck --prefix server",
+    "typecheck": "npm run typecheck:server && npm run typecheck:client",
+    "prepare": "husky"
   },
   "devDependencies": {
-    "concurrently": "^9.1.0"
+    "concurrently": "^9.1.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.8",
+    "oxlint": "^1.69.0"
+  },
+  "lint-staged": {
+    "client/**/*.{ts,tsx}": ["oxlint -c client/.oxlintrc.json"]
   }
 }

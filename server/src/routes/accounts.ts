@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import prisma from '../lib/prisma'
-import { authenticate, requireRole, canAccessBranch } from '../middleware/auth'
+import { authenticate, requireRole, canAccessBranch, invalidateAuthCache } from '../middleware/auth'
 import { hashPassword } from '../utils/password'
 import { Role, AccountStatus } from '../../generated/prisma/client'
 
@@ -267,6 +267,9 @@ export default async function accountRoutes(fastify: FastifyInstance) {
         },
       })
 
+      // 状态变更后失效该账户的授权厅缓存
+      invalidateAuthCache(accountId)
+
       return reply.send(updated)
     }
   )
@@ -328,6 +331,9 @@ export default async function accountRoutes(fastify: FastifyInstance) {
         // 5. 最后删除账户本身
         await tx.account.delete({ where: { id: accountId } })
       })
+
+      // 删除账户后失效该账户的授权厅缓存
+      invalidateAuthCache(accountId)
 
       return reply.send({ message: '账户已删除' })
     }
@@ -489,6 +495,9 @@ export default async function accountRoutes(fastify: FastifyInstance) {
       if (needSyncBranches) {
         await syncAccountBranches(accountId, updated.branchId, newExtraBranchIds)
       }
+
+      // 账户信息变更后失效该账户的授权厅缓存（角色/主厅/额外授权厅可能已变）
+      invalidateAuthCache(accountId)
 
       const allBranchIds = await loadAccountBranchIds(updated.id, updated.branchId)
       return reply.send({ ...updated, branchIds: allBranchIds })

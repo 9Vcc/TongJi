@@ -3,6 +3,7 @@ import prisma from '../lib/prisma'
 import { authenticate, requireRole, canAccessBranch, getAccessibleBranchIds } from '../middleware/auth'
 import { Role, NotificationType } from '../../generated/prisma/client'
 import { createNotification } from '../services/notification'
+import { isNonNegInt } from '../utils/validation'
 
 interface RewardRuleInput {
   sgRatio?: number
@@ -21,10 +22,6 @@ interface RewardRuleInput {
   stackRankAndMaixu?: boolean
   zcEnabled?: boolean
   zcDayReward?: number
-}
-
-function isNonNegInt(v: unknown): boolean {
-  return typeof v === 'number' && Number.isInteger(v) && v >= 0
 }
 
 function isBool(v: unknown): boolean {

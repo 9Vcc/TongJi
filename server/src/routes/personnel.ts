@@ -2,18 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import prisma from '../lib/prisma'
 import { authenticate, requireRole, canAccessBranch, getAccessibleBranchIds } from '../middleware/auth'
 import { Role } from '../../generated/prisma/client'
-
-/**
- * 获取本周一 00:00:00 作为周起始时间
- */
-function getWeekStart(date = new Date()): Date {
-  const d = new Date(date)
-  const day = d.getDay() // 0 = 周日, 1 = 周一, ...
-  const diff = day === 0 ? -6 : 1 - day // 距周一的天数
-  d.setDate(d.getDate() + diff)
-  d.setHours(0, 0, 0, 0)
-  return d
-}
+import { getWeekStart } from '../utils/week'
 
 export default async function personnelRoutes(fastify: FastifyInstance) {
   // POST /api/personnel - 添加人员
@@ -144,18 +133,34 @@ export default async function personnelRoutes(fastify: FastifyInstance) {
         const createdPersons: string[] = []
         const failures: { name: string; reason: string }[] = []
 
+        // 预先一次性查询所有同名人员及已存在的人员-分部关联，避免逐条 N+1 查询
+        const existingPersonnel = await tx.personnel.findMany({
+          where: { name: { in: normalizedNames } },
+          orderBy: { id: 'asc' },
+        })
+        const personnelByName = new Map<string, (typeof existingPersonnel)[number]>()
+        for (const p of existingPersonnel) {
+          // 保留首个匹配，对齐原先 findFirst 的行为
+          if (!personnelByName.has(p.name)) personnelByName.set(p.name, p)
+        }
+        const existingPersonnelIds = existingPersonnel.map((p) => p.id)
+        const existingAssocs =
+          existingPersonnelIds.length > 0
+            ? await tx.personnelBranch.findMany({
+                where: { personnelId: { in: existingPersonnelIds }, branchId },
+                select: { personnelId: true },
+              })
+            : []
+        const personnelInBranchSet = new Set(
+          existingAssocs.map((a) => a.personnelId)
+        )
+
         for (const name of normalizedNames) {
           try {
-            // 查找同名人员（全局）
-            const existing = await tx.personnel.findFirst({ where: { name } })
+            const existing = personnelByName.get(name)
             if (existing) {
-              // 校验是否已属于该分部
-              const existingAssoc = await tx.personnelBranch.findUnique({
-                where: {
-                  personnelId_branchId: { personnelId: existing.id, branchId },
-                },
-              })
-              if (existingAssoc) {
+              // 校验是否已属于该分部（使用预取 Set）
+              if (personnelInBranchSet.has(existing.id)) {
                 failed++
                 failures.push({ name, reason: '该人员已属于此分部' })
                 continue
@@ -164,6 +169,8 @@ export default async function personnelRoutes(fastify: FastifyInstance) {
               await tx.personnelBranch.create({
                 data: { personnelId: existing.id, branchId },
               })
+              // 同步缓存，避免同名重复添加时误判
+              personnelInBranchSet.add(existing.id)
               success++
               createdPersons.push(name)
               continue
@@ -244,21 +251,12 @@ export default async function personnelRoutes(fastify: FastifyInstance) {
         orderBy: { createdAt: 'desc' },
       })
 
-      // 收集所有涉及的 branchId，查询其 statCycle
+      // 收集所有涉及的 branchId，查询其 statCycle；同时查询当前周期数据记录
+      // 两次查询互不依赖（branchCycleMap 仅在 JS 过滤阶段使用），并行执行
       const involvedBranchIds = new Set<number>()
       for (const p of personnel) {
         for (const pb of p.personnelBranches) {
           involvedBranchIds.add(pb.branchId)
-        }
-      }
-      const branchCycleMap = new Map<number, string>()
-      if (involvedBranchIds.size > 0) {
-        const branchList = await prisma.branch.findMany({
-          where: { id: { in: Array.from(involvedBranchIds) } },
-          select: { id: true, statCycle: true },
-        })
-        for (const b of branchList) {
-          branchCycleMap.set(b.id, b.statCycle)
         }
       }
 
@@ -275,22 +273,34 @@ export default async function personnelRoutes(fastify: FastifyInstance) {
       // 查询范围取并集（周 + 月），后续在 JS 中按厅 statCycle 精确过滤
       const rangeStart = weekStart < monthStart ? weekStart : monthStart
       const rangeEnd = weekEnd > nextMonthStart ? weekEnd : nextMonthStart
-      const dataRecords = await prisma.dataRecord.findMany({
-        where: {
-          personnelId: { in: personnelIds },
-          weekStart: { gte: rangeStart, lt: rangeEnd },
-          ...branchCondition,
-        },
-        select: {
-          id: true,
-          personnelId: true,
-          branchId: true,
-          weekStart: true,
-          sg: true,
-          mx: true,
-          qm: true,
-        },
-      })
+      const [branchList, dataRecords] = await Promise.all([
+        involvedBranchIds.size > 0
+          ? prisma.branch.findMany({
+              where: { id: { in: Array.from(involvedBranchIds) } },
+              select: { id: true, statCycle: true },
+            })
+          : Promise.resolve([]),
+        prisma.dataRecord.findMany({
+          where: {
+            personnelId: { in: personnelIds },
+            weekStart: { gte: rangeStart, lt: rangeEnd },
+            ...branchCondition,
+          },
+          select: {
+            id: true,
+            personnelId: true,
+            branchId: true,
+            weekStart: true,
+            sg: true,
+            mx: true,
+            qm: true,
+          },
+        }),
+      ])
+      const branchCycleMap = new Map<number, string>()
+      for (const b of branchList) {
+        branchCycleMap.set(b.id, b.statCycle)
+      }
 
       // 按厅 statCycle 精确过滤
       const filteredRecords = dataRecords.filter((dr) => {

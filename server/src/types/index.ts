@@ -8,9 +8,8 @@ export interface JwtPayload {
   branchIds: number[]
 }
 
-declare module '@fastify/jwt' {
-  interface FastifyJWT {
-    payload: JwtPayload
+declare module 'fastify' {
+  interface FastifyRequest {
     user: JwtPayload
   }
 }

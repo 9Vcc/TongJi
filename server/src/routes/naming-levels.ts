@@ -4,16 +4,13 @@ import { authenticate, requireRole, canAccessBranch, getAccessibleBranchIds } fr
 import { Role, StatCycle } from '../../generated/prisma/client'
 import { createNotification } from '../services/notification'
 import { NotificationType } from '../../generated/prisma/client'
+import { isNonNegInt } from '../utils/validation'
 
 interface NamingLevelInput {
   name?: string
   threshold?: number
   reward?: number
   sortOrder?: number
-}
-
-function isNonNegInt(v: unknown): boolean {
-  return typeof v === 'number' && Number.isInteger(v) && v >= 0
 }
 
 export default async function namingLevelRoutes(fastify: FastifyInstance) {
