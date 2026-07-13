@@ -7,7 +7,25 @@ import { Role } from '../generated/prisma/client'
 
 let app: FastifyInstance
 
-beforeAll(async () => {
+// 检测数据库是否可用：不可用时跳过整个测试文件，避免 beforeAll 超时
+async function isDbAvailable(): Promise<boolean> {
+  return Promise.race([
+    prisma
+      .$queryRaw`SELECT 1`
+      .then(() => true)
+      .catch(() => false),
+    // 2 秒内未连接成功视为不可用
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2000)),
+  ])
+}
+
+beforeAll(async (ctx) => {
+  // 无数据库环境（如本地 pre-push）跳过 DB 相关测试
+  if (!(await isDbAvailable())) {
+    ctx.skip()
+    return
+  }
+
   // 清理并创建测试用户
   await prisma.account.deleteMany({})
 
@@ -39,6 +57,7 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
+  if (!app) return
   await prisma.account.deleteMany({})
   await app.close()
   await prisma.$disconnect()
