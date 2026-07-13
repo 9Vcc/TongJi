@@ -2,13 +2,23 @@
 # 多阶段构建：前端 + 后端 + Nginx
 # ============================================
 
+# 全局 npm 配置：国内镜像源 + 超时延长，避免 Docker 构建时网络不稳定
+# 通过 build arg 可在构建时覆盖镜像源：--build-arg NPM_REGISTRY=...
+ARG NPM_REGISTRY=https://registry.npmmirror.com
+
 # ---------- Stage 1: 构建前端 ----------
 FROM node:22-alpine AS client-build
+ARG NPM_REGISTRY
 WORKDIR /app/client
 
 # 先复制依赖文件，利用 Docker 层缓存
 COPY client/package.json client/package-lock.json* ./
-RUN npm ci
+RUN npm config set registry "$NPM_REGISTRY" && \
+    npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm config set fetch-timeout 300000 && \
+    npm ci
 
 # 复制源码并构建
 COPY client/ ./
@@ -17,11 +27,17 @@ RUN npm run build
 
 # ---------- Stage 2: 构建后端 ----------
 FROM node:22-alpine AS server-build
+ARG NPM_REGISTRY
 WORKDIR /app/server
 
 # 复制依赖文件
 COPY server/package.json server/package-lock.json* ./
-RUN npm ci
+RUN npm config set registry "$NPM_REGISTRY" && \
+    npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm config set fetch-timeout 300000 && \
+    npm ci
 
 # 复制源码（含 prisma schema）
 COPY server/ ./
@@ -35,6 +51,7 @@ RUN npm run build
 
 # ---------- Stage 3: 运行时 ----------
 FROM node:22-alpine AS runtime
+ARG NPM_REGISTRY
 
 # 安装 nginx + mariadb-client（用于数据库备份 mysqldump）
 RUN apk add --no-cache nginx mariadb-client
@@ -45,7 +62,12 @@ WORKDIR /app
 
 # 安装生产依赖（prisma CLI 用于 migrate deploy）
 COPY server/package.json server/package-lock.json* ./
-RUN npm ci --omit=dev
+RUN npm config set registry "$NPM_REGISTRY" && \
+    npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm config set fetch-timeout 300000 && \
+    npm ci --omit=dev
 
 # 复制后端构建产物
 COPY --from=server-build /app/server/dist ./dist
