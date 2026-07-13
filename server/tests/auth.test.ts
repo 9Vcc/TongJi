@@ -5,65 +5,51 @@ import prisma from '../src/lib/prisma'
 import { hashPassword } from '../src/utils/password'
 import { Role } from '../generated/prisma/client'
 
+// globalSetup 在连接数据库后设置 DB_AVAILABLE 环境变量；vitest 会传递给 worker
+const dbAvailable = process.env.DB_AVAILABLE === '1'
+
 let app: FastifyInstance
 
-// 检测数据库是否可用：不可用时跳过整个测试文件，避免 beforeAll 超时
-async function isDbAvailable(): Promise<boolean> {
-  return Promise.race([
-    prisma
-      .$queryRaw`SELECT 1`
-      .then(() => true)
-      .catch(() => false),
-    // 2 秒内未连接成功视为不可用
-    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 2000)),
-  ])
-}
+// 无数据库环境（如本地 pre-push）跳过整个 suite
+describe.skipIf(!dbAvailable)('认证接口', () => {
+  beforeAll(async () => {
+    // 清理并创建测试用户
+    await prisma.account.deleteMany({})
 
-beforeAll(async (ctx) => {
-  // 无数据库环境（如本地 pre-push）跳过 DB 相关测试
-  if (!(await isDbAvailable())) {
-    ctx.skip()
-    return
-  }
+    const hash = await hashPassword('testpass123')
+    await prisma.account.create({
+      data: {
+        username: 'testuser',
+        passwordHash: hash,
+        role: Role.HUIZHANG,
+        status: 'ACTIVE',
+      },
+    })
 
-  // 清理并创建测试用户
-  await prisma.account.deleteMany({})
+    // 创建一个禁用的用户
+    const disabledHash = await hashPassword('disabledpass')
+    await prisma.account.create({
+      data: {
+        username: 'disableduser',
+        passwordHash: disabledHash,
+        role: Role.GUANLI,
+        status: 'DISABLED',
+      },
+    })
 
-  const hash = await hashPassword('testpass123')
-  await prisma.account.create({
-    data: {
-      username: 'testuser',
-      passwordHash: hash,
-      role: Role.HUIZHANG,
-      status: 'ACTIVE',
-    },
+    // 构建仅包含认证路由的 Fastify 实例
+    app = Fastify()
+    await app.register(authRoutes)
+    await app.ready()
   })
 
-  // 创建一个禁用的用户
-  const disabledHash = await hashPassword('disabledpass')
-  await prisma.account.create({
-    data: {
-      username: 'disableduser',
-      passwordHash: disabledHash,
-      role: Role.GUANLI,
-      status: 'DISABLED',
-    },
+  afterAll(async () => {
+    if (!app) return
+    await prisma.account.deleteMany({})
+    await app.close()
+    await prisma.$disconnect()
   })
 
-  // 构建仅包含认证路由的 Fastify 实例
-  app = Fastify()
-  await app.register(authRoutes)
-  await app.ready()
-})
-
-afterAll(async () => {
-  if (!app) return
-  await prisma.account.deleteMany({})
-  await app.close()
-  await prisma.$disconnect()
-})
-
-describe('认证接口', () => {
   it('登录成功：正确用户名和密码返回 token 和用户信息', async () => {
     const res = await app.inject({
       method: 'POST',

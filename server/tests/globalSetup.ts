@@ -48,12 +48,15 @@ export default async function globalSetup() {
       `[globalSetup] 跳过数据库准备：无法连接 MariaDB (${host}:${port})。` +
         `纯函数测试可正常运行，依赖数据库的测试将失败。错误: ${code || (err as Error).message}`,
     )
+    // 标记数据库不可用，供测试文件通过 describe.skipIf 跳过
+    process.env.DB_AVAILABLE = '0'
     return
   } finally {
     if (pool) await pool.end()
   }
 
   // 运行迁移，在测试数据库上创建表结构
+  process.env.DB_AVAILABLE = '1'
   execSync('npx prisma migrate deploy', {
     stdio: 'pipe',
     cwd: process.cwd(),
