@@ -346,6 +346,70 @@
   }
 }
 
+/* ============ 侧边栏菜单项 ============ */
+.nav-item {
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.nav-item-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 60%;
+  background: rgb(var(--color-primary));
+  border-radius: 0 3px 3px 0;
+}
+
+/* ============ TopBar 图标 hover 动画 ============ */
+.icon-rotate-hover:hover svg {
+  animation: iconRotate180 0.5s ease;
+}
+
+.icon-shake-hover:hover svg {
+  animation: iconShake 0.5s ease-in-out;
+}
+
+.icon-expand-hover:hover svg {
+  animation: iconExpand 0.6s ease forwards;
+}
+
+.icon-moveup-hover:hover svg {
+  animation: iconMoveUp 0.4s ease;
+}
+
+@keyframes iconRotate180 {
+  from { transform: rotate(0); }
+  to { transform: rotate(180deg); }
+}
+
+@keyframes iconShake {
+  0%, 100% { transform: rotate(0); }
+  25% { transform: rotate(-8deg); }
+  50% { transform: rotate(8deg); }
+  75% { transform: rotate(-5deg); }
+}
+
+@keyframes iconExpand {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+@keyframes iconMoveUp {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+/* ============ 主题切换过渡优化 ============ */
+.theme-change *,
+.theme-change *::before,
+.theme-change *::after {
+  transition-duration: 0s !important;
+}
+
 /* ============ 打印样式 ============ */
 @media print {
   aside,
@@ -491,23 +555,6 @@
   animation: toastOut 0.25s ease-in forwards;
 }
 
-/* ============ 登录页入场动画 ============ */
-@keyframes loginFadeUp {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.animate-login {
-  opacity: 0;
-  animation: loginFadeUp 0.5s ease-out forwards;
-}
-
 /* ============ 按钮按压反馈 ============ */
 .btn-press {
   transition: transform 0.1s ease, background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
@@ -559,4 +606,613 @@ h5,
 h6 {
   overflow-wrap: anywhere;
   line-height: 1.3;
+}
+
+/* ============ 登录页样式 ============ */
+.login-page {
+  background-color: rgb(var(--color-surface));
+}
+
+/* ============ 主题切换圆形扩散动画 ============ */
+@keyframes clip {
+  from {
+    clip-path: circle(0% at var(--x) var(--y));
+  }
+  to {
+    clip-path: circle(var(--r) at var(--x) var(--y));
+  }
+}
+
+/* 亮色模式：新视图从点击点圆形扩散覆盖旧视图 */
+::view-transition-old(*) {
+  animation: none;
+}
+::view-transition-new(*) {
+  animation: clip 0.5s ease-in both;
+}
+::view-transition-old(root) {
+  z-index: 1;
+}
+::view-transition-new(root) {
+  z-index: 9999;
+}
+
+/* 暗色模式：旧视图反向收缩消失 */
+.dark::view-transition-old(*) {
+  animation: clip 0.5s ease-in reverse both;
+}
+.dark::view-transition-new(*) {
+  animation: none;
+}
+.dark::view-transition-old(root) {
+  z-index: 9999;
+}
+.dark::view-transition-new(root) {
+  z-index: 1;
+}
+
+/* 左侧品牌展示区 */
+.login-left-view {
+  position: relative;
+  box-sizing: border-box;
+  width: 55vw;
+  height: 100%;
+  padding: 15px;
+  overflow: hidden;
+  background-color: rgb(var(--color-primary) / 0.06);
+}
+
+.dark .login-left-view {
+  background: linear-gradient(
+    135deg,
+    rgb(var(--color-primary) / 0.1) 0%,
+    rgb(var(--color-card)) 50%,
+    rgb(var(--color-primary) / 0.06) 100%
+  );
+}
+
+/* Silk 丝滑 Shader 动画背景：铺满左侧面板，位于最底层 */
+.silk-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.45;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+.silk-bg canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.dark .silk-bg {
+  opacity: 0.3;
+  mix-blend-mode: normal;
+}
+
+/* Logo */
+.login-logo {
+  position: relative;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  opacity: 0;
+  animation: loginFadeDown 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+.login-logo-title {
+  margin-left: 10px;
+  font-size: 20px;
+  font-weight: 500;
+}
+
+/* 中心插画 */
+.login-left-img {
+  position: absolute;
+  inset: 0 0 80px 0;
+  z-index: 10;
+  width: 50%;
+  max-width: 420px;
+  margin: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: loginSlideLeft 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+.login-illustration {
+  width: 100%;
+  height: auto;
+}
+
+/* 底部标语 */
+.login-text-wrap {
+  position: absolute;
+  bottom: 40px;
+  width: 100%;
+  text-align: center;
+  z-index: 10;
+  animation: loginSlideLeft 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+.login-text-wrap h2 {
+  font-size: 22px;
+  font-weight: 500;
+  color: rgb(var(--color-text-primary));
+}
+
+.login-text-wrap p {
+  margin-top: 8px;
+  font-size: 14px;
+  color: rgb(var(--color-text-secondary));
+}
+
+/* 右侧表单区 */
+.auth-right-wrap {
+  width: 100%;
+  max-width: 400px;
+  padding: 40px 0;
+}
+
+.auth-right-wrap .form {
+  width: 100%;
+}
+
+.form-title {
+  font-size: 32px;
+  font-weight: 600;
+  color: rgb(var(--color-text-primary));
+}
+
+.form-subtitle {
+  margin-top: 8px;
+  font-size: 14px;
+  color: rgb(var(--color-text-muted));
+  margin-bottom: 24px;
+}
+
+/* 右上角工具栏 */
+.auth-top-bar {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.auth-top-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: rgb(var(--color-text-secondary));
+  border: 1px solid rgb(var(--color-border));
+  border-radius: 8px;
+  background: rgb(var(--color-card));
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.auth-top-btn:hover {
+  color: rgb(var(--color-primary));
+  border-color: rgb(var(--color-primary) / 0.5);
+}
+
+/* 密码可见时的圆点间距（仅密码框，通过 id 精确匹配） */
+#password[type='text'] {
+  letter-spacing: 2px;
+}
+
+/* ============ 拖拽验证组件 ============ */
+.drag-verify {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  user-select: none;
+  border: 1px solid rgb(var(--color-border));
+  transition: border-color 0.2s ease;
+}
+
+.drag-verify:hover {
+  border-color: rgb(var(--color-primary) / 0.4);
+}
+
+.dv-progress-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.dv-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  z-index: 1;
+  font-size: 13px;
+}
+
+/* 未验证时：文字流光高亮动画 */
+.dv-text-slide {
+  background: linear-gradient(
+    90deg,
+    rgb(var(--color-text-muted)) 0%,
+    rgb(var(--color-text-muted)) 40%,
+    rgb(var(--color-primary)) 50%,
+    rgb(var(--color-text-muted)) 60%,
+    rgb(var(--color-text-muted)) 100%
+  );
+  background-size: 200% 100%;
+  background-position: var(--pwidth) 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: slidetounlock 2s cubic-bezier(0, 0.2, 1, 1) infinite;
+}
+
+@keyframes slidetounlock {
+  0% {
+    background-position: var(--pwidth) 0;
+  }
+  100% {
+    background-position: var(--width) 0;
+  }
+}
+
+/* 验证通过后：静止文字（取消流光） */
+.dv-text-static {
+  -webkit-text-fill-color: initial;
+  background: none;
+}
+
+.dv-handler {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  z-index: 2;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+  transition: box-shadow 0.2s ease;
+}
+
+.dv-handler:hover {
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.18);
+}
+
+.dv-handler:active {
+  cursor: grabbing;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.15);
+}
+
+/* ============ 几何装饰元素 ============ */
+.geo-decorations .geo {
+  position: absolute;
+  opacity: 0;
+  animation-fill-mode: forwards;
+  animation-duration: 0.8s;
+  animation-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* 基础几何形状 */
+.geo-circle-outline {
+  top: 10%;
+  left: 22%;
+  width: 42px;
+  height: 42px;
+  border: 2px solid rgb(var(--color-primary) / 0.25);
+  border-radius: 50%;
+}
+
+.geo-square-rotated {
+  top: 50%;
+  left: 14%;
+  width: 56px;
+  height: 56px;
+  background-color: rgb(var(--color-primary) / 0.2);
+  border-radius: 6px;
+}
+
+.geo-circle-small {
+  bottom: 26%;
+  left: 28%;
+  width: 18px;
+  height: 18px;
+  background-color: rgb(var(--color-primary) / 0.3);
+  border-radius: 50%;
+}
+
+.geo-square-bottom-right {
+  right: 8%;
+  bottom: 8%;
+  width: 50px;
+  height: 50px;
+  background-color: rgb(var(--color-primary) / 0.2);
+  border-radius: 8px;
+}
+
+/* 背景大泡泡 */
+.geo-bg-bubble {
+  top: -120px;
+  right: -120px;
+  width: 360px;
+  height: 360px;
+  background-color: rgb(var(--color-primary) / 0.08);
+  border-radius: 50%;
+}
+
+/* 装饰点 */
+.geo-dot {
+  width: 14px;
+  height: 14px;
+  background-color: rgb(var(--color-primary) / 0.3);
+  border-radius: 50%;
+}
+
+.geo-dot-tl { top: 140px; left: 80px; }
+.geo-dot-tr { top: 140px; right: 100px; }
+.geo-dot-cr { top: 46%; right: 18%; background-color: rgb(var(--color-primary) / 0.2); }
+
+/* 暗色模式下几何装饰透明度提升 */
+.dark .geo-circle-outline {
+  border-color: rgb(var(--color-primary) / 0.4);
+}
+
+.dark .geo-square-rotated {
+  background-color: rgb(var(--color-primary) / 0.3);
+}
+
+.dark .geo-circle-small {
+  background-color: rgb(var(--color-primary) / 0.4);
+}
+
+.dark .geo-square-bottom-right {
+  background-color: rgb(var(--color-primary) / 0.3);
+}
+
+.dark .geo-bg-bubble {
+  background-color: rgb(var(--color-primary) / 0.15);
+}
+
+.dark .geo-dot {
+  background-color: rgb(var(--color-primary) / 0.4);
+}
+
+.dark .geo-dot-cr {
+  background-color: rgb(var(--color-primary) / 0.3);
+}
+
+.dark .squares-group::after {
+  background: linear-gradient(90deg, rgb(var(--color-primary) / 0.6), transparent);
+}
+
+/* 叠加方块组 */
+.squares-group {
+  position: absolute;
+  bottom: 18px;
+  left: 20px;
+  width: 140px;
+  height: 140px;
+  pointer-events: none;
+}
+
+.geo-square {
+  position: absolute;
+  display: block;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(var(--color-primary) / 0.12);
+  /* 继承装饰元素的动画公共属性 */
+  opacity: 0;
+  animation-fill-mode: forwards;
+  animation-duration: 0.8s;
+  animation-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.geo-square-1 {
+  top: 12px;
+  left: 30px;
+  z-index: 2;
+  width: 50px;
+  height: 50px;
+  background-color: rgb(var(--color-primary) / 0.3);
+}
+
+.geo-square-2 {
+  top: 30px;
+  left: 48px;
+  z-index: 1;
+  width: 70px;
+  height: 70px;
+  background-color: rgb(var(--color-primary) / 0.15);
+}
+
+.geo-square-3 {
+  top: 66px;
+  left: 86px;
+  z-index: 3;
+  width: 32px;
+  height: 32px;
+  background-color: rgb(var(--color-primary) / 0.45);
+}
+
+.dark .geo-square {
+  box-shadow: none;
+}
+
+.dark .geo-square-1 { background-color: rgb(var(--color-primary) / 0.18); }
+.dark .geo-square-2 { background-color: rgb(var(--color-primary) / 0.1); }
+.dark .geo-square-3 { background-color: rgb(var(--color-primary) / 0.2); }
+
+/* squares-group 装饰线 */
+.squares-group::after {
+  content: '';
+  position: absolute;
+  top: 86px;
+  left: 72px;
+  width: 80px;
+  height: 1px;
+  background: linear-gradient(90deg, rgb(var(--color-primary) / 0.4), transparent);
+  opacity: 0;
+  transform: rotate(50deg);
+  animation: loginLineGrow 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+  animation-delay: 1.2s;
+}
+
+/* ============ 入场动画 ============ */
+@keyframes loginFadeUp {
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes loginFadeDown {
+  from { opacity: 0; transform: translateY(-30px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes loginFadeLeft {
+  from { opacity: 0; transform: translateX(-30px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes loginFadeRight {
+  from { opacity: 0; transform: translateX(30px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes loginScaleIn {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes loginBounceIn {
+  0% { opacity: 0; transform: scale(0.3); }
+  50% { opacity: 1; transform: scale(1.05); }
+  70% { transform: scale(0.9); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes loginSlideLeft {
+  from { opacity: 0; transform: translateX(-30px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes loginLineGrow {
+  from { opacity: 0; transform: rotate(50deg); }
+  to { opacity: 1; transform: rotate(50deg); }
+}
+
+/* square-rotated 保留旋转 */
+.geo-square-rotated.anim-fade-left {
+  animation: loginFadeLeftRotated 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+@keyframes loginFadeLeftRotated {
+  from { opacity: 0; transform: translateX(-30px) rotate(-25deg); }
+  to { opacity: 1; transform: translateX(0) rotate(-25deg); }
+}
+
+/* square-bottom-right 保留旋转 */
+.geo-square-bottom-right.anim-fade-right {
+  animation: loginFadeRightRotated 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+@keyframes loginFadeRightRotated {
+  from { opacity: 0; transform: translateX(30px) rotate(45deg); }
+  to { opacity: 1; transform: translateX(0) rotate(45deg); }
+}
+
+/* 每个动画类包含完整的 animation 简写，不依赖属性合并 */
+.anim-fade-up {
+  animation: loginFadeUp 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+.anim-fade-down {
+  animation: loginFadeDown 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+.anim-fade-left {
+  animation: loginFadeLeft 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+.anim-fade-right {
+  animation: loginFadeRight 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+.anim-scale-in {
+  animation: loginScaleIn 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+.anim-bounce-in {
+  animation: loginBounceIn 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* 叠加方块组的三个不同旋转动画 */
+@keyframes loginFadeLeftRotatedBlue {
+  from { opacity: 0; transform: translateX(-30px) rotate(-10deg); }
+  to { opacity: 1; transform: translateX(0) rotate(-10deg); }
+}
+
+@keyframes loginFadeLeftRotatedPink {
+  from { opacity: 0; transform: translateX(-30px) rotate(10deg); }
+  to { opacity: 1; transform: translateX(0) rotate(10deg); }
+}
+
+@keyframes loginFadeLeftNoRotation {
+  from { opacity: 0; transform: translateX(-30px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.anim-fade-left-rotated-blue {
+  animation: loginFadeLeftRotatedBlue 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+.anim-fade-left-rotated-pink {
+  animation: loginFadeLeftRotatedPink 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+.anim-fade-left-no-rotation {
+  animation: loginFadeLeftNoRotation 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* 表单入场动画 */
+@keyframes formEnter {
+  from { opacity: 0; transform: translateX(30px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.animate-form-enter {
+  animation: formEnter 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+/* ============ 登录页响应式 ============ */
+@media (max-width: 1180px) {
+  .login-left-view {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .auth-right-wrap {
+    padding: 20px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .geo-decorations .geo,
+  .login-left-img,
+  .login-text-wrap,
+  .login-logo,
+  .squares-group::after,
+  .animate-form-enter {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  /* 禁用动画时，方块组保持各自的旋转角度 */
+  .squares-group .geo-square-1 { transform: rotate(-10deg); }
+  .squares-group .geo-square-2 { transform: rotate(10deg); }
+  .squares-group .geo-square-3 { transform: rotate(0deg); }
 }

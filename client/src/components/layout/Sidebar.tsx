@@ -84,11 +84,11 @@ export default function Sidebar({
               onClick={() => setSidebarOpen(false)}
               title={sidebarCollapsed ? item.label : undefined}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
+                `nav-item relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
                   sidebarCollapsed ? 'lg:justify-center' : ''
                 } ${
                   isActive
-                    ? 'bg-primary text-white'
+                    ? 'nav-item-active bg-primary/10 text-primary'
                     : 'text-textSecondary hover:bg-surface hover:text-textPrimary'
                 }`
               }

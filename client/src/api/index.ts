@@ -62,6 +62,8 @@ request.interceptors.response.use(
 // 统一错误消息提取
 export function getErrorMessage(error: unknown): string {
   if (axios.isAxiosError(error)) {
+    // 429 限流提示静默处理（不向用户弹 toast）
+    if (error.response?.status === 429) return ''
     return error.response?.data?.error || error.message || '请求失败'
   }
   if (error instanceof Error) return error.message

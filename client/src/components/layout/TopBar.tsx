@@ -62,7 +62,7 @@ export default function TopBar({
           href="/"
           aria-label="返回首页"
           title="返回公开看板"
-          className="flex items-center gap-1.5 p-2 text-textSecondary hover:text-primary rounded-lg hover:bg-primary/10 transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+          className="icon-moveup-hover flex items-center gap-1.5 p-2 text-textSecondary hover:text-primary rounded-lg hover:bg-primary/10 transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
         >
           <Home size={20} />
           <span className="hidden sm:inline text-sm">首页</span>
@@ -72,7 +72,7 @@ export default function TopBar({
         {/* 通知 */}
         <div className="relative">
           <button
-            className="relative p-2 text-textSecondary hover:text-textPrimary rounded-lg hover:bg-surface transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+            className="icon-shake-hover relative p-2 text-textSecondary hover:text-textPrimary rounded-lg hover:bg-surface transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
             onClick={() => setNotifOpen((v) => !v)}
             aria-label={`通知${unreadCount > 0 ? `（${unreadCount}条未读）` : ''}`}
             aria-expanded={notifOpen}

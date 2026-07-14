@@ -15,6 +15,8 @@ interface ThemeContextValue {
   resolvedTheme: ResolvedTheme
   setTheme: (theme: Theme) => void
   toggleTheme: () => void
+  /** 带圆形扩散动画的主题切换（基于点击位置） */
+  themeAnimation: (e: { clientX: number; clientY: number }) => void
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
@@ -80,17 +82,55 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const toggleTheme = useCallback(() => {
     setThemeState((prev) => {
-      const order: Theme[] = ['light', 'dark', 'auto']
-      const idx = order.indexOf(prev)
-      const next = order[(idx + 1) % order.length]
+      // 只在明暗间切换，不切换 auto 模式
+      const current = prev === 'auto' ? getSystemTheme() : prev
+      const next: Theme = current === 'dark' ? 'light' : 'dark'
       localStorage.setItem(STORAGE_KEY, next)
       return next
     })
   }, [])
 
+  // 临时禁用全局 transition（避免主题切换时元素逐个变色的闪烁感）
+  const disableTransitions = useCallback(() => {
+    document.body.classList.add('theme-change')
+  }, [])
+
+  const enableTransitions = useCallback(() => {
+    // 延迟移除，等待 View Transition 动画完成
+    setTimeout(() => document.body.classList.remove('theme-change'), 300)
+  }, [])
+
+  // 带圆形扩散动画的主题切换（基于点击位置）
+  const themeAnimation = useCallback((e: { clientX: number; clientY: number }) => {
+    const x = e.clientX
+    const y = e.clientY
+    const endRadius = Math.hypot(
+      Math.max(x, window.innerWidth - x),
+      Math.max(y, window.innerHeight - y),
+    )
+    document.documentElement.style.setProperty('--x', `${x}px`)
+    document.documentElement.style.setProperty('--y', `${y}px`)
+    document.documentElement.style.setProperty('--r', `${endRadius}px`)
+
+    // 切换前禁用全局 transition，避免闪烁
+    disableTransitions()
+
+    if (document.startViewTransition) {
+      document.startViewTransition(() => toggleTheme())
+      // View Transition 动画结束后恢复 transition
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => enableTransitions())
+      })
+    } else {
+      toggleTheme()
+      // 降级：下一帧恢复
+      requestAnimationFrame(() => enableTransitions())
+    }
+  }, [toggleTheme, disableTransitions, enableTransitions])
+
   return (
     <ThemeContext.Provider
-      value={{ theme, resolvedTheme, setTheme, toggleTheme }}
+      value={{ theme, resolvedTheme, setTheme, toggleTheme, themeAnimation }}
     >
       {children}
     </ThemeContext.Provider>

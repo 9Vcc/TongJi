@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Trophy,
   Eye,
@@ -78,13 +79,13 @@ export default function PublicRanking() {
             </p>
           </div>
           <ThemeToggle />
-          <a
-            href={isLoggedIn ? "/dashboard" : "/login"}
+          <Link
+            to={isLoggedIn ? "/dashboard" : "/login"}
             className="text-xs text-textSecondary hover:text-primary transition-colors px-3 py-1.5 rounded-md border border-border hover:border-primary/50 flex items-center gap-1.5"
           >
             {isLoggedIn ? <LayoutDashboard size={14} /> : <LogIn size={14} />}
             {isLoggedIn ? "进入后台" : "登录后台"}
-          </a>
+          </Link>
         </div>
       </header>
 

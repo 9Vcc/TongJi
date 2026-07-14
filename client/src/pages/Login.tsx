@@ -1,11 +1,14 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { BarChart3, LogIn, AlertCircle, Home } from 'lucide-react'
+import { BarChart3, LogIn, AlertCircle, Home, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { useToast } from '../hooks/useToast'
 import { getErrorMessage } from '../api'
 import { Spinner } from '../components/Skeleton'
+import DragVerify, { type DragVerifyHandle } from '../components/DragVerify'
+import LoginIllustration from '../components/LoginIllustration'
+import Silk from '../components/Silk'
+import ThemeToggle from '../components/ThemeToggle'
 
 export default function Login() {
   const { login } = useAuth()
@@ -15,11 +18,19 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+  const [isPassing, setIsPassing] = useState(false)
+  const [clickPass, setClickPass] = useState(false)
+  const dragVerifyRef = useRef<DragVerifyHandle>(null)
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     if (!username || !password) {
       setError('请输入用户名和密码')
+      return
+    }
+    if (!isPassing) {
+      setClickPass(true)
       return
     }
     setError('')
@@ -31,112 +42,159 @@ export default function Login() {
     } catch (err) {
       const msg = getErrorMessage(err)
       setError(msg)
+      // 登录失败后重置滑块验证
+      dragVerifyRef.current?.reset()
+      setIsPassing(false)
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface via-surface to-primary/5 dark:from-surface dark:via-surface dark:to-surface flex items-center justify-center p-4">
-      {/* 右上角返回首页按钮 */}
-      <button
-        onClick={() => navigate('/')}
-        aria-label="返回首页"
-        className="absolute top-4 right-4 flex items-center gap-1.5 px-3 py-1.5 text-xs text-textSecondary hover:text-primary border border-border rounded-md bg-card hover:border-primary/50 transition-colors duration-200 cursor-pointer"
-      >
-        <Home size={14} />
-        首页
-      </button>
-      <div className="w-full max-w-sm">
+    <div className="login-page flex w-full h-screen">
+      {/* 左侧：品牌展示区 */}
+      <div className="login-left-view">
+        {/* Silk 丝滑 Shader 动画背景 */}
+        <div className="silk-bg">
+          <Silk
+            speed={4.4}
+            scale={0.8}
+            color="#7B7481"
+            noiseIntensity={0.3}
+            rotation={0}
+          />
+        </div>
+
         {/* Logo */}
-        <motion.div
-          className="flex flex-col items-center mb-8"
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-        >
-          <div className="w-14 h-14 rounded-2xl bg-primary flex items-center justify-center mb-3 shadow-lg shadow-primary/20">
-            <BarChart3 size={28} className="text-white" />
+        <div className="login-logo">
+          <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
+            <BarChart3 size={22} className="text-white" />
           </div>
-          <h1 className="text-2xl font-semibold text-textPrimary">统计系统</h1>
-          <p className="text-sm text-textSecondary mt-1">数据统计与福利管理</p>
-        </motion.div>
+          <h1 className="login-logo-title">统计系统</h1>
+        </div>
 
-        {/* 登录卡片 */}
-        <motion.div
-          className="bg-card border border-border rounded-xl p-6 shadow-sm card-hover"
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
-        >
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* 用户名 - 浮动标签 */}
-            <div className="relative">
-              <input
-                type="text"
-                id="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder=" "
-                className="peer w-full px-3 pt-5 pb-2 border border-border rounded-lg text-sm text-textPrimary bg-card focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
-                autoComplete="username"
-              />
-              <label
-                htmlFor="username"
-                className={`absolute left-3 pointer-events-none transition-all duration-200 ${
-                  username
-                    ? 'top-1.5 translate-y-0 text-xs text-textSecondary'
-                    : 'top-1/2 -translate-y-1/2 text-sm text-textMuted'
-                } peer-focus:top-1.5 peer-focus:translate-y-0 peer-focus:text-xs peer-focus:text-primary`}
-              >
-                用户名
-              </label>
-            </div>
+        {/* 中心 SVG 插画 */}
+        <div className="login-left-img">
+          <LoginIllustration />
+        </div>
 
-            {/* 密码 - 浮动标签 */}
-            <div className="relative">
-              <input
-                type="password"
-                id="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder=" "
-                className="peer w-full px-3 pt-5 pb-2 border border-border rounded-lg text-sm text-textPrimary bg-card focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
-                autoComplete="current-password"
-              />
-              <label
-                htmlFor="password"
-                className={`absolute left-3 pointer-events-none transition-all duration-200 ${
-                  password
-                    ? 'top-1.5 translate-y-0 text-xs text-textSecondary'
-                    : 'top-1/2 -translate-y-1/2 text-sm text-textMuted'
-                } peer-focus:top-1.5 peer-focus:translate-y-0 peer-focus:text-xs peer-focus:text-primary`}
-              >
-                密码
-              </label>
-            </div>
+        {/* 底部标语 */}
+        <div className="login-text-wrap">
+          <h2>数据统计与福利管理</h2>
+          <p>高效、精准的数据录入与排行看板</p>
+        </div>
+      </div>
 
-            {error && (
-              <div className="flex items-center gap-2 px-3 py-2 bg-danger/10 text-danger text-sm rounded-lg">
-                <AlertCircle size={16} className="shrink-0" />
-                <span>{error}</span>
+      {/* 右侧：登录表单区 */}
+      <div className="relative flex-1 flex items-center justify-center px-6">
+        {/* 右上角工具栏 */}
+        <div className="auth-top-bar">
+          <button
+            onClick={() => navigate('/')}
+            aria-label="返回首页"
+            className="auth-top-btn"
+          >
+            <Home size={18} />
+            <span>首页</span>
+          </button>
+          {/* 主题切换按钮 */}
+          <ThemeToggle />
+        </div>
+
+        {/* 表单卡片 */}
+        <div className="auth-right-wrap w-full max-w-[400px]">
+          <div className="form animate-form-enter">
+            <h3 className="form-title">欢迎回来</h3>
+            <p className="form-subtitle">请登录您的账户以继续</p>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* 用户名 */}
+              <div className="relative">
+                <input
+                  type="text"
+                  id="username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder=" "
+                  className="login-input peer w-full px-3 pt-4 pb-3 border border-border rounded-lg text-sm text-textPrimary bg-card focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+                  autoComplete="username"
+                />
+                <label
+                  htmlFor="username"
+                  className="absolute left-3 pointer-events-none transition-all duration-200 peer-focus:top-1.5 peer-focus:translate-y-0 peer-focus:text-xs peer-focus:text-primary"
+                  style={username ? { top: '4px', transform: 'translateY(0)', fontSize: '12px', color: 'rgb(var(--color-text-secondary))' } : { top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: 'rgb(var(--color-text-muted))' }}
+                >
+                  用户名
+                </label>
               </div>
-            )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
-            >
-              {loading ? (
-                <Spinner className="h-4 w-4" />
-              ) : (
-                <LogIn size={16} />
+              {/* 密码 */}
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  id="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder=" "
+                  className="login-input peer w-full px-3 pt-4 pb-3 pr-10 border border-border rounded-lg text-sm text-textPrimary bg-card focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+                  autoComplete="current-password"
+                />
+                <label
+                  htmlFor="password"
+                  className="absolute left-3 pointer-events-none transition-all duration-200 peer-focus:top-1.5 peer-focus:translate-y-0 peer-focus:text-xs peer-focus:text-primary"
+                  style={password ? { top: '4px', transform: 'translateY(0)', fontSize: '12px', color: 'rgb(var(--color-text-secondary))' } : { top: '50%', transform: 'translateY(-50%)', fontSize: '14px', color: 'rgb(var(--color-text-muted))' }}
+                >
+                  密码
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? '隐藏密码' : '显示密码'}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-textMuted hover:text-primary transition-colors duration-200 cursor-pointer"
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+
+              {/* 滑块验证 */}
+              <div className="pt-2">
+                <DragVerify
+                  ref={dragVerifyRef}
+                  value={isPassing}
+                  onChange={setIsPassing}
+                />
+                <p
+                  className="text-xs text-danger mt-1.5 transition-all duration-300"
+                  style={{ opacity: !isPassing && clickPass ? 1 : 0 }}
+                >
+                  请先完成滑块验证
+                </p>
+              </div>
+
+              {/* 错误提示 */}
+              {error && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-danger/10 text-danger text-sm rounded-lg animate-fade-in">
+                  <AlertCircle size={16} className="shrink-0" />
+                  <span>{error}</span>
+                </div>
               )}
-              {loading ? '登录中...' : '登录'}
-            </button>
-          </form>
-        </motion.div>
+
+              {/* 登录按钮 */}
+              <button
+                type="submit"
+                disabled={loading}
+                className="login-submit-btn w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+              >
+                {loading ? (
+                  <Spinner className="h-4 w-4" />
+                ) : (
+                  <LogIn size={16} />
+                )}
+                {loading ? '登录中...' : '登录'}
+              </button>
+            </form>
+          </div>
+        </div>
       </div>
     </div>
   )

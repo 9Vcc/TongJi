@@ -37,6 +37,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const show = useCallback(
     (message: string, type: ToastType = 'info') => {
+      // 空消息静默跳过（用于限流等不需要提示的场景）
+      if (!message.trim()) return
       const id = ++toastId
       setToasts((prev) => [...prev, { id, type, message }])
       setTimeout(() => remove(id), 3000)

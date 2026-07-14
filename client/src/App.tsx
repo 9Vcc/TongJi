@@ -65,13 +65,30 @@ function ProtectedLayout() {
   )
 }
 
+/**
+ * 公开页面布局：为 / 和 /login 路由切换提供过渡动画
+ */
+function PublicLayout() {
+  const location = useLocation()
+  return (
+    <AnimatePresence mode="wait">
+      <PageTransition key={location.pathname}>
+        <Outlet />
+      </PageTransition>
+    </AnimatePresence>
+  )
+}
+
 function AppRoutes() {
   return (
     <Suspense fallback={<RouteFallback />}>
       <Routes>
-        {/* 默认首页：公开排名（无需登录，所有人可访问） */}
-        <Route path="/" element={<PublicRanking />} />
-        <Route path="/login" element={<Login />} />
+        {/* 公开页面：排名 + 登录，带过渡动画 */}
+        <Route element={<PublicLayout />}>
+          {/* 默认首页：公开排名（无需登录，所有人可访问） */}
+          <Route path="/" element={<PublicRanking />} />
+          <Route path="/login" element={<Login />} />
+        </Route>
         <Route element={<ProtectedLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/data" element={<DataEntry />} />
