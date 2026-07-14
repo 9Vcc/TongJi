@@ -198,12 +198,16 @@ export default async function personnelRoutes(fastify: FastifyInstance) {
   )
 
   // GET /api/personnel - 查询人员列表
+  // 支持 branchIds 查询参数（逗号分隔），用于合厅组模式批量查询多个厅的人员
   fastify.get(
     '/api/personnel',
     { preHandler: [authenticate] },
     async (request, reply) => {
       const currentUser = request.user
-      const { branchId } = request.query as { branchId?: string }
+      const { branchId, branchIds: branchIdsParam } = request.query as {
+        branchId?: string
+        branchIds?: string
+      }
 
       const weekStart = getWeekStart()
       const weekEnd = new Date(weekStart)
@@ -214,10 +218,34 @@ export default async function personnelRoutes(fastify: FastifyInstance) {
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
       const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1)
 
+      // 解析 branchIds（逗号分隔的厅 ID 列表，用于合厅组模式）
+      let requestedBranchIds: number[] | undefined
+      if (branchIdsParam) {
+        requestedBranchIds = branchIdsParam
+          .split(',')
+          .map((s) => Number(s.trim()))
+          .filter((n) => !Number.isNaN(n) && n > 0)
+        if (requestedBranchIds.length === 0) requestedBranchIds = undefined
+      }
+
       // 会长可查看所有；超管可查看指定授权厅或全部授权厅；管理查看自己分部
       let branchFilter: number | undefined
       let branchInFilter: number[] | undefined
-      if (currentUser.role === Role.HUIZHANG) {
+      if (requestedBranchIds) {
+        // 合厅组模式：按指定的多个厅 ID 过滤（叠加权限校验）
+        if (currentUser.role === Role.HUIZHANG) {
+          branchInFilter = requestedBranchIds
+        } else if (currentUser.role === Role.CHAOGUAN) {
+          branchInFilter = requestedBranchIds.filter((id) =>
+            canAccessBranch(currentUser, id)
+          )
+        } else {
+          // 管理只能查看本厅
+          branchInFilter = requestedBranchIds.filter(
+            (id) => id === currentUser.branchId
+          )
+        }
+      } else if (currentUser.role === Role.HUIZHANG) {
         if (branchId) {
           branchFilter = Number(branchId)
         }

@@ -22,6 +22,19 @@ async function loadBranchIds(accountId: number, role: Role, branchId: number | n
   return [branchId, ...extra.map((ab) => ab.branchId)]
 }
 
+/**
+ * 加载账户的所有授权合厅组 ID 列表
+ * 仅超管支持合厅组授权
+ */
+async function loadGroupIds(accountId: number, role: Role): Promise<number[]> {
+  if (role !== Role.CHAOGUAN) return []
+  const groups = await prisma.accountGroup.findMany({
+    where: { accountId },
+    select: { groupId: true },
+  })
+  return groups.map((ag) => ag.groupId)
+}
+
 export default async function authRoutes(fastify: FastifyInstance) {
   // POST /api/auth/login - 登录
   // 限流：每 IP+用户名组合每分钟最多 5 次，防止暴力破解
@@ -46,6 +59,17 @@ export default async function authRoutes(fastify: FastifyInstance) {
 
     const account = await prisma.account.findUnique({
       where: { username },
+      select: {
+        id: true,
+        username: true,
+        nickname: true,
+        passwordHash: true,
+        role: true,
+        branchId: true,
+        mainGroupId: true,
+        status: true,
+        mainGroup: { select: { id: true, name: true } },
+      },
     })
 
     if (!account) {
@@ -62,6 +86,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
     }
 
     const branchIds = await loadBranchIds(account.id, account.role, account.branchId)
+    const groupIds = await loadGroupIds(account.id, account.role)
 
     const payload: JwtPayload = {
       id: account.id,
@@ -69,6 +94,8 @@ export default async function authRoutes(fastify: FastifyInstance) {
       role: account.role,
       branchId: account.branchId,
       branchIds,
+      groupIds,
+      mainGroupId: account.mainGroupId,
     }
 
     const token = signToken(payload)
@@ -93,7 +120,10 @@ export default async function authRoutes(fastify: FastifyInstance) {
         nickname: account.nickname,
         role: account.role,
         branchId: account.branchId,
+        mainGroupId: account.mainGroupId,
+        mainGroup: account.mainGroup,
         branchIds,
+        groupIds,
         status: account.status,
       },
     })
@@ -110,6 +140,16 @@ export default async function authRoutes(fastify: FastifyInstance) {
 
       const account = await prisma.account.findUnique({
         where: { id: request.user.id },
+        select: {
+          id: true,
+          username: true,
+          nickname: true,
+          role: true,
+          branchId: true,
+          mainGroupId: true,
+          status: true,
+          mainGroup: { select: { id: true, name: true } },
+        },
       })
 
       if (!account) {
@@ -117,6 +157,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
       }
 
       const branchIds = await loadBranchIds(account.id, account.role, account.branchId)
+      const groupIds = await loadGroupIds(account.id, account.role)
 
       return reply.send({
         id: account.id,
@@ -124,7 +165,10 @@ export default async function authRoutes(fastify: FastifyInstance) {
         nickname: account.nickname,
         role: account.role,
         branchId: account.branchId,
+        mainGroupId: account.mainGroupId,
+        mainGroup: account.mainGroup,
         branchIds,
+        groupIds,
         status: account.status,
       })
     }
@@ -154,13 +198,16 @@ export default async function authRoutes(fastify: FastifyInstance) {
           nickname: true,
           role: true,
           branchId: true,
+          mainGroupId: true,
           status: true,
+          mainGroup: { select: { id: true, name: true } },
         },
       })
 
       const branchIds = await loadBranchIds(updated.id, updated.role, updated.branchId)
+      const groupIds = await loadGroupIds(updated.id, updated.role)
 
-      return reply.send({ ...updated, branchIds })
+      return reply.send({ ...updated, branchIds, groupIds })
     }
   )
 

@@ -20,6 +20,7 @@ import {
   formatNamings,
 } from '../utils'
 import { Skeleton } from '../components/Skeleton'
+import GroupedSelect from '../components/GroupedSelect'
 import type {
   RankingItem,
   RewardRule,
@@ -61,21 +62,18 @@ export default function Ranking() {
       {/* 顶部选择器：仅厅选择（日期选择已整合到卡片） */}
       {canSelectBranch && (
         <div className="flex items-center justify-end">
-          <select
-            value={branchId ?? ''}
-            onChange={(e) =>
-              setBranchId(e.target.value ? Number(e.target.value) : undefined)
+          <GroupedSelect
+            value={branchId !== undefined ? String(branchId) : ''}
+            onChange={(val) =>
+              setBranchId(val ? Number(val) : undefined)
             }
-            className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer"
-          >
-            <option value="">{isHuizhang ? '全部厅' : '全部授权厅'}</option>
-            {openBranches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-                {b.statCycle === 'MONTH' ? '（按月）' : ''}
-              </option>
-            ))}
-          </select>
+            topOption={{ value: '', label: isHuizhang ? '全部厅' : '全部授权厅' }}
+            options={openBranches.map((b) => ({
+              value: String(b.id),
+              label: `${b.name}${b.statCycle === 'MONTH' ? '（按月）' : ''}`,
+            }))}
+            minWidth={160}
+          />
         </div>
       )}
 
@@ -195,31 +193,25 @@ function BranchRankingCard({
           <ChevronLeft size={14} />
         </button>
         {isMonthCycle ? (
-          <select
+          <GroupedSelect
             value={selectedMonthRef}
-            onChange={(e) => setWeekStart(new Date(e.target.value))}
-            aria-label="选择月份"
-            className="px-2.5 py-1.5 border border-border rounded-md bg-card text-sm text-textPrimary focus:outline-none focus:border-primary min-w-[200px] cursor-pointer"
-          >
-            {availableMonths.map((m) => (
-              <option key={m.key} value={m.ref}>
-                {getMonthRangeText(m.ref)}
-              </option>
-            ))}
-          </select>
+            onChange={(val) => setWeekStart(new Date(val))}
+            options={availableMonths.map((m) => ({
+              value: m.ref,
+              label: getMonthRangeText(m.ref),
+            }))}
+            minWidth={200}
+          />
         ) : (
-          <select
+          <GroupedSelect
             value={formatDate(weekStart)}
-            onChange={(e) => setWeekStart(new Date(e.target.value))}
-            aria-label="选择周次"
-            className="px-2.5 py-1.5 border border-border rounded-md bg-card text-sm text-textPrimary focus:outline-none focus:border-primary min-w-[200px] cursor-pointer"
-          >
-            {availableWeeks.map((w) => (
-              <option key={w} value={w}>
-                {getWeekRangeText(w)}
-              </option>
-            ))}
-          </select>
+            onChange={(val) => setWeekStart(new Date(val))}
+            options={availableWeeks.map((w) => ({
+              value: w,
+              label: getWeekRangeText(w),
+            }))}
+            minWidth={200}
+          />
         )}
         <button
           onClick={handleNext}

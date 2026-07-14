@@ -20,7 +20,15 @@ export interface User {
   nickname?: string | null
   role: Role
   branchId: number | null
+  // 主合厅组 ID（超管主厅为合厅组时设置，此时 branchId 可为 null）
+  mainGroupId?: number | null
+  // 主合厅组详情
+  mainGroup?: { id: number; name: string } | null
   branchIds?: number[]
+  // 授权合厅组 ID 列表（仅超管有值）
+  groupIds?: number[]
+  // 授权合厅组详情
+  groups?: { id: number; name: string }[]
   status: AccountStatus
   createdAt?: string
   branch?: { id: number; name: string } | null
@@ -42,6 +50,19 @@ export interface Branch {
   createdAt: string
   personnelCount?: number
   dataRecordCount?: number
+}
+
+// 合厅组（多个厅的持久化分组）
+export interface BranchGroup {
+  id: number
+  name: string
+  createdAt: string
+  branches: {
+    id: number
+    name: string
+    statCycle: StatCycle
+    closed: boolean
+  }[]
 }
 
 // 人员本周数据
@@ -277,6 +298,10 @@ export interface CreateAccountInput {
   role: Role
   branchId?: number
   branchIds?: number[]
+  // 授权合厅组 ID 列表（仅超管角色）
+  groupIds?: number[]
+  // 主合厅组 ID（超管主厅为合厅组时设置）
+  mainGroupId?: number | null
 }
 
 // 更新账户入参
@@ -287,6 +312,10 @@ export interface UpdateAccountInput {
   role?: Role
   branchId?: number | null
   branchIds?: number[]
+  // 授权合厅组 ID 列表（仅超管角色）
+  groupIds?: number[]
+  // 主合厅组 ID（null 表示清除主合厅组）
+  mainGroupId?: number | null
 }
 
 // 创建人员入参

@@ -23,6 +23,7 @@ import { useToast } from '../hooks/useToast'
 import { matchNamePinyin, formatDate } from '../utils'
 import Modal from '../components/Modal'
 import { Skeleton, Spinner } from '../components/Skeleton'
+import GroupedSelect from '../components/GroupedSelect'
 import type { Personnel as PersonnelType, Branch } from '../types'
 
 type AddTab = 'single' | 'batch'
@@ -305,20 +306,19 @@ export default function Personnel() {
         </div>
         <div className="flex items-center gap-2">
           {canSelectBranch && (
-            <select
-              value={branchId ?? (isChaoguan ? user?.branchId ?? '' : '')}
-              onChange={(e) =>
-                setBranchId(e.target.value ? Number(e.target.value) : undefined)
+            <GroupedSelect
+              value={branchId !== undefined ? String(branchId) : (isChaoguan ? String(user?.branchId ?? '') : '')}
+              onChange={(val) =>
+                setBranchId(val ? Number(val) : undefined)
               }
-              className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer"
-            >
-              {isHuizhang && <option value="">选择厅</option>}
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
+              placeholder="选择厅"
+              topOption={isHuizhang ? { value: '', label: '选择厅' } : undefined}
+              options={branches.map((b) => ({
+                value: String(b.id),
+                label: b.name,
+              }))}
+              minWidth={160}
+            />
           )}
           <button
             onClick={openAdd}
@@ -632,22 +632,19 @@ export default function Personnel() {
               <label className="block text-xs text-textSecondary mb-1">
                 所属厅
               </label>
-              <select
-                value={addBranchId ?? ''}
-                onChange={(e) =>
-                  setAddBranchId(
-                    e.target.value ? Number(e.target.value) : undefined,
-                  )
+              <GroupedSelect
+                value={addBranchId !== undefined ? String(addBranchId) : ''}
+                onChange={(val) =>
+                  setAddBranchId(val ? Number(val) : undefined)
                 }
-                className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer"
-              >
-                <option value="">请选择厅</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
+                placeholder="请选择厅"
+                fullWidth
+                topOption={{ value: '', label: '请选择厅' }}
+                options={branches.map((b) => ({
+                  value: String(b.id),
+                  label: b.name,
+                }))}
+              />
             </div>
           ) : (
             <p className="text-xs text-textMuted">

@@ -12,6 +12,7 @@ import { runBackup } from '../scripts/backup';
 import authRoutes from './routes/auth';
 import accountRoutes from './routes/accounts';
 import branchRoutes from './routes/branches';
+import branchGroupRoutes from './routes/branch-groups';
 import personnelRoutes from './routes/personnel';
 import dataRecordRoutes from './routes/data-records';
 import dataQueryRoutes from './routes/data-query';
@@ -130,6 +131,9 @@ fastify.register(accountRoutes);
 
 // 注册分部管理路由
 fastify.register(branchRoutes);
+
+// 注册合厅组管理路由（仅会长可访问）
+fastify.register(branchGroupRoutes);
 
 // 注册人员名单管理路由
 fastify.register(personnelRoutes);

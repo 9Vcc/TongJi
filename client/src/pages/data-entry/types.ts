@@ -31,6 +31,8 @@ export const emptyForm: RecordForm = {
 export type EditableRecord = {
   id: number;
   personnelId: number;
+  // 合厅组模式下需要知道记录所属厅，用于按各厅 statCycle 计算 weekStart
+  branchId?: number;
   sg: number;
   mx: number;
   qm: number;

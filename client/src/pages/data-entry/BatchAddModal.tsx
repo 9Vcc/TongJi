@@ -12,12 +12,15 @@ interface BatchAddModalProps {
   onClose: () => void;
   allRows: DisplayRow[];
   selectedKeys: Set<string>;
-  effectiveBranchId: number | undefined;
   recordWeekStart: string;
+  // 合厅组模式：按各厅 statCycle 归一化录入 weekStart
+  getRecordWeekStart: (branchId?: number) => string;
   sgInputEnabled: boolean;
   qmInputEnabled: boolean;
   zcInputEnabled: boolean;
   isHuizhang: boolean;
+  isGroupMode: boolean;
+  hasTarget: boolean;
   // 共用备注（与批量编辑/删除共享）
   batchRemark: string;
   onBatchRemarkChange: (v: string) => void;
@@ -31,12 +34,14 @@ export default function BatchAddModal({
   onClose,
   allRows,
   selectedKeys,
-  effectiveBranchId,
   recordWeekStart,
+  getRecordWeekStart,
   sgInputEnabled,
   qmInputEnabled,
   zcInputEnabled,
   isHuizhang,
+  isGroupMode,
+  hasTarget,
   batchRemark,
   onBatchRemarkChange,
   onSaved,
@@ -80,7 +85,7 @@ export default function BatchAddModal({
 
   // 批量添加提交：累加到已录入数据上（已录入则原值+输入值，未录入则新建为输入值）
   const handleBatchAddSubmit = async () => {
-    if (!effectiveBranchId) {
+    if (!hasTarget) {
       toast.error(isHuizhang ? "请选择厅" : "当前账户未关联厅");
       return;
     }
@@ -154,7 +159,10 @@ export default function BatchAddModal({
             mx: item.mx,
             qm: item.qm,
             zcDays: item.zcDays,
-            weekStart: recordWeekStart,
+            // 合厅组模式：按各厅 statCycle 归一化 weekStart
+            weekStart: isGroupMode
+              ? getRecordWeekStart(item.branchId)
+              : recordWeekStart,
             remark: batchRemark.trim() || undefined,
           });
           successCount++;

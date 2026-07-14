@@ -12,6 +12,9 @@ interface DataTableProps {
   loading: boolean;
   hasRecords: boolean;
   effectiveBranchId: number | undefined;
+  // 合厅组模式相关
+  isGroupMode: boolean;
+  mergeSameName: boolean;
   searchTerm: string;
   pagedRecords: DisplayRow[];
   filteredCount: number;
@@ -38,6 +41,8 @@ export default function DataTable({
   loading,
   hasRecords,
   effectiveBranchId,
+  isGroupMode,
+  mergeSameName,
   searchTerm,
   pagedRecords,
   filteredCount,
@@ -116,7 +121,7 @@ export default function DataTable({
                         }
                         className="px-4 py-12 text-center text-textMuted"
                       >
-                        {!effectiveBranchId
+                        {!isGroupMode && !effectiveBranchId
                           ? "请选择厅后查看数据"
                           : searchTerm
                             ? "未找到匹配的人员"
@@ -145,7 +150,22 @@ export default function DataTable({
                         </td>
                         <td className="px-4 py-3 text-textPrimary">
                           <div className="flex items-center gap-2">
-                            {r.personnelName}
+                            <span>{r.personnelName}</span>
+                            {/* 合厅组模式：标注所属厅名 */}
+                            {isGroupMode && r.branchName && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-primary/10 text-primary">
+                                {r.branchName}
+                              </span>
+                            )}
+                            {/* 合并同名模式：聚合标识 */}
+                            {isGroupMode && mergeSameName && r.isRecorded && (
+                              <span
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-textMuted/10 text-textMuted"
+                                title="合并行，排名不显示"
+                              >
+                                合并
+                              </span>
+                            )}
                             {!r.isRecorded && (
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-textMuted/10 text-textMuted">
                                 未录入
@@ -182,13 +202,15 @@ export default function DataTable({
                             : (r.welfare ?? "-")}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          {r.isRecorded ? (
+                          {/* 合并同名模式下禁用编辑/删除（聚合行无法定位单条记录） */}
+                          {r.isRecorded && !(isGroupMode && mergeSameName) ? (
                             <div className="flex items-center justify-end gap-1">
                               <button
                                 onClick={() =>
                                   onEdit({
                                     id: r.id,
                                     personnelId: r.personnelId,
+                                    branchId: r.branchId,
                                     sg: r.sg,
                                     mx: r.mx,
                                     qm: r.qm,

@@ -8,8 +8,15 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Fira Sans', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-        mono: ['Fira Code', 'ui-monospace', 'SFMono-Regular', 'monospace'],
+        sans: [
+          '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'PingFang SC',
+          'Hiragino Sans GB', 'Microsoft YaHei', '微软雅黑', 'Noto Sans SC',
+          'Source Han Sans SC', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif',
+        ],
+        mono: [
+          'ui-monospace', 'SF Mono', 'Cascadia Code', 'Source Code Pro',
+          'Menlo', 'Monaco', 'Consolas', 'PingFang SC', 'Microsoft YaHei', 'monospace',
+        ],
       },
       colors: {
         primary: {

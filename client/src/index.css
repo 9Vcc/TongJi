@@ -43,7 +43,14 @@
 /* ============ 基础样式 ============ */
 @layer base {
   html {
-    font-family: 'Fira Sans', ui-sans-serif, system-ui, sans-serif;
+    /* 系统字体栈：优先中文系统字体，保证中英文混排清晰 */
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+      'Hiragino Sans GB', 'Microsoft YaHei', '微软雅黑', 'Noto Sans SC',
+      'Source Han Sans SC', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    /* 优化字间距：中文紧凑，英文正常 */
+    letter-spacing: 0.01em;
+    /* 基础行高，避免文字拥挤 */
+    line-height: 1.5;
   }
 
   body {
@@ -51,6 +58,9 @@
     color: rgb(var(--color-text-primary));
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* 防止长字符串（如 URL、长姓名）溢出容器 */
+    word-break: break-word;
+    overflow-wrap: anywhere;
   }
 
   /* 主题切换平滑过渡 */
@@ -62,11 +72,12 @@
     transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   }
 
-  /* 数字与代码使用等宽字体 */
+  /* 数字与代码使用等宽字体（系统字体栈，无需外部下载） */
   .font-mono,
   input[type='number'],
   .tabular-nums {
-    font-family: 'Fira Code', ui-monospace, SFMono-Regular, monospace;
+    font-family: ui-monospace, 'SF Mono', 'Cascadia Code', 'Source Code Pro',
+      Menlo, Monaco, Consolas, 'PingFang SC', 'Microsoft YaHei', monospace;
     font-variant-numeric: tabular-nums;
   }
 
@@ -124,6 +135,50 @@
 
   /* 聚焦可见样式（键盘导航） */
   input[type='checkbox'].checkbox-round:focus-visible {
+    outline: 2px solid rgb(var(--color-primary));
+    outline-offset: 2px;
+  }
+
+  /* ============ 圆形单选按钮 ============ */
+  input[type='radio'].radio-round {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    width: 1.15rem;
+    height: 1.15rem;
+    border: 1.5px solid rgb(var(--color-border));
+    border-radius: 9999px;
+    background-color: rgb(var(--color-card));
+    cursor: pointer;
+    display: inline-block;
+    vertical-align: middle;
+    position: relative;
+    flex-shrink: 0;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+  }
+
+  input[type='radio'].radio-round:hover {
+    border-color: rgb(var(--color-primary));
+  }
+
+  input[type='radio'].radio-round:checked {
+    background-color: rgb(var(--color-primary));
+    border-color: rgb(var(--color-primary));
+  }
+
+  input[type='radio'].radio-round:checked::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 0.4rem;
+    height: 0.4rem;
+    transform: translate(-50%, -50%);
+    border-radius: 9999px;
+    background-color: white;
+  }
+
+  input[type='radio'].radio-round:focus-visible {
     outline: 2px solid rgb(var(--color-primary));
     outline-offset: 2px;
   }
@@ -474,4 +529,34 @@
 
 .animate-row {
   animation: rowFadeIn 0.3s ease-out;
+}
+
+/* ============ 表格与单元格文字优化 ============ */
+/* 允许表格单元格在内容过长时换行，避免截断 */
+table {
+  table-layout: auto;
+}
+
+td,
+th {
+  /* 允许长文本（如备注、姓名）在空格处换行 */
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* ============ 按钮文字防截断 ============ */
+button > span,
+button > a {
+  overflow-wrap: anywhere;
+}
+
+/* ============ 标题与长文本换行 ============ */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  overflow-wrap: anywhere;
+  line-height: 1.3;
 }

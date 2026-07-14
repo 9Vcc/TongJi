@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { authenticate, canAccessBranch, getAccessibleBranchIds } from '../middleware/auth'
+import { authenticate, canAccessBranch, canAccessGroup, getAccessibleBranchIds } from '../middleware/auth'
 import { StatCycle, Role } from '../../generated/prisma/client'
 import prisma from '../lib/prisma'
 import {
@@ -50,21 +50,54 @@ function resolveRankingBranchId(
   return currentUser.branchId ?? undefined
 }
 
+/**
+ * 解析合厅组参数：校验权限并返回 groupFilter
+ */
+async function resolveGroupFilter(
+  currentUser: { role: Role; groupIds: number[] },
+  groupParam: string | undefined
+): Promise<number | undefined> {
+  if (!groupParam) return undefined
+  const groupId = Number(groupParam)
+  if (Number.isNaN(groupId)) return undefined
+  if (!canAccessGroup(currentUser, groupId)) return undefined
+  return groupId
+}
+
 export default async function rankingRoutes(fastify: FastifyInstance) {
   // GET /api/ranking - 查询周期排名（按厅统计周期：周或月聚合）
   // 指定单厅：按该厅 statCycle 查询
+  // 指定合厅组：查询组内所有厅并合并
   // 全部厅（会长）：按各厅自身 statCycle 分别查询后合并（周统计厅查本周、月统计厅查本月）
   fastify.get(
     '/api/ranking',
     { preHandler: [authenticate] },
     async (request, reply) => {
       const currentUser = request.user
-      const { weekStart: weekStartParam, branchId: branchIdParam, cycle: cycleParam } =
-        request.query as { weekStart?: string; branchId?: string; cycle?: string }
+      const { weekStart: weekStartParam, branchId: branchIdParam, cycle: cycleParam, branchGroupId: groupParam } =
+        request.query as { weekStart?: string; branchId?: string; cycle?: string; branchGroupId?: string }
 
       const refDate = weekStartParam
         ? new Date(weekStartParam)
         : new Date()
+
+      const groupFilter = await resolveGroupFilter(currentUser, groupParam)
+
+      // 合厅组模式：查询组内所有厅并合并
+      if (groupFilter) {
+        const group = await prisma.branchGroup.findUnique({
+          where: { id: groupFilter },
+          include: { branches: { select: { id: true, statCycle: true } } },
+        })
+        if (!group || group.branches.length === 0) {
+          return reply.send([])
+        }
+        const groupCycle = group.branches[0].statCycle
+        const results = await Promise.all(
+          group.branches.map((b) => computeRanking(refDate, b.id, groupCycle))
+        )
+        return reply.send(results.flat())
+      }
 
       const branchFilter = resolveRankingBranchId(currentUser, branchIdParam)
 

@@ -100,14 +100,6 @@ export default function LoginRecordsPage() {
     [accounts]
   )
 
-  if (!isHuizhang) {
-    return (
-      <div className="py-12 text-center text-sm text-textMuted">
-        无权访问此页面
-      </div>
-    )
-  }
-
   const hasFilter = filterAccountId || filterDate
 
   // 分页切片：当前页应显示的记录
@@ -117,6 +109,14 @@ export default function LoginRecordsPage() {
     () => records.slice((safePage - 1) * pageSize, safePage * pageSize),
     [records, safePage]
   )
+
+  if (!isHuizhang) {
+    return (
+      <div className="py-12 text-center text-sm text-textMuted">
+        无权访问此页面
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-5">

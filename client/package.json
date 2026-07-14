@@ -14,6 +14,7 @@
     "axios": "^1.18.1",
     "chart.js": "^4.5.1",
     "framer-motion": "^12.41.0",
+    "jszip": "^3.10.1",
     "lucide-react": "^1.21.0",
     "pinyin-pro": "^3.28.1",
     "react": "^19.2.7",

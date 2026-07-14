@@ -15,15 +15,17 @@ import {
 import {
   accountsApi,
   branchesApi,
+  branchGroupsApi,
   getErrorMessage,
 } from '../../api'
 import { useAuth } from '../../hooks/useAuth'
 import { useToast } from '../../hooks/useToast'
 import Modal from '../../components/Modal'
 import { Skeleton, Spinner } from '../../components/Skeleton'
+import GroupedSelect from '../../components/GroupedSelect'
 import SubPageHeader from '../../components/SubPageHeader'
 import { getRoleText } from '../../utils'
-import type { User, Branch, Role, AccountStatus } from '../../types'
+import type { User, Branch, BranchGroup, Role, AccountStatus } from '../../types'
 
 export default function AccountsPage() {
   const { user } = useAuth()
@@ -43,10 +45,15 @@ export default function AccountsPage() {
     role: 'GUANLI' as Role,
     // 所有授权厅（包含主厅）；第一个勾选的为主厅，其余为额外授权厅
     branchIds: [] as number[],
+    // 授权合厅组（仅超管角色生效）
+    groupIds: [] as number[],
+    // 主合厅组 ID：null 表示主厅为 branchIds[0]；非 null 表示主厅为该合厅组
+    mainGroupId: null as number | null,
   })
   const [showPassword, setShowPassword] = useState(false)
   const [accountSubmitting, setAccountSubmitting] = useState(false)
   const [branches, setBranches] = useState<Branch[]>([])
+  const [branchGroups, setBranchGroups] = useState<BranchGroup[]>([])
 
   // 确认弹窗（禁用/启用/删除账户）
   // type 区分操作类型，account 为目标账户
@@ -83,6 +90,7 @@ export default function AccountsPage() {
     loadAccounts()
     if (isHuizhang) {
       branchesApi.list().then(setBranches).catch(() => {})
+      branchGroupsApi.list().then(setBranchGroups).catch(() => {})
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHuizhang, isChaoguan, user])
@@ -95,6 +103,8 @@ export default function AccountsPage() {
       password: '',
       role: 'GUANLI',
       branchIds: [],
+      groupIds: [],
+      mainGroupId: null,
     })
     setShowPassword(false)
     setAccountModalOpen(true)
@@ -112,6 +122,8 @@ export default function AccountsPage() {
       password: '',
       role: account.role,
       branchIds: allBranchIds,
+      groupIds: account.groupIds ?? [],
+      mainGroupId: account.mainGroupId ?? null,
     })
     setShowPassword(false)
     setAccountModalOpen(true)
@@ -127,16 +139,26 @@ export default function AccountsPage() {
       return
     }
 
-    // 第一个勾选的厅为主厅，其余为额外授权厅
+    const isChaoguanRole = accountForm.role === 'CHAOGUAN'
+    // 超管角色：主厅可以是合厅组（mainGroupId）或厅（branchIds[0]）
+    // 当 mainGroupId 非空时，主厅为合厅组，branchId 可为 null
+    // 当 mainGroupId 为空时，主厅为 branchIds[0]
     const mainBranchId = accountForm.branchIds[0]
     const extraBranchIds = accountForm.branchIds.slice(1)
+    const hasMainGroup = isChaoguanRole && accountForm.mainGroupId !== null
 
-    // 会长使用勾选的第一个厅作为主厅；超管/管理自动绑定到自己所在厅
-    const targetBranchId = isHuizhang ? mainBranchId : (user?.branchId ?? undefined)
+    // 会长设置目标厅：有主合厅组时 branchId 可为 null，否则取第一个勾选厅
+    // 超管/管理自动绑定到自己所在厅
+    let targetBranchId: number | null | undefined
+    if (isHuizhang) {
+      targetBranchId = hasMainGroup ? null : mainBranchId
+    } else {
+      targetBranchId = user?.branchId ?? undefined
+    }
 
-    // 非会长角色必须至少选一个厅
-    if (accountForm.role !== 'HUIZHANG' && !targetBranchId) {
-      toast.error('请至少选择一个授权厅')
+    // 非会长角色必须至少有一个主厅（厅或合厅组）
+    if (accountForm.role !== 'HUIZHANG' && !hasMainGroup && !targetBranchId) {
+      toast.error('请至少选择一个授权厅或合厅组作为主厅')
       return
     }
 
@@ -158,12 +180,14 @@ export default function AccountsPage() {
         if (accountForm.role !== editingAccount.role) {
           payload.role = accountForm.role
         }
-        // 主厅变化
-        if (targetBranchId !== editingAccount.branchId) {
+        // 主厅变化（branchId）
+        const originalHasMainGroup = editingAccount.mainGroupId !== null && editingAccount.mainGroupId !== undefined
+        const originalBranchId = originalHasMainGroup ? null : editingAccount.branchId
+        if (targetBranchId !== originalBranchId) {
           payload.branchId = targetBranchId
         }
         // 额外授权厅变化（仅 CHAOGUAN 角色）
-        if (accountForm.role === 'CHAOGUAN') {
+        if (isChaoguanRole) {
           const originalExtra = editingAccount.branchId
             ? (editingAccount.branchIds ?? []).filter((id) => id !== editingAccount.branchId)
             : (editingAccount.branchIds ?? [])
@@ -172,6 +196,19 @@ export default function AccountsPage() {
             extraBranchIds.every((id) => originalExtra.includes(id))
           if (!isSame) {
             payload.branchIds = extraBranchIds
+          }
+          // 授权合厅组变化
+          const originalGroupIds = editingAccount.groupIds ?? []
+          const isGroupsSame =
+            accountForm.groupIds.length === originalGroupIds.length &&
+            accountForm.groupIds.every((id) => originalGroupIds.includes(id))
+          if (!isGroupsSame) {
+            payload.groupIds = accountForm.groupIds
+          }
+          // 主合厅组变化
+          const originalMainGroupId = editingAccount.mainGroupId ?? null
+          if (accountForm.mainGroupId !== originalMainGroupId) {
+            payload.mainGroupId = accountForm.mainGroupId
           }
         }
         if (Object.keys(payload).length === 0) {
@@ -187,8 +224,10 @@ export default function AccountsPage() {
           nickname: accountForm.nickname.trim() || undefined,
           password: accountForm.password,
           role: accountForm.role,
-          branchId: targetBranchId,
-          branchIds: accountForm.role === 'CHAOGUAN' ? extraBranchIds : undefined,
+          branchId: targetBranchId ?? undefined,
+          branchIds: isChaoguanRole ? extraBranchIds : undefined,
+          groupIds: isChaoguanRole ? accountForm.groupIds : undefined,
+          mainGroupId: isChaoguanRole ? accountForm.mainGroupId : undefined,
         })
         toast.success('账户创建成功')
       }
@@ -235,11 +274,39 @@ export default function AccountsPage() {
     }
   }
 
-  const getBranchName = (account: User) => {
-    if (account.branches && account.branches.length > 0) {
-      return account.branches.map((b) => b.name).join('、')
+  // 获取账户的授权厅与合厅组展示（主厅标记在第一位）
+  const getAuthDisplay = (account: User) => {
+    const items: { name: string; type: 'branch' | 'group'; isMain: boolean }[] = []
+    // 主厅为合厅组时优先显示
+    if (account.mainGroupId && account.mainGroup) {
+      items.push({ name: account.mainGroup.name, type: 'group', isMain: true })
     }
-    return account.branch?.name || branches.find((b) => b.id === account.branchId)?.name || '-'
+    // 主厅为厅时优先显示
+    if (account.branchId && account.branch) {
+      items.push({ name: account.branch.name, type: 'branch', isMain: account.mainGroupId === null || account.mainGroupId === undefined })
+    } else if (account.branchId) {
+      const branchName = branches.find((b) => b.id === account.branchId)?.name
+      if (branchName) {
+        items.push({ name: branchName, type: 'branch', isMain: account.mainGroupId === null || account.mainGroupId === undefined })
+      }
+    }
+    // 额外授权厅
+    if (account.branches) {
+      for (const b of account.branches) {
+        if (b.id !== account.branchId) {
+          items.push({ name: b.name, type: 'branch', isMain: false })
+        }
+      }
+    }
+    // 授权合厅组（非主厅）
+    if (account.groups) {
+      for (const g of account.groups) {
+        if (g.id !== account.mainGroupId) {
+          items.push({ name: g.name, type: 'group', isMain: false })
+        }
+      }
+    }
+    return items
   }
 
   if (!canManageAccounts) {
@@ -284,7 +351,7 @@ export default function AccountsPage() {
                 <th className="px-3 py-2 font-medium">用户名</th>
                 <th className="px-3 py-2 font-medium">昵称</th>
                 <th className="px-3 py-2 font-medium">角色</th>
-                <th className="px-3 py-2 font-medium">厅</th>
+                <th className="px-3 py-2 font-medium">授权厅与合厅组</th>
                 <th className="px-3 py-2 font-medium">状态</th>
                 <th className="px-3 py-2 font-medium text-right">操作</th>
               </tr>
@@ -329,7 +396,34 @@ export default function AccountsPage() {
                       </span>
                     </td>
                     <td className="px-3 py-2 text-textSecondary">
-                      {getBranchName(a)}
+                      <div className="flex flex-wrap items-center gap-1">
+                        {getAuthDisplay(a).length === 0 ? (
+                          <span className="text-textMuted">-</span>
+                        ) : (
+                          getAuthDisplay(a).map((item, idx) => (
+                            <span
+                              key={idx}
+                              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs ${
+                                item.isMain
+                                  ? 'bg-primary/10 text-primary border border-primary/20'
+                                  : 'bg-surface text-textSecondary'
+                              }`}
+                            >
+                              {item.isMain && (
+                                <span className="font-medium">主厅</span>
+                              )}
+                              <span>{item.name}</span>
+                              <span
+                                className={`text-[9px] ${
+                                  item.type === 'group' ? 'text-primary' : 'text-textMuted'
+                                }`}
+                              >
+                                {item.type === 'group' ? '组' : '厅'}
+                              </span>
+                            </span>
+                          ))
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-2">
                       {a.status === 'ACTIVE' ? (
@@ -484,79 +578,179 @@ export default function AccountsPage() {
             <label className="block text-xs text-textSecondary mb-1">
               角色
             </label>
-            <select
+            <GroupedSelect
               value={accountForm.role}
-              onChange={(e) =>
+              onChange={(val) =>
                 setAccountForm({
                   ...accountForm,
-                  role: e.target.value as Role,
+                  role: val as Role,
                 })
               }
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer"
-            >
-              {isHuizhang && <option value="HUIZHANG">会长</option>}
-              {isHuizhang && <option value="CHAOGUAN">超管</option>}
-              <option value="GUANLI">管理</option>
-            </select>
+              fullWidth
+              options={[
+                ...(isHuizhang ? [{ value: 'HUIZHANG', label: '会长' }, { value: 'CHAOGUAN', label: '超管' }] : []),
+                { value: 'GUANLI', label: '管理' },
+              ]}
+            />
           </div>
 
-          {/* 授权厅（合并原"所属厅"和"额外授权厅"：勾选即授权，第一个勾选的为主厅） */}
+          {/* 授权厅与合厅组（超管角色合并显示，含主厅设置） */}
           {isHuizhang && (
             <div>
               <label className="block text-xs text-textSecondary mb-1">
-                授权厅
+                {accountForm.role === 'CHAOGUAN' ? '授权厅与合厅组' : '授权厅'}
                 {accountForm.role === 'HUIZHANG' ? (
                   <span className="text-textMuted">（会长可不绑定厅；第一个勾选的为主厅）</span>
+                ) : accountForm.role === 'CHAOGUAN' ? (
+                  <span className="text-textMuted">（勾选授权，选一个作为主厅；合厅组可设为主厅）</span>
                 ) : (
                   <span className="text-textMuted">（至少勾选一个；第一个勾选的为主厅）</span>
                 )}
               </label>
-              <div className="max-h-32 overflow-auto border border-border rounded-lg p-2 space-y-1">
+              <div className="max-h-40 overflow-auto border border-border rounded-lg p-2 space-y-0.5">
+                {/* 厅列表 */}
                 {branches.map((b) => {
                   const checked = accountForm.branchIds.includes(b.id)
-                  const isMain = accountForm.branchIds[0] === b.id
+                  const isMain =
+                    accountForm.role === 'CHAOGUAN'
+                      ? accountForm.mainGroupId === null && accountForm.branchIds[0] === b.id
+                      : accountForm.branchIds[0] === b.id
                   return (
-                    <label
+                    <div
                       key={b.id}
-                      className="flex items-center gap-2 text-sm cursor-pointer hover:bg-surface rounded px-2 py-1"
+                      className="flex items-center gap-2 text-sm rounded px-2 py-1 hover:bg-surface"
                     >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setAccountForm({
-                              ...accountForm,
-                              branchIds: [...accountForm.branchIds, b.id],
-                            })
-                          } else {
-                            // 非会长角色至少保留一个授权厅
-                            if (
-                              accountForm.role !== 'HUIZHANG' &&
-                              accountForm.branchIds.length === 1
-                            ) {
-                              toast.error('请至少保留一个授权厅')
-                              return
+                      <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setAccountForm({
+                                ...accountForm,
+                                branchIds: [...accountForm.branchIds, b.id],
+                              })
+                            } else {
+                              // 非会长角色至少保留一个授权厅
+                              if (
+                                accountForm.role !== 'HUIZHANG' &&
+                                accountForm.branchIds.length === 1 &&
+                                accountForm.mainGroupId === null
+                              ) {
+                                toast.error('请至少保留一个授权厅或合厅组')
+                                return
+                              }
+                              setAccountForm({
+                                ...accountForm,
+                                branchIds: accountForm.branchIds.filter(
+                                  (id) => id !== b.id,
+                                ),
+                              })
                             }
-                            setAccountForm({
-                              ...accountForm,
-                              branchIds: accountForm.branchIds.filter(
-                                (id) => id !== b.id,
-                              ),
-                            })
-                          }
-                        }}
-                        className="checkbox-round"
-                      />
-                      <span>{b.name}</span>
-                      {isMain && (
-                        <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                          }}
+                          className="checkbox-round"
+                        />
+                        <span className="truncate">{b.name}</span>
+                        <span className="text-[10px] text-textMuted bg-surface px-1 rounded flex-shrink-0">
+                          厅
+                        </span>
+                      </label>
+                      {accountForm.role === 'CHAOGUAN' && checked && (
+                        <label className="flex items-center gap-1 cursor-pointer text-[10px] text-textSecondary flex-shrink-0">
+                          <input
+                            type="radio"
+                            name="mainHall"
+                            checked={isMain}
+                            onChange={() => {
+                              // 设为分支主厅：移到首位，清除主合厅组
+                              setAccountForm({
+                                ...accountForm,
+                                branchIds: [
+                                  b.id,
+                                  ...accountForm.branchIds.filter((id) => id !== b.id),
+                                ],
+                                mainGroupId: null,
+                              })
+                            }}
+                            className="radio-round"
+                          />
+                          主厅
+                        </label>
+                      )}
+                      {isMain && accountForm.role !== 'CHAOGUAN' && (
+                        <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary flex-shrink-0">
                           主厅
                         </span>
                       )}
-                    </label>
+                    </div>
                   )
                 })}
+                {/* 合厅组列表（仅超管角色） */}
+                {accountForm.role === 'CHAOGUAN' &&
+                  branchGroups.map((g) => {
+                    const checked = accountForm.groupIds.includes(g.id)
+                    const isMain = accountForm.mainGroupId === g.id
+                    const activeCount = g.branches.filter((b) => !b.closed).length
+                    return (
+                      <div
+                        key={g.id}
+                        className="flex items-center gap-2 text-sm rounded px-2 py-1 hover:bg-surface"
+                      >
+                        <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setAccountForm({
+                                  ...accountForm,
+                                  groupIds: [...accountForm.groupIds, g.id],
+                                })
+                              } else {
+                                // 取消勾选时，若该合厅组是主厅则清除
+                                setAccountForm({
+                                  ...accountForm,
+                                  groupIds: accountForm.groupIds.filter(
+                                    (id) => id !== g.id,
+                                  ),
+                                  mainGroupId:
+                                    accountForm.mainGroupId === g.id
+                                      ? null
+                                      : accountForm.mainGroupId,
+                                })
+                              }
+                            }}
+                            className="checkbox-round"
+                          />
+                          <span className="truncate">{g.name}</span>
+                          <span className="text-[10px] text-primary bg-primary/10 px-1 rounded flex-shrink-0">
+                            合厅组
+                          </span>
+                          <span className="text-[10px] text-textMuted flex-shrink-0">
+                            {activeCount}厅
+                          </span>
+                        </label>
+                        {checked && (
+                          <label className="flex items-center gap-1 cursor-pointer text-[10px] text-textSecondary flex-shrink-0">
+                            <input
+                              type="radio"
+                              name="mainHall"
+                              checked={isMain}
+                              onChange={() => {
+                                // 设为合厅组主厅
+                                setAccountForm({
+                                  ...accountForm,
+                                  mainGroupId: g.id,
+                                })
+                              }}
+                              className="radio-round"
+                            />
+                            主厅
+                          </label>
+                        )}
+                      </div>
+                    )
+                  })}
               </div>
             </div>
           )}

@@ -17,6 +17,7 @@ import { notificationsApi, getErrorMessage } from '../../api'
 import { useToast } from '../../hooks/useToast'
 import SubPageHeader from '../../components/SubPageHeader'
 import { Skeleton } from '../../components/Skeleton'
+import GroupedSelect from '../../components/GroupedSelect'
 import { formatDateTime } from '../../utils'
 import type { Notification, NotificationType } from '../../types'
 
@@ -186,35 +187,37 @@ export default function NotificationsPage() {
             <label className="block text-xs text-textSecondary mb-1">
               通知类型
             </label>
-            <select
+            <GroupedSelect
               value={filterType}
-              onChange={(e) =>
-                setFilterType(e.target.value as NotificationType | '')
+              onChange={(val) =>
+                setFilterType(val as NotificationType | '')
               }
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer"
-            >
-              <option value="">全部</option>
-              <option value="RULE_CHANGE">规则变更</option>
-              <option value="RANK_PUBLISH">排名公布</option>
-              <option value="DATA_CHANGE">数据变更</option>
-            </select>
+              fullWidth
+              topOption={{ value: '', label: '全部' }}
+              options={[
+                { value: 'RULE_CHANGE', label: '规则变更' },
+                { value: 'RANK_PUBLISH', label: '排名公布' },
+                { value: 'DATA_CHANGE', label: '数据变更' },
+              ]}
+            />
           </div>
           {/* 已读状态 */}
           <div>
             <label className="block text-xs text-textSecondary mb-1">
               已读状态
             </label>
-            <select
+            <GroupedSelect
               value={filterIsRead}
-              onChange={(e) =>
-                setFilterIsRead(e.target.value as '' | 'true' | 'false')
+              onChange={(val) =>
+                setFilterIsRead(val as '' | 'true' | 'false')
               }
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer"
-            >
-              <option value="">全部</option>
-              <option value="false">未读</option>
-              <option value="true">已读</option>
-            </select>
+              fullWidth
+              topOption={{ value: '', label: '全部' }}
+              options={[
+                { value: 'false', label: '未读' },
+                { value: 'true', label: '已读' },
+              ]}
+            />
           </div>
         </div>
       </motion.div>

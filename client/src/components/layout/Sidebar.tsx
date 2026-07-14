@@ -120,7 +120,7 @@ export default function Sidebar({
             sidebarCollapsed ? 'lg:px-0 lg:text-center' : ''
           }`}
         >
-          <div className="text-sm font-medium text-textPrimary truncate">
+          <div className="text-sm font-medium text-textPrimary min-w-0">
             {user?.nickname?.trim() ? (
               <>
                 {user.nickname}

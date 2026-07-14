@@ -1,8 +1,23 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { Building2, Plus, Trash2, Pencil, Gift, Crown, Power } from 'lucide-react'
+import {
+  Building2,
+  Plus,
+  Trash2,
+  Pencil,
+  Gift,
+  Crown,
+  Power,
+  GitMerge,
+  ChevronDown,
+  ChevronRight,
+  CheckSquare,
+  Square,
+  X,
+} from 'lucide-react'
 import {
   branchesApi,
+  branchGroupsApi,
   rewardRulesApi,
   namingLevelsApi,
   getErrorMessage,
@@ -11,9 +26,11 @@ import { useAuth } from '../../hooks/useAuth'
 import { useToast } from '../../hooks/useToast'
 import Modal from '../../components/Modal'
 import { Skeleton, Spinner } from '../../components/Skeleton'
+import GroupedSelect from '../../components/GroupedSelect'
 import SubPageHeader from '../../components/SubPageHeader'
 import type {
   Branch,
+  BranchGroup,
   RewardRule,
   UpdateRewardRuleInput,
   NamingLevel,
@@ -170,6 +187,40 @@ export default function BranchesPage() {
   })
   const [namingSubmitting, setNamingSubmitting] = useState(false)
 
+  // ============ 合厅组管理状态 ============
+  const [branchGroups, setBranchGroups] = useState<BranchGroup[]>([])
+  const [groupsLoading, setGroupsLoading] = useState(false)
+  // 厅多选（仅会长可操作）
+  const [selectedBranchIds, setSelectedBranchIds] = useState<Set<number>>(
+    new Set(),
+  )
+  // 折叠的合厅组卡片
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<number>>(
+    new Set(),
+  )
+
+  // 创建合厅组弹窗
+  const [createGroupModalOpen, setCreateGroupModalOpen] = useState(false)
+  const [newGroupName, setNewGroupName] = useState('')
+  const [creatingGroup, setCreatingGroup] = useState(false)
+
+  // 重命名合厅组弹窗
+  const [renameGroupTarget, setRenameGroupTarget] =
+    useState<BranchGroup | null>(null)
+  const [renameGroupName, setRenameGroupName] = useState('')
+  const [renamingGroup, setRenamingGroup] = useState(false)
+
+  // 解散合厅组确认弹窗
+  const [dissolveGroupTarget, setDissolveGroupTarget] =
+    useState<BranchGroup | null>(null)
+  const [dissolvingGroup, setDissolvingGroup] = useState(false)
+
+  // 添加厅到合厅组弹窗
+  const [addBranchTarget, setAddBranchTarget] =
+    useState<BranchGroup | null>(null)
+  const [addBranchId, setAddBranchId] = useState<number | null>(null)
+  const [addingBranch, setAddingBranch] = useState(false)
+
   const loadBranches = async () => {
     setBranchesLoading(true)
     try {
@@ -182,9 +233,30 @@ export default function BranchesPage() {
     }
   }
 
+  const loadBranchGroups = async () => {
+    setGroupsLoading(true)
+    try {
+      const list = await branchGroupsApi.list()
+      setBranchGroups(list)
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setGroupsLoading(false)
+    }
+  }
+
+  // 合厅操作后刷新厅与合厅组列表（两者均需刷新以同步 groupId）
+  const reloadAll = async () => {
+    await Promise.all([loadBranches(), loadBranchGroups()])
+  }
+
   useEffect(() => {
     if (canManage) {
       loadBranches()
+      // 合厅组管理仅会长可见，仅会长时加载
+      if (isHuizhang) {
+        loadBranchGroups()
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canManage])
@@ -427,6 +499,174 @@ export default function BranchesPage() {
     }
   }
 
+  // ============ 合厅组管理 ============
+
+  // 切换厅选中状态
+  const toggleBranchSelect = (id: number) => {
+    setSelectedBranchIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  // 全选 / 取消全选（仅未分组的厅）
+  const toggleSelectAll = () => {
+    setSelectedBranchIds((prev) => {
+      const ungroupedIds = branches.filter((b) => !groupedBranchIds.has(b.id)).map((b) => b.id)
+      if (ungroupedIds.length > 0 && ungroupedIds.every((id) => prev.has(id))) {
+        // 已全选未分组厅：取消全选
+        const next = new Set(prev)
+        ungroupedIds.forEach((id) => next.delete(id))
+        return next
+      }
+      // 未全选：全选未分组厅
+      const next = new Set(prev)
+      ungroupedIds.forEach((id) => next.add(id))
+      return next
+    })
+  }
+
+  // 清空选择
+  const clearSelection = () => setSelectedBranchIds(new Set())
+
+  // 打开创建合厅组弹窗
+  const openCreateGroupModal = () => {
+    if (selectedBranchIds.size < 2) {
+      toast.error('请至少选择 2 个厅')
+      return
+    }
+    setNewGroupName('')
+    setCreateGroupModalOpen(true)
+  }
+
+  // 确认创建合厅组
+  const handleCreateGroup = async () => {
+    if (!newGroupName.trim()) {
+      toast.error('请输入合厅组名称')
+      return
+    }
+    setCreatingGroup(true)
+    try {
+      await branchGroupsApi.create({
+        name: newGroupName.trim(),
+        branchIds: Array.from(selectedBranchIds),
+      })
+      toast.success('合厅组创建成功')
+      setCreateGroupModalOpen(false)
+      setNewGroupName('')
+      clearSelection()
+      await reloadAll()
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setCreatingGroup(false)
+    }
+  }
+
+  // 打开重命名弹窗
+  const openRenameGroupModal = (group: BranchGroup) => {
+    setRenameGroupTarget(group)
+    setRenameGroupName(group.name)
+  }
+
+  // 确认重命名
+  const handleRenameGroup = async () => {
+    if (!renameGroupTarget) return
+    if (!renameGroupName.trim()) {
+      toast.error('请输入合厅组名称')
+      return
+    }
+    setRenamingGroup(true)
+    try {
+      await branchGroupsApi.rename(renameGroupTarget.id, renameGroupName.trim())
+      toast.success('重命名成功')
+      setRenameGroupTarget(null)
+      setRenameGroupName('')
+      await loadBranchGroups()
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setRenamingGroup(false)
+    }
+  }
+
+  // 打开解散确认弹窗
+  const openDissolveGroupModal = (group: BranchGroup) => {
+    setDissolveGroupTarget(group)
+  }
+
+  // 确认解散合厅组
+  const handleDissolveGroup = async () => {
+    if (!dissolveGroupTarget) return
+    setDissolvingGroup(true)
+    try {
+      await branchGroupsApi.dissolve(dissolveGroupTarget.id)
+      toast.success('合厅组已解散')
+      setDissolveGroupTarget(null)
+      await reloadAll()
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setDissolvingGroup(false)
+    }
+  }
+
+  // 打开添加厅到合厅组弹窗
+  const openAddBranchToGroupModal = (group: BranchGroup) => {
+    setAddBranchTarget(group)
+    setAddBranchId(null)
+  }
+
+  // 确认添加厅到合厅组
+  const handleAddBranchToGroup = async () => {
+    if (!addBranchTarget) return
+    if (!addBranchId) {
+      toast.error('请选择要添加的厅')
+      return
+    }
+    setAddingBranch(true)
+    try {
+      await branchGroupsApi.addBranch(addBranchTarget.id, addBranchId)
+      toast.success('已添加到合厅组')
+      setAddBranchTarget(null)
+      setAddBranchId(null)
+      await reloadAll()
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setAddingBranch(false)
+    }
+  }
+
+  // 从合厅组移除厅
+  const handleRemoveBranch = async (group: BranchGroup, branchId: number) => {
+    try {
+      await branchGroupsApi.removeBranch(group.id, branchId)
+      toast.success('已从合厅组移除')
+      await reloadAll()
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    }
+  }
+
+  // 折叠 / 展开合厅组卡片
+  const toggleGroupCollapse = (groupId: number) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(groupId)) {
+        next.delete(groupId)
+      } else {
+        next.add(groupId)
+      }
+      return next
+    })
+  }
+
   if (!canManage) {
     return (
       <div className="py-12 text-center text-sm text-textMuted">
@@ -435,39 +675,237 @@ export default function BranchesPage() {
     )
   }
 
+  // 已分组的厅 ID 集合（从合厅组列表推导，Branch 本身不携带 groupId）
+  const groupedBranchIds = new Set(
+    branchGroups.flatMap((g) => g.branches.map((b) => b.id)),
+  )
+
+  // 添加厅到合厅组弹窗的可选厅：未分组 且 不在目标组中
+  const addBranchCandidates = addBranchTarget
+    ? branches.filter(
+        (b) =>
+          !groupedBranchIds.has(b.id) &&
+          !addBranchTarget.branches.some((mb) => mb.id === b.id),
+      )
+    : []
+
   return (
     <div className="space-y-5">
       <SubPageHeader
         title="厅管理"
         desc="管理厅信息、统计周期与奖励规则"
       />
+
+      {/* 合厅组管理（仅会长可见） */}
+      {isHuizhang && (
+        <motion.div
+          className="bg-card border border-border rounded-xl p-5"
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <GitMerge size={18} className="text-primary" />
+              <h3 className="text-base font-semibold text-textPrimary">
+                合厅组管理
+              </h3>
+              <span className="text-xs text-textMuted hidden sm:inline">
+                将多个厅合并为一组，便于统一管理
+              </span>
+            </div>
+          </div>
+
+          {groupsLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 2 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="border border-border rounded-lg p-4"
+                >
+                  <Skeleton className="h-5 w-40 mb-3" />
+                  <div className="flex gap-2">
+                    <Skeleton className="h-6 w-20" />
+                    <Skeleton className="h-6 w-24" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : branchGroups.length === 0 ? (
+            <div className="py-8 text-center text-sm text-textMuted">
+              暂无合厅组，在下方厅列表中选择 2 个及以上厅后点击「合并选中」创建
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {branchGroups.map((group) => {
+                const collapsed = collapsedGroups.has(group.id)
+                return (
+                  <div
+                    key={group.id}
+                    className="border border-border rounded-lg overflow-hidden shadow-sm"
+                  >
+                    {/* 卡片头部（可点击折叠） */}
+                    <div className="flex items-center justify-between px-4 py-3 bg-surface">
+                      <button
+                        type="button"
+                        onClick={() => toggleGroupCollapse(group.id)}
+                        className="flex items-center gap-2 cursor-pointer text-left flex-1 min-w-0"
+                        title={collapsed ? '展开' : '折叠'}
+                      >
+                        {collapsed ? (
+                          <ChevronRight
+                            size={16}
+                            className="text-textSecondary shrink-0"
+                          />
+                        ) : (
+                          <ChevronDown
+                            size={16}
+                            className="text-textSecondary shrink-0"
+                          />
+                        )}
+                        <GitMerge
+                          size={15}
+                          className="text-primary shrink-0"
+                        />
+                        <span className="text-sm font-semibold text-textPrimary truncate">
+                          {group.name}
+                        </span>
+                        <span className="text-xs text-textMuted shrink-0">
+                          {group.branches.length} 个厅
+                        </span>
+                      </button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => openRenameGroupModal(group)}
+                          className="p-1.5 text-textSecondary hover:text-primary hover:bg-primary/10 rounded transition-colors duration-200 cursor-pointer"
+                          title="重命名合厅组"
+                        >
+                          <Pencil size={15} />
+                        </button>
+                        <button
+                          onClick={() => openDissolveGroupModal(group)}
+                          className="p-1.5 text-textSecondary hover:text-danger hover:bg-danger/10 rounded transition-colors duration-200 cursor-pointer"
+                          title="解散合厅组"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+                    {/* 成员厅列表（可折叠） */}
+                    {!collapsed && (
+                      <div className="px-4 py-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {group.branches.length === 0 ? (
+                            <span className="text-xs text-textMuted">
+                              暂无成员厅
+                            </span>
+                          ) : (
+                            group.branches.map((b) => (
+                              <span
+                                key={b.id}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-surface border border-border text-xs text-textPrimary"
+                              >
+                                {b.name}
+                                <button
+                                  onClick={() =>
+                                    handleRemoveBranch(group, b.id)
+                                  }
+                                  className="text-textMuted hover:text-danger cursor-pointer transition-colors duration-200"
+                                  title="从合厅组移除"
+                                >
+                                  <X size={12} />
+                                </button>
+                              </span>
+                            ))
+                          )}
+                          <button
+                            onClick={() => openAddBranchToGroupModal(group)}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-dashed border-border text-xs text-textSecondary hover:text-primary hover:border-primary transition-colors duration-200 cursor-pointer"
+                          >
+                            <Plus size={12} />
+                            添加厅
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </motion.div>
+      )}
+
       <motion.div
         className="bg-card border border-border rounded-xl p-5"
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
       >
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <Building2 size={18} className="text-primary" />
             <h3 className="text-base font-semibold text-textPrimary">
               厅管理
             </h3>
+            {isHuizhang && selectedBranchIds.size > 0 && (
+              <span className="text-xs text-textSecondary ml-2">
+                已选 {selectedBranchIds.size} 个
+                <button
+                  onClick={clearSelection}
+                  className="ml-1.5 text-textMuted hover:text-textPrimary underline cursor-pointer"
+                >
+                  清空
+                </button>
+              </span>
+            )}
           </div>
-          {isHuizhang && (
-            <button
-              onClick={openAddBranchModal}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors duration-200 cursor-pointer"
-            >
-              <Plus size={16} />
-              添加厅
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {isHuizhang && (
+              <button
+                onClick={openCreateGroupModal}
+                disabled={selectedBranchIds.size < 2}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-border text-textPrimary rounded-lg text-sm font-medium hover:border-primary hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-border disabled:hover:text-textPrimary transition-colors duration-200 cursor-pointer"
+                title="选择 2 个及以上厅后可合并为合厅组"
+              >
+                <GitMerge size={16} />
+                合并选中
+              </button>
+            )}
+            {isHuizhang && (
+              <button
+                onClick={openAddBranchModal}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors duration-200 cursor-pointer"
+              >
+                <Plus size={16} />
+                添加厅
+              </button>
+            )}
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-surface border-b border-border">
               <tr className="text-left text-textSecondary">
+                {isHuizhang && (
+                  <th className="px-4 py-3 w-10">
+                    <button
+                      type="button"
+                      onClick={toggleSelectAll}
+                      className="text-textSecondary hover:text-primary cursor-pointer transition-colors duration-200"
+                      title="全选/取消全选"
+                    >
+                      {(() => {
+                        const ungroupedIds = branches.filter((b) => !groupedBranchIds.has(b.id)).map((b) => b.id)
+                        if (ungroupedIds.length === 0) return <Square size={16} className="text-textMuted" />
+                        if (ungroupedIds.every((id) => selectedBranchIds.has(id))) {
+                          return <CheckSquare size={16} className="text-primary" />
+                        }
+                        return <Square size={16} />
+                      })()}
+                    </button>
+                  </th>
+                )}
                 <th className="px-4 py-3 font-medium">名称</th>
                 <th className="px-4 py-3 font-medium">统计周期</th>
                 <th className="px-4 py-3 font-medium">状态</th>
@@ -480,7 +918,7 @@ export default function BranchesPage() {
               {branchesLoading ? (
                 Array.from({ length: 4 }).map((_, i) => (
                   <tr key={i} className="border-b border-border last:border-0">
-                    {Array.from({ length: 6 }).map((_, j) => (
+                    {Array.from({ length: isHuizhang ? 7 : 6 }).map((_, j) => (
                       <td key={j} className="px-4 py-3">
                         <Skeleton className="h-5 w-full" />
                       </td>
@@ -490,7 +928,7 @@ export default function BranchesPage() {
               ) : branches.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={isHuizhang ? 7 : 6}
                     className="px-4 py-12 text-center text-textMuted"
                   >
                     暂无厅
@@ -498,13 +936,50 @@ export default function BranchesPage() {
                 </tr>
               ) : (
                 branches.map((b) => {
+                  const isGrouped = groupedBranchIds.has(b.id)
                   return (
                     <tr
                       key={b.id}
-                      className="border-b border-border last:border-0 hover:bg-surface transition-colors duration-200"
+                      className={`border-b border-border last:border-0 hover:bg-surface transition-colors duration-200 ${
+                        selectedBranchIds.has(b.id) ? 'bg-primary/5' : ''
+                      } ${isGrouped ? 'opacity-60' : ''}`}
                     >
+                      {isHuizhang && (
+                        <td className="px-4 py-3">
+                          {isGrouped ? (
+                            <span
+                              className="inline-block text-textMuted cursor-not-allowed"
+                              title="该厅已在合厅组中，无法再次合并"
+                            >
+                              <Square size={16} />
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => toggleBranchSelect(b.id)}
+                              className="text-textSecondary hover:text-primary cursor-pointer transition-colors duration-200"
+                              title={
+                                selectedBranchIds.has(b.id) ? '取消选择' : '选择'
+                              }
+                            >
+                              {selectedBranchIds.has(b.id) ? (
+                                <CheckSquare size={16} className="text-primary" />
+                              ) : (
+                                <Square size={16} />
+                              )}
+                            </button>
+                          )}
+                        </td>
+                      )}
                       <td className="px-4 py-3 text-textPrimary font-medium">
-                        {b.name}
+                        <span className="inline-flex items-center gap-1.5">
+                          {b.name}
+                          {isGrouped && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-primary/10 text-primary border border-primary/20">
+                              已合并
+                            </span>
+                          )}
+                        </span>
                       </td>
                       <td className="px-4 py-3 text-textSecondary">
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-surface border border-border">
@@ -1124,6 +1599,227 @@ export default function BranchesPage() {
                 关闭后，该厅将不在公开看板/排名中显示，且无法录入新数据。历史数据保留，可随时重新开启。
               </p>
             </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* 创建合厅组弹窗 */}
+      <Modal
+        open={createGroupModalOpen}
+        title="创建合厅组"
+        onClose={() => setCreateGroupModalOpen(false)}
+        footer={
+          <>
+            <button
+              onClick={() => setCreateGroupModalOpen(false)}
+              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleCreateGroup}
+              disabled={creatingGroup}
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+            >
+              {creatingGroup ? (
+                <Spinner className="h-4 w-4" />
+              ) : (
+                <GitMerge size={16} />
+              )}
+              {creatingGroup ? '创建中...' : '创建合厅组'}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-textSecondary">
+            将选中的 {selectedBranchIds.size} 个厅合并为一个合厅组，合并后可在合厅组管理中统一操作。
+          </p>
+          <div>
+            <label className="block text-xs text-textSecondary mb-1">
+              合厅组名称
+            </label>
+            <input
+              type="text"
+              value={newGroupName}
+              onChange={(e) => setNewGroupName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !creatingGroup) handleCreateGroup()
+              }}
+              placeholder="请输入合厅组名称"
+              autoFocus
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-textSecondary mb-1">
+              成员厅
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {branches
+                .filter((b) => selectedBranchIds.has(b.id))
+                .map((b) => (
+                  <span
+                    key={b.id}
+                    className="inline-flex items-center px-2 py-1 rounded-md bg-surface border border-border text-xs text-textPrimary"
+                  >
+                    {b.name}
+                  </span>
+                ))}
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* 重命名合厅组弹窗 */}
+      <Modal
+        open={renameGroupTarget !== null}
+        title="重命名合厅组"
+        onClose={() => {
+          setRenameGroupTarget(null)
+          setRenameGroupName('')
+        }}
+        footer={
+          <>
+            <button
+              onClick={() => {
+                setRenameGroupTarget(null)
+                setRenameGroupName('')
+              }}
+              disabled={renamingGroup}
+              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer disabled:opacity-60"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleRenameGroup}
+              disabled={renamingGroup}
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+            >
+              {renamingGroup ? (
+                <Spinner className="h-4 w-4" />
+              ) : (
+                <Pencil size={16} />
+              )}
+              {renamingGroup ? '保存中...' : '保存'}
+            </button>
+          </>
+        }
+      >
+        <div>
+          <label className="block text-xs text-textSecondary mb-1">
+            合厅组名称
+          </label>
+          <input
+            type="text"
+            value={renameGroupName}
+            onChange={(e) => setRenameGroupName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !renamingGroup) handleRenameGroup()
+            }}
+            placeholder="请输入新的合厅组名称"
+            autoFocus
+            className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+          />
+        </div>
+      </Modal>
+
+      {/* 解散合厅组确认弹窗 */}
+      <Modal
+        open={dissolveGroupTarget !== null}
+        title="解散合厅组"
+        onClose={() => setDissolveGroupTarget(null)}
+        footer={
+          <>
+            <button
+              onClick={() => setDissolveGroupTarget(null)}
+              disabled={dissolvingGroup}
+              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer disabled:opacity-60"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleDissolveGroup}
+              disabled={dissolvingGroup}
+              className="flex items-center gap-1.5 px-4 py-2 bg-danger text-white rounded-lg text-sm font-medium hover:bg-danger/90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+            >
+              {dissolvingGroup ? (
+                <Spinner className="h-4 w-4" />
+              ) : (
+                <Trash2 size={16} />
+              )}
+              {dissolvingGroup ? '解散中...' : '确认解散'}
+            </button>
+          </>
+        }
+      >
+        <div className="p-3 rounded-lg bg-danger/10 border border-danger/20">
+          <p className="text-sm text-danger font-medium">
+            解散合厅组「{dissolveGroupTarget?.name}」
+          </p>
+          <p className="text-xs text-textSecondary mt-1 leading-relaxed">
+            解散后，该合厅组中的厅将不再归属任何合厅组，厅本身的数据不受影响。此操作不可撤销。
+          </p>
+        </div>
+      </Modal>
+
+      {/* 添加厅到合厅组弹窗 */}
+      <Modal
+        open={addBranchTarget !== null}
+        title={`添加厅到「${addBranchTarget?.name ?? ''}」`}
+        onClose={() => {
+          setAddBranchTarget(null)
+          setAddBranchId(null)
+        }}
+        footer={
+          <>
+            <button
+              onClick={() => {
+                setAddBranchTarget(null)
+                setAddBranchId(null)
+              }}
+              disabled={addingBranch}
+              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer disabled:opacity-60"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleAddBranchToGroup}
+              disabled={addingBranch || !addBranchId}
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+            >
+              {addingBranch ? (
+                <Spinner className="h-4 w-4" />
+              ) : (
+                <Plus size={16} />
+              )}
+              {addingBranch ? '添加中...' : '添加'}
+            </button>
+          </>
+        }
+      >
+        <div>
+          <label className="block text-xs text-textSecondary mb-1">
+            选择未分组的厅
+          </label>
+          {addBranchCandidates.length === 0 ? (
+            <p className="text-xs text-textMuted py-4 text-center">
+              暂无可添加的厅（所有厅均已分组）
+            </p>
+          ) : (
+            <GroupedSelect
+              value={addBranchId !== null ? String(addBranchId) : ''}
+              onChange={(val) =>
+                setAddBranchId(val ? Number(val) : null)
+              }
+              placeholder="请选择厅"
+              fullWidth
+              topOption={{ value: '', label: '请选择厅' }}
+              options={addBranchCandidates.map((b) => ({
+                value: String(b.id),
+                label: b.name,
+              }))}
+            />
           )}
         </div>
       </Modal>

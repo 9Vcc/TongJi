@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
-import { authenticate, canAccessBranch, getAccessibleBranchIds } from '../middleware/auth'
+import { authenticate, canAccessBranch, canAccessGroup, getAccessibleBranchIds } from '../middleware/auth'
 import { StatCycle, Role } from '../../generated/prisma/client'
+import prisma from '../lib/prisma'
 import {
   computeRanking,
   resolveCycle,
@@ -54,14 +55,31 @@ function resolveDashboardBranchId(
 /**
  * 按用户权限计算排名
  * - 指定单厅：直接调用 computeRanking
+ * - 指定合厅组：查询组内所有厅并合并
  * - 全部厅：会长查所有厅，超管仅查授权厅（分别查询后合并）
  */
 async function computeRankingForUser(
   refDate: Date,
   branchFilter: number | undefined,
+  groupFilter: number | undefined,
   cycle: StatCycle,
-  currentUser: { role: Role; branchId: number | null; branchIds: number[] }
+  currentUser: { role: Role; branchId: number | null; branchIds: number[]; groupIds: number[] }
 ) {
+  // 合厅组模式：查询组内所有厅并合并
+  if (groupFilter) {
+    const group = await prisma.branchGroup.findUnique({
+      where: { id: groupFilter },
+      include: { branches: { select: { id: true, statCycle: true } } },
+    })
+    if (!group || group.branches.length === 0) return []
+    // 合厅组内所有厅 statCycle 一致，取第一个厅的周期
+    const groupCycle = group.branches[0].statCycle
+    const results = await Promise.all(
+      group.branches.map((b) => computeRanking(refDate, b.id, groupCycle))
+    )
+    return results.flat()
+  }
+
   if (branchFilter) {
     return computeRanking(refDate, branchFilter, cycle)
   }
@@ -98,6 +116,20 @@ function aggregate(ranking: {
   }
 }
 
+/**
+ * 解析合厅组参数：校验权限并返回 groupFilter
+ */
+async function resolveGroupFilter(
+  currentUser: { role: Role; groupIds: number[] },
+  groupParam: string | undefined
+): Promise<number | undefined> {
+  if (!groupParam) return undefined
+  const groupId = Number(groupParam)
+  if (Number.isNaN(groupId)) return undefined
+  if (!canAccessGroup(currentUser, groupId)) return undefined
+  return groupId
+}
+
 export default async function dashboardRoutes(fastify: FastifyInstance) {
   // GET /api/dashboard/summary - 本期汇总（按厅统计周期，全部厅默认按月）
   fastify.get(
@@ -105,14 +137,15 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
     { preHandler: [authenticate] },
     async (request, reply) => {
       const currentUser = request.user
-      const { weekStart: weekStartParam, branchId: branchIdParam, cycle: cycleParam, viewAll } =
-        request.query as { weekStart?: string; branchId?: string; cycle?: string; viewAll?: string }
+      const { weekStart: weekStartParam, branchId: branchIdParam, cycle: cycleParam, viewAll, branchGroupId: groupParam } =
+        request.query as { weekStart?: string; branchId?: string; cycle?: string; viewAll?: string; branchGroupId?: string }
 
       const refDate = weekStartParam ? new Date(weekStartParam) : new Date()
+      const groupFilter = await resolveGroupFilter(currentUser, groupParam)
       const branchFilter = resolveDashboardBranchId(currentUser, branchIdParam, viewAll)
       const cycle = await resolveCycleParam(cycleParam, branchFilter)
 
-      const ranking = await computeRankingForUser(refDate, branchFilter, cycle, currentUser)
+      const ranking = await computeRankingForUser(refDate, branchFilter, groupFilter, cycle, currentUser)
 
       return reply.send(aggregate(ranking))
     }
@@ -124,14 +157,15 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
     { preHandler: [authenticate] },
     async (request, reply) => {
       const currentUser = request.user
-      const { weekStart: weekStartParam, branchId: branchIdParam, cycle: cycleParam, viewAll } =
-        request.query as { weekStart?: string; branchId?: string; cycle?: string; viewAll?: string }
+      const { weekStart: weekStartParam, branchId: branchIdParam, cycle: cycleParam, viewAll, branchGroupId: groupParam } =
+        request.query as { weekStart?: string; branchId?: string; cycle?: string; viewAll?: string; branchGroupId?: string }
 
       const refDate = weekStartParam ? new Date(weekStartParam) : new Date()
+      const groupFilter = await resolveGroupFilter(currentUser, groupParam)
       const branchFilter = resolveDashboardBranchId(currentUser, branchIdParam, viewAll)
       const cycle = await resolveCycleParam(cycleParam, branchFilter)
 
-      const ranking = await computeRankingForUser(refDate, branchFilter, cycle, currentUser)
+      const ranking = await computeRankingForUser(refDate, branchFilter, groupFilter, cycle, currentUser)
 
       // 返回每个分部的前3名
       const top3 = ranking.filter((r) => r.rank <= 3)
@@ -146,10 +180,11 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
     { preHandler: [authenticate] },
     async (request, reply) => {
       const currentUser = request.user
-      const { weekStart: weekStartParam, branchId: branchIdParam, cycle: cycleParam, viewAll } =
-        request.query as { weekStart?: string; branchId?: string; cycle?: string; viewAll?: string }
+      const { weekStart: weekStartParam, branchId: branchIdParam, cycle: cycleParam, viewAll, branchGroupId: groupParam } =
+        request.query as { weekStart?: string; branchId?: string; cycle?: string; viewAll?: string; branchGroupId?: string }
 
       const refDate = weekStartParam ? new Date(weekStartParam) : new Date()
+      const groupFilter = await resolveGroupFilter(currentUser, groupParam)
       const branchFilter = resolveDashboardBranchId(currentUser, branchIdParam, viewAll)
       const cycle = await resolveCycleParam(cycleParam, branchFilter)
 
@@ -158,8 +193,8 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
       const lastPeriodStart = getPreviousPeriodStart(cycle, refDate)
 
       const [thisPeriodRanking, lastPeriodRanking] = await Promise.all([
-        computeRankingForUser(refDate, branchFilter, cycle, currentUser),
-        computeRankingForUser(lastPeriodStart, branchFilter, cycle, currentUser),
+        computeRankingForUser(refDate, branchFilter, groupFilter, cycle, currentUser),
+        computeRankingForUser(lastPeriodStart, branchFilter, groupFilter, cycle, currentUser),
       ])
 
       return reply.send({

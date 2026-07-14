@@ -54,13 +54,14 @@ function buildBranchWhere(
 
 export default async function dataQueryRoutes(fastify: FastifyInstance) {
   // GET /api/data-records - 按周查询数据
+  // 支持 branchIds 查询参数（逗号分隔），用于合厅组模式查询多个厅的数据
   fastify.get(
     '/api/data-records',
     { preHandler: [authenticate] },
     async (request, reply) => {
       const currentUser = request.user
-      const { weekStart: weekStartParam, branchId: branchIdParam } =
-        request.query as { weekStart?: string; branchId?: string }
+      const { weekStart: weekStartParam, branchId: branchIdParam, branchIds: branchIdsParam } =
+        request.query as { weekStart?: string; branchId?: string; branchIds?: string }
 
       // 计算查询的周起始（默认本周）
       // 不强制转周一：月统计厅前端传月初1日，周统计厅传周一
@@ -69,12 +70,37 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
         : getWeekStart()
       weekStart.setHours(0, 0, 0, 0)
 
-      const branchFilter = resolveQueryBranchId(currentUser, branchIdParam)
+      // 解析 branchIds（逗号分隔的厅 ID 列表，用于合厅组模式）
+      // 优先使用 branchIds，其次使用 branchId
+      let requestedBranchIds: number[] | undefined
+      if (branchIdsParam) {
+        requestedBranchIds = branchIdsParam
+          .split(',')
+          .map((s) => Number(s.trim()))
+          .filter((n) => !Number.isNaN(n) && n > 0)
+        if (requestedBranchIds.length === 0) requestedBranchIds = undefined
+      }
+
+      // 构建分部过滤条件
+      let branchWhere: { branchId?: number | { in: number[] } }
+      if (requestedBranchIds) {
+        // 合厅组模式：按指定的多个厅 ID 过滤（叠加权限校验）
+        if (currentUser.role === Role.HUIZHANG) {
+          branchWhere = { branchId: { in: requestedBranchIds } }
+        } else if (currentUser.role === Role.CHAOGUAN) {
+          branchWhere = { branchId: { in: requestedBranchIds.filter((id) => canAccessBranch(currentUser, id)) } }
+        } else {
+          branchWhere = { branchId: { in: requestedBranchIds.filter((id) => id === currentUser.branchId) } }
+        }
+      } else {
+        const branchFilter = resolveQueryBranchId(currentUser, branchIdParam)
+        branchWhere = buildBranchWhere(branchFilter, currentUser)
+      }
 
       const records = await prisma.dataRecord.findMany({
         where: {
           weekStart,
-          ...buildBranchWhere(branchFilter, currentUser),
+          ...branchWhere,
         },
         include: {
           personnel: { select: { id: true, name: true } },
@@ -99,13 +125,13 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
         prisma.deduction.findMany({
           where: {
             periodStart: weekStart,
-            ...buildBranchWhere(branchFilter, currentUser),
+            ...branchWhere,
           },
         }),
         prisma.deduction.findMany({
           where: {
             periodStart: monthStart,
-            ...buildBranchWhere(branchFilter, currentUser),
+            ...branchWhere,
           },
         }),
       ])
@@ -164,19 +190,43 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
   )
 
   // GET /api/weeks - 历史周列表
+  // 支持 branchIds 查询参数（逗号分隔），用于合厅组模式查询多个厅的周列表
   fastify.get(
     '/api/weeks',
     { preHandler: [authenticate] },
     async (request, reply) => {
       const currentUser = request.user
-      const { branchId: branchIdParam } = request.query as {
+      const { branchId: branchIdParam, branchIds: branchIdsParam } = request.query as {
         branchId?: string
+        branchIds?: string
       }
 
-      const branchFilter = resolveQueryBranchId(currentUser, branchIdParam)
+      // 解析 branchIds（逗号分隔的厅 ID 列表）
+      let branchWhere: { branchId?: number | { in: number[] } }
+      if (branchIdsParam) {
+        const requestedBranchIds = branchIdsParam
+          .split(',')
+          .map((s) => Number(s.trim()))
+          .filter((n) => !Number.isNaN(n) && n > 0)
+        if (requestedBranchIds.length > 0) {
+          if (currentUser.role === Role.HUIZHANG) {
+            branchWhere = { branchId: { in: requestedBranchIds } }
+          } else if (currentUser.role === Role.CHAOGUAN) {
+            branchWhere = { branchId: { in: requestedBranchIds.filter((id) => canAccessBranch(currentUser, id)) } }
+          } else {
+            branchWhere = { branchId: { in: requestedBranchIds.filter((id) => id === currentUser.branchId) } }
+          }
+        } else {
+          const branchFilter = resolveQueryBranchId(currentUser, branchIdParam)
+          branchWhere = buildBranchWhere(branchFilter, currentUser)
+        }
+      } else {
+        const branchFilter = resolveQueryBranchId(currentUser, branchIdParam)
+        branchWhere = buildBranchWhere(branchFilter, currentUser)
+      }
 
       const records = await prisma.dataRecord.findMany({
-        where: buildBranchWhere(branchFilter, currentUser),
+        where: branchWhere,
         select: { weekStart: true },
         distinct: ['weekStart'],
         orderBy: { weekStart: 'desc' },

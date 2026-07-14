@@ -3,6 +3,7 @@ import type {
   User,
   LoginResponse,
   Branch,
+  BranchGroup,
   Personnel,
   DataRecord,
   DataHistory,
@@ -138,11 +139,52 @@ export const branchesApi = {
   },
 }
 
+// ============ 合厅组管理 ============
+export const branchGroupsApi = {
+  list() {
+    return request.get<unknown, BranchGroup[]>('/branch-groups')
+  },
+  create(data: { name: string; branchIds: number[] }) {
+    return request.post<unknown, BranchGroup>('/branch-groups', data)
+  },
+  update(id: number, name: string) {
+    return request.put<unknown, BranchGroup>(`/branch-groups/${id}`, { name })
+  },
+  // 兼容旧调用：重命名合厅组
+  rename(id: number, name: string) {
+    return request.put<unknown, BranchGroup>(`/branch-groups/${id}`, { name })
+  },
+  delete(id: number) {
+    return request.delete<unknown, { message: string }>(`/branch-groups/${id}`)
+  },
+  // 兼容旧调用：解散合厅组
+  dissolve(id: number) {
+    return request.delete<unknown, { message: string }>(`/branch-groups/${id}`)
+  },
+  addBranch(id: number, branchId: number) {
+    return request.post<unknown, { message: string }>(
+      `/branch-groups/${id}/branches`,
+      { branchId },
+    )
+  },
+  removeBranch(id: number, branchId: number) {
+    return request.delete<unknown, { message: string }>(
+      `/branch-groups/${id}/branches/${branchId}`,
+    )
+  },
+}
+
 // ============ 人员管理 ============
 export const personnelApi = {
   list(branchId?: number) {
     return request.get<unknown, Personnel[]>('/personnel', {
       params: branchId ? { branchId } : undefined,
+    })
+  },
+  // 批量查询多个厅的人员（用于合厅组模式）
+  listByBranches(branchIds: number[]) {
+    return request.get<unknown, Personnel[]>('/personnel', {
+      params: { branchIds: branchIds.join(',') },
     })
   },
   create(data: CreatePersonnelInput) {
@@ -211,14 +253,21 @@ export const dataRecordsApi = {
 
 // ============ 数据查询 ============
 export const dataQueryApi = {
-  listByWeek(weekStart?: string, branchId?: number) {
+  listByWeek(weekStart?: string, branchId?: number, branchIds?: number[]) {
     return request.get<unknown, DataRecord[]>('/data-records', {
-      params: { weekStart, branchId },
+      params: {
+        weekStart,
+        branchId,
+        branchIds: branchIds ? branchIds.join(',') : undefined,
+      },
     })
   },
-  getWeeks(branchId?: number) {
+  getWeeks(branchId?: number, branchIds?: number[]) {
     return request.get<unknown, string[]>('/weeks', {
-      params: branchId ? { branchId } : undefined,
+      params: {
+        branchId,
+        branchIds: branchIds ? branchIds.join(',') : undefined,
+      },
     })
   },
   compare(week1: string, week2: string, branchId?: number) {
@@ -285,10 +334,17 @@ export const rankingApi = {
     weekStart?: string,
     branchId?: number,
     cycle?: 'WEEK' | 'MONTH',
-    viewAll?: boolean
+    viewAll?: boolean,
+    branchGroupId?: number,
   ) {
     return request.get<unknown, RankingItem[]>('/ranking', {
-      params: { weekStart, branchId, cycle, viewAll: viewAll ? 'true' : undefined },
+      params: {
+        weekStart,
+        branchId,
+        cycle,
+        viewAll: viewAll ? 'true' : undefined,
+        branchGroupId,
+      },
     })
   },
 }
@@ -299,30 +355,51 @@ export const dashboardApi = {
     weekStart?: string,
     branchId?: number,
     cycle?: 'WEEK' | 'MONTH',
-    viewAll?: boolean
+    viewAll?: boolean,
+    branchGroupId?: number,
   ) {
     return request.get<unknown, DashboardSummary>('/dashboard/summary', {
-      params: { weekStart, branchId, cycle, viewAll: viewAll ? 'true' : undefined },
+      params: {
+        weekStart,
+        branchId,
+        cycle,
+        viewAll: viewAll ? 'true' : undefined,
+        branchGroupId,
+      },
     })
   },
   getTop3(
     weekStart?: string,
     branchId?: number,
     cycle?: 'WEEK' | 'MONTH',
-    viewAll?: boolean
+    viewAll?: boolean,
+    branchGroupId?: number,
   ) {
     return request.get<unknown, RankingItem[]>('/dashboard/top3', {
-      params: { weekStart, branchId, cycle, viewAll: viewAll ? 'true' : undefined },
+      params: {
+        weekStart,
+        branchId,
+        cycle,
+        viewAll: viewAll ? 'true' : undefined,
+        branchGroupId,
+      },
     })
   },
   getCompare(
     weekStart?: string,
     branchId?: number,
     cycle?: 'WEEK' | 'MONTH',
-    viewAll?: boolean
+    viewAll?: boolean,
+    branchGroupId?: number,
   ) {
     return request.get<unknown, DashboardCompare>('/dashboard/compare', {
-      params: { weekStart, branchId, cycle, viewAll: viewAll ? 'true' : undefined },
+      params: {
+        weekStart,
+        branchId,
+        cycle,
+        viewAll: viewAll ? 'true' : undefined,
+        branchGroupId,
+      },
     })
   },
 }

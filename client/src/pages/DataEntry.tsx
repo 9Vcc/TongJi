@@ -9,6 +9,8 @@ import {
   Trash2,
   Search,
   X,
+  Layers,
+  AlertTriangle,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../hooks/useToast";
@@ -27,6 +29,7 @@ import BatchAddModal from "./data-entry/BatchAddModal";
 import BatchDeleteModal from "./data-entry/BatchDeleteModal";
 import ExportModal from "./data-entry/ExportModal";
 import DataTable from "./data-entry/DataTable";
+import GroupedSelect from "../components/GroupedSelect";
 import type { DisplayRow, EditableRecord } from "./data-entry/types";
 import { rowKey } from "./data-entry/types";
 
@@ -46,8 +49,14 @@ export default function DataEntry() {
     latestRemark,
     personnel,
     branches,
+    branchGroups,
     branchId,
     setBranchId,
+    selectedGroupId,
+    setSelectedGroupId,
+    isGroupMode,
+    isMixedCycle,
+    effectiveBranchIds,
     loading,
     effectiveBranchId,
     weekStart,
@@ -57,6 +66,10 @@ export default function DataEntry() {
     branchCycle,
     isMonthCycle,
     recordWeekStart,
+    getRecordWeekStart,
+    getBranchCycle,
+    getNamingLevels,
+    getRewardRule,
     sgInputEnabled,
     qmInputEnabled,
     zcInputEnabled,
@@ -64,6 +77,32 @@ export default function DataEntry() {
     editNamingsEnabled,
     loadData,
   } = useDataEntryData({ isHuizhang, isChaoguan, user });
+
+  // 合并同名开关：仅合厅组模式下生效，默认关闭
+  const [mergeSameName, setMergeSameName] = useState(false);
+  // 合厅组模式下选中的成员厅 ID 集合（用于前端过滤人员所属厅）
+  const groupBranchIdSet = useMemo(
+    () => new Set(effectiveBranchIds),
+    [effectiveBranchIds],
+  );
+  // 当前选中的合厅组信息（用于导出弹窗展示和 zip 打包）
+  const groupExportInfo = useMemo(() => {
+    if (!isGroupMode || selectedGroupId === undefined) return null;
+    const group = branchGroups.find((g) => g.id === selectedGroupId);
+    if (!group) return null;
+    return {
+      name: group.name,
+      branches: group.branches
+        .filter((b) => !b.closed)
+        .map((b) => ({
+          id: b.id,
+          name: b.name,
+          statCycle: b.statCycle,
+        })),
+    };
+  }, [isGroupMode, selectedGroupId, branchGroups]);
+  // 当前是否有录入目标（单厅已选 或 合厅组模式）
+  const hasTarget = isGroupMode || effectiveBranchId !== undefined;
 
   // 人员搜索框（用于过滤列表，替代原手动录入卡片的人员选择）
   const [searchTerm, setSearchTerm] = useState("");
@@ -93,13 +132,23 @@ export default function DataEntry() {
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
 
   // 编辑弹窗人员下拉选项（由当前厅人员列表派生）
+  // 合厅组模式下，人员名后追加所属厅名以便区分
   const personnelOptions = useMemo(
     () =>
-      personnel.map((p) => ({
-        value: String(p.id),
-        label: p.name,
-      })),
-    [personnel],
+      personnel.map((p) => {
+        if (isGroupMode) {
+          const branchNames = (p.branches ?? [])
+            .filter((b) => groupBranchIdSet.has(b.id))
+            .map((b) => b.name)
+            .join("/");
+          return {
+            value: String(p.id),
+            label: branchNames ? `${p.name} [${branchNames}]` : p.name,
+          };
+        }
+        return { value: String(p.id), label: p.name };
+      }),
+    [personnel, isGroupMode, groupBranchIdSet],
   );
 
   // 多选：切换某行选中状态
@@ -118,6 +167,174 @@ export default function DataEntry() {
 
   // 表格数据：所有人员都显示，未录入的显示空行
   const allRows = useMemo<DisplayRow[]>(() => {
+    // 合厅组模式：按人员 + 各成员厅分别构造行（合并同名时聚合）
+    if (isGroupMode) {
+      // 合厅组成员厅的名称映射
+      const branchNameMap = new Map<number, string>();
+      const groupBranches =
+        branchGroups
+          .find((g) => g.id === selectedGroupId)
+          ?.branches.filter((b) => !b.closed) ?? [];
+      for (const b of groupBranches) branchNameMap.set(b.id, b.name);
+
+      // 合并同名模式：按人员姓名聚合，累加各厅数据
+      if (mergeSameName) {
+        const byName = new Map<
+          string,
+          {
+            personnelIds: number[];
+            branchIds: number[];
+            sg: number;
+            mx: number;
+            qm: number;
+            zcDays: number;
+            welfare: number;
+            deduction: number;
+            finalWelfare: number;
+            isRecorded: boolean;
+          }
+        >();
+        for (const p of personnel) {
+          const personGroupBranches = (p.branches ?? []).filter((b) =>
+            groupBranchIdSet.has(b.id),
+          );
+          const personRecords = records.filter(
+            (r) =>
+              r.personnelId === p.id && groupBranchIdSet.has(r.branchId),
+          );
+          const isRecorded = personRecords.length > 0;
+          const entry =
+            byName.get(p.name) ??
+            {
+              personnelIds: [],
+              branchIds: personGroupBranches.map((b) => b.id),
+              sg: 0, mx: 0, qm: 0, zcDays: 0,
+              welfare: 0, deduction: 0, finalWelfare: 0,
+              isRecorded: false,
+            };
+          entry.personnelIds.push(p.id);
+          entry.isRecorded = entry.isRecorded || isRecorded;
+          for (const r of personRecords) {
+            entry.sg += r.sg;
+            entry.mx += r.mx;
+            entry.qm += r.qm;
+            entry.zcDays += r.zcDays ?? 0;
+            entry.welfare += r.welfare ?? 0;
+            entry.deduction += r.deduction ?? 0;
+            entry.finalWelfare += r.finalWelfare ?? r.welfare ?? 0;
+          }
+          byName.set(p.name, entry);
+        }
+        let rows: DisplayRow[] = Array.from(byName.entries()).map(
+          ([name, e]) => ({
+            key: `merge-${name}`,
+            id: 0,
+            personnelId: e.personnelIds[0] ?? 0,
+            branchId: undefined,
+            personnelName: name,
+            branchName: e.branchIds
+              .map((bid) => branchNameMap.get(bid) ?? "")
+              .filter(Boolean)
+              .join("/"),
+            sg: e.sg,
+            mx: e.mx,
+            qm: e.qm,
+            zcDays: e.zcDays,
+            welfare: e.welfare,
+            deduction: e.deduction,
+            finalWelfare: e.finalWelfare,
+            isRecorded: e.isRecorded,
+            namings: undefined,
+          }),
+        );
+        if (sortKey) {
+          rows = [...rows].sort((a, b) => {
+            const av =
+              sortKey === "welfare"
+                ? (a.finalWelfare ?? a.welfare ?? 0)
+                : a[sortKey];
+            const bv =
+              sortKey === "welfare"
+                ? (b.finalWelfare ?? b.welfare ?? 0)
+                : b[sortKey];
+            return bv - av;
+          });
+        }
+        return rows;
+      }
+
+      // 非合并模式：按人员 + 厅分别显示
+      const recordedKeys = new Set(
+        records.map((r) => `${r.branchId}:${r.personnelId}`),
+      );
+      const rows: DisplayRow[] = [];
+      for (const p of personnel) {
+        const personGroupBranches = (p.branches ?? []).filter((b) =>
+          groupBranchIdSet.has(b.id),
+        );
+        for (const b of personGroupBranches) {
+          const rec = records.find(
+            (r) => r.personnelId === p.id && r.branchId === b.id,
+          );
+          if (rec) {
+            rows.push({
+              key: `rec-${rec.id}`,
+              id: rec.id,
+              personnelId: p.id,
+              branchId: b.id,
+              personnelName: p.name,
+              branchName: b.name,
+              sg: rec.sg,
+              mx: rec.mx,
+              qm: rec.qm,
+              zcDays: rec.zcDays ?? 0,
+              welfare: rec.welfare,
+              deduction: rec.deduction,
+              finalWelfare: rec.finalWelfare,
+              createdAt: rec.createdAt,
+              isRecorded: true,
+              namings: rec.namings,
+            });
+          } else {
+            rows.push({
+              key: `empty-${p.id}-${b.id}`,
+              id: 0,
+              personnelId: p.id,
+              branchId: b.id,
+              personnelName: p.name,
+              branchName: b.name,
+              sg: 0,
+              mx: 0,
+              qm: 0,
+              zcDays: 0,
+              welfare: undefined,
+              createdAt: undefined,
+              isRecorded: false,
+              namings: undefined,
+            });
+          }
+        }
+      }
+      // 已录入按 sortKey 排序，未录入保持原序
+      if (sortKey) {
+        rows.sort((a, b) => {
+          const av =
+            sortKey === "welfare"
+              ? (a.finalWelfare ?? a.welfare ?? 0)
+              : a[sortKey];
+          const bv =
+            sortKey === "welfare"
+              ? (b.finalWelfare ?? b.welfare ?? 0)
+              : b[sortKey];
+          return bv - av;
+        });
+      }
+      // 未引用 recordedKeys（构造时已直接判断），避免 lint 警告
+      void recordedKeys;
+      return rows;
+    }
+
+    // 单厅模式：原有逻辑
     // 已录入的人员标识集合：用 `${branchId}:${personnelId}` 区分多厅
     const recordedKeys = new Set(
       records.map((r) => `${r.branchId}:${r.personnelId}`),
@@ -182,7 +399,17 @@ export default function DataEntry() {
         namings: undefined,
       })),
     ];
-  }, [records, personnel, effectiveBranchId, sortKey]);
+  }, [
+    records,
+    personnel,
+    effectiveBranchId,
+    sortKey,
+    isGroupMode,
+    mergeSameName,
+    groupBranchIdSet,
+    branchGroups,
+    selectedGroupId,
+  ]);
 
   // 受搜索框过滤的行
   const filteredRecords = useMemo<DisplayRow[]>(() => {
@@ -215,10 +442,10 @@ export default function DataEntry() {
     () => filteredRecords.slice((safePage - 1) * pageSize, safePage * pageSize),
     [filteredRecords, safePage],
   );
-  // 搜索或切换厅时重置到第 1 页
+  // 搜索或切换厅/合厅组时重置到第 1 页
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, effectiveBranchId]);
+  }, [searchTerm, effectiveBranchId, selectedGroupId, mergeSameName]);
 
   // 打开批量编辑弹窗
   const handleOpenBatchEdit = () => {
@@ -231,7 +458,7 @@ export default function DataEntry() {
 
   // 打开批量添加弹窗
   const handleOpenBatchAdd = () => {
-    if (!effectiveBranchId) {
+    if (!hasTarget) {
       toast.error(isHuizhang ? "请选择厅" : "当前账户未关联厅");
       return;
     }
@@ -246,9 +473,9 @@ export default function DataEntry() {
     <div className="space-y-5">
       {/* 顶部工具栏 */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        {/* 未选厅时仅显示厅选择器，不显示日期控件 */}
-        {effectiveBranchId ? (
-          <div className="flex items-center gap-2">
+        {/* 未选厅/合厅组时仅显示厅选择器，不显示日期控件 */}
+        {hasTarget ? (
+          <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={handlePrev}
               className="p-2 border border-border rounded-lg bg-card text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
@@ -281,6 +508,31 @@ export default function DataEntry() {
                 月统计厅
               </span>
             )}
+            {/* 合厅组模式：合并同名开关 */}
+            {isGroupMode && (
+              <label
+                className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg bg-card text-xs text-textSecondary cursor-pointer select-none"
+                title="开启后同名人员合并为一行，数据按各厅累加"
+              >
+                <input
+                  type="checkbox"
+                  checked={mergeSameName}
+                  onChange={(e) => setMergeSameName(e.target.checked)}
+                  className="checkbox-round cursor-pointer"
+                />
+                合并同名
+              </label>
+            )}
+            {/* 混合周期提示 */}
+            {isMixedCycle && (
+              <span
+                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300"
+                title="合厅组内各厅统计周期不一致"
+              >
+                <AlertTriangle size={12} />
+                周期混合
+              </span>
+            )}
           </div>
         ) : (
           <div className="text-sm text-textMuted">请先选择厅</div>
@@ -288,20 +540,57 @@ export default function DataEntry() {
 
         <div className="flex items-center gap-2">
           {canSelectBranch && (
-            <select
-              value={branchId ?? (isChaoguan ? user?.branchId ?? "" : "")}
-              onChange={(e) =>
-                setBranchId(e.target.value ? Number(e.target.value) : undefined)
+            <GroupedSelect
+              value={
+                selectedGroupId !== undefined
+                  ? `g${selectedGroupId}`
+                  : (branchId !== undefined
+                    ? String(branchId)
+                    : (isChaoguan ? String(user?.branchId ?? "") : ""))
               }
-              className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer"
-            >
-              {isHuizhang && <option value="">选择厅</option>}
-              {branches.filter((b) => !b.closed).map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
+              onChange={(val) => {
+                if (val.startsWith("g")) {
+                  // 选择合厅组：清空厅选择，设置合厅组 ID
+                  setSelectedGroupId(Number(val.slice(1)));
+                  setBranchId(undefined);
+                } else {
+                  // 选择普通厅：清空合厅组选择
+                  setSelectedGroupId(undefined);
+                  setBranchId(val ? Number(val) : undefined);
+                }
+              }}
+              placeholder="选择厅"
+              topOption={isHuizhang ? { value: "", label: "选择厅" } : undefined}
+              groups={[
+                // 合厅组分组：隐藏已被合并到合厅组的厅
+                ...(branchGroups.length > 0
+                  ? [{
+                      label: "合厅组",
+                      options: branchGroups.map((g) => ({
+                        value: `g${g.id}`,
+                        label: `${g.name}（${g.branches.filter((b) => !b.closed).length}个厅）`,
+                      })),
+                    }]
+                  : []),
+                {
+                  label: "厅",
+                  options: branches
+                    .filter(
+                      (b) =>
+                        !b.closed &&
+                        !branchGroups.some((g) =>
+                          g.branches.some((gb) => gb.id === b.id),
+                        ),
+                    )
+                    .map((b) => ({
+                      value: String(b.id),
+                      label: b.name,
+                    })),
+                },
+              ]}
+              minWidth={200}
+              maxWidth={300}
+            />
           )}
           {selectedKeys.size > 0 && (
             <button
@@ -342,9 +631,15 @@ export default function DataEntry() {
           )}
           <button
             onClick={() => setImportOpen(true)}
-            disabled={!effectiveBranchId}
+            disabled={!hasTarget || isGroupMode}
             className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary hover:border-primary hover:text-textPrimary disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
-            title={!effectiveBranchId ? "请先选择厅" : undefined}
+            title={
+              isGroupMode
+                ? "合厅模式下暂不支持导入"
+                : !hasTarget
+                  ? "请先选择厅"
+                  : undefined
+            }
           >
             <Upload size={16} />
             导入
@@ -352,9 +647,9 @@ export default function DataEntry() {
           {canDelete && (
             <button
               onClick={() => setExportOpen(true)}
-              disabled={!effectiveBranchId}
+              disabled={!hasTarget}
               className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
-              title={!effectiveBranchId ? "请先选择厅" : undefined}
+              title={!hasTarget ? "请先选择厅" : undefined}
             >
               <Download size={16} />
               导出
@@ -362,6 +657,13 @@ export default function DataEntry() {
           )}
         </div>
       </div>
+      {/* 合厅模式下导入禁用提示 */}
+      {isGroupMode && (
+        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-900/40 rounded-lg text-xs text-amber-700 dark:text-amber-300">
+          <Layers size={12} />
+          合厅模式下暂不支持导入，请切换到单个厅进行操作；导出将分别导出各成员厅并打包为 zip
+        </div>
+      )}
 
       {/* 人员搜索框 */}
       <div className="bg-card border border-border rounded-xl p-3">
@@ -391,22 +693,23 @@ export default function DataEntry() {
           )}
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-textSecondary">排序</span>
-            <select
+            <GroupedSelect
               value={sortKey ?? ""}
-              onChange={(e) =>
+              onChange={(val) =>
                 setSortKey(
-                  (e.target.value || null) as
+                  (val || null) as
                     "sg" | "mx" | "qm" | "welfare" | null,
                 )
               }
-              className="px-2 py-1.5 border border-border rounded-lg text-xs bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer"
-            >
-              <option value="">默认</option>
-              <option value="mx">麦序</option>
-              <option value="sg">收光</option>
-              {qmInputEnabled && <option value="qm">全麦</option>}
-              <option value="welfare">福利</option>
-            </select>
+              buttonClassName="!px-2 !py-1.5 !text-xs"
+              topOption={{ value: "", label: "默认" }}
+              options={[
+                { value: "mx", label: "麦序" },
+                { value: "sg", label: "收光" },
+                ...(qmInputEnabled ? [{ value: "qm", label: "全麦" }] : []),
+                { value: "welfare", label: "福利" },
+              ]}
+            />
           </div>
           <span className="text-xs text-textSecondary ml-auto">
             共 {filteredRecords.length} 人
@@ -416,10 +719,12 @@ export default function DataEntry() {
 
       {/* 录入明细表格 */}
       <DataTable
-        animationKey={`${formatDate(weekStart)}-${effectiveBranchId ?? "all"}`}
+        animationKey={`${formatDate(weekStart)}-${effectiveBranchId ?? "all"}-${selectedGroupId ?? ""}`}
         loading={loading}
         hasRecords={records.length > 0}
         effectiveBranchId={effectiveBranchId}
+        isGroupMode={isGroupMode}
+        mergeSameName={mergeSameName}
         searchTerm={searchTerm}
         pagedRecords={pagedRecords}
         filteredCount={filteredRecords.length}
@@ -461,6 +766,11 @@ export default function DataEntry() {
         zcInputEnabled={zcInputEnabled}
         editNamingsEnabled={editNamingsEnabled}
         canEditDeduction={canEditDeduction}
+        isGroupMode={isGroupMode}
+        getRecordWeekStart={getRecordWeekStart}
+        getBranchCycle={getBranchCycle}
+        getNamingLevels={getNamingLevels}
+        getRewardRule={getRewardRule}
         onSaved={loadData}
       />
       <DeleteConfirmModal
@@ -474,12 +784,14 @@ export default function DataEntry() {
         onClose={() => setBatchEditOpen(false)}
         allRows={allRows}
         selectedKeys={selectedKeys}
-        effectiveBranchId={effectiveBranchId}
         recordWeekStart={recordWeekStart}
+        getRecordWeekStart={getRecordWeekStart}
         sgInputEnabled={sgInputEnabled}
         qmInputEnabled={qmInputEnabled}
         zcInputEnabled={zcInputEnabled}
         isHuizhang={isHuizhang}
+        isGroupMode={isGroupMode}
+        hasTarget={hasTarget}
         batchRemark={batchRemark}
         onBatchRemarkChange={setBatchRemark}
         onSaved={loadData}
@@ -490,12 +802,14 @@ export default function DataEntry() {
         onClose={() => setBatchAddOpen(false)}
         allRows={allRows}
         selectedKeys={selectedKeys}
-        effectiveBranchId={effectiveBranchId}
         recordWeekStart={recordWeekStart}
+        getRecordWeekStart={getRecordWeekStart}
         sgInputEnabled={sgInputEnabled}
         qmInputEnabled={qmInputEnabled}
         zcInputEnabled={zcInputEnabled}
         isHuizhang={isHuizhang}
+        isGroupMode={isGroupMode}
+        hasTarget={hasTarget}
         batchRemark={batchRemark}
         onBatchRemarkChange={setBatchRemark}
         onSaved={loadData}
@@ -518,6 +832,9 @@ export default function DataEntry() {
         branchCycle={branchCycle}
         branches={branches}
         isHuizhang={isHuizhang}
+        isGroupMode={isGroupMode}
+        groupName={groupExportInfo?.name}
+        groupBranches={groupExportInfo?.branches}
       />
     </div>
   );

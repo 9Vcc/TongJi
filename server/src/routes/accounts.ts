@@ -17,6 +17,17 @@ async function loadAccountBranchIds(accountId: number, branchId: number | null):
 }
 
 /**
+ * 加载账户的所有授权合厅组 ID 列表
+ */
+async function loadAccountGroupIds(accountId: number): Promise<number[]> {
+  const groups = await prisma.accountGroup.findMany({
+    where: { accountId },
+    select: { groupId: true },
+  })
+  return groups.map((ag) => ag.groupId)
+}
+
+/**
  * 同步超管的额外授权厅（删除旧记录，创建新记录）
  * branchIds 仅包含额外授权厅（不含主厅 branchId）
  */
@@ -33,19 +44,35 @@ async function syncAccountBranches(accountId: number, branchId: number | null, e
   }
 }
 
+/**
+ * 同步超管的授权合厅组（删除旧记录，创建新记录）
+ * groupIds 为完整授权合厅组列表
+ */
+async function syncAccountGroups(accountId: number, groupIds: number[]): Promise<void> {
+  await prisma.accountGroup.deleteMany({ where: { accountId } })
+  const uniqueIds = [...new Set(groupIds.filter((id) => id > 0))]
+  if (uniqueIds.length > 0) {
+    await prisma.accountGroup.createMany({
+      data: uniqueIds.map((gid) => ({ accountId, groupId: gid })),
+    })
+  }
+}
+
 export default async function accountRoutes(fastify: FastifyInstance) {
   // POST /api/accounts - 添加账户
   fastify.post(
     '/api/accounts',
     { preHandler: [authenticate, requireRole(Role.CHAOGUAN)] },
     async (request, reply) => {
-      const { username, password, role, branchId, nickname, branchIds } = request.body as {
+      const { username, password, role, branchId, nickname, branchIds, groupIds, mainGroupId } = request.body as {
         username: string
         password: string
         role: Role
         branchId?: number
         nickname?: string
         branchIds?: number[]
+        groupIds?: number[]
+        mainGroupId?: number | null
       }
       const currentUser = request.user
 
@@ -60,21 +87,39 @@ export default async function accountRoutes(fastify: FastifyInstance) {
 
       let targetBranchId: number | null = null
       let targetExtraBranchIds: number[] = []
+      let targetGroupIds: number[] = []
+      let targetMainGroupId: number | null = null
 
       if (currentUser.role === Role.HUIZHANG) {
         // 会长添加会长时可不绑定分部
         if (role === Role.HUIZHANG) {
           targetBranchId = branchId ?? null
         }
-        // 会长添加超管/管理时需指定 branchId
+        // 会长添加超管/管理时需指定 branchId 或 mainGroupId
         if (role === Role.CHAOGUAN || role === Role.GUANLI) {
-          if (!branchId) {
-            return reply.code(400).send({ error: '请指定分部' })
+          // 超管的主厅可以是合厅组（mainGroupId），此时 branchId 可为 null
+          if (role === Role.CHAOGUAN && mainGroupId) {
+            targetMainGroupId = mainGroupId
+            targetBranchId = branchId ?? null
+            // 确保主合厅组在授权列表中
+            if (!groupIds || !groupIds.includes(mainGroupId)) {
+              targetGroupIds = [...(groupIds ?? []), mainGroupId]
+            } else {
+              targetGroupIds = groupIds
+            }
+          } else {
+            if (!branchId) {
+              return reply.code(400).send({ error: '请指定分部' })
+            }
+            targetBranchId = branchId
           }
-          targetBranchId = branchId
           // 超管支持多厅授权
           if (role === Role.CHAOGUAN && branchIds && branchIds.length > 0) {
             targetExtraBranchIds = branchIds
+          }
+          // 超管支持合厅组授权
+          if (role === Role.CHAOGUAN && targetGroupIds.length === 0 && groupIds && groupIds.length > 0) {
+            targetGroupIds = groupIds
           }
         }
       } else if (currentUser.role === Role.CHAOGUAN) {
@@ -123,6 +168,25 @@ export default async function accountRoutes(fastify: FastifyInstance) {
         }
       }
 
+      // 校验授权合厅组存在
+      if (targetGroupIds.length > 0) {
+        const groups = await prisma.branchGroup.findMany({
+          where: { id: { in: targetGroupIds } },
+          select: { id: true },
+        })
+        if (groups.length !== targetGroupIds.length) {
+          return reply.code(400).send({ error: '部分合厅组不存在' })
+        }
+      }
+
+      // 校验主合厅组存在
+      if (targetMainGroupId) {
+        const group = await prisma.branchGroup.findUnique({ where: { id: targetMainGroupId } })
+        if (!group) {
+          return reply.code(400).send({ error: '主合厅组不存在' })
+        }
+      }
+
       const passwordHash = await hashPassword(password)
       const account = await prisma.account.create({
         data: {
@@ -131,6 +195,7 @@ export default async function accountRoutes(fastify: FastifyInstance) {
           passwordHash,
           role,
           branchId: targetBranchId,
+          mainGroupId: targetMainGroupId,
         },
         select: {
           id: true,
@@ -138,6 +203,7 @@ export default async function accountRoutes(fastify: FastifyInstance) {
           nickname: true,
           role: true,
           branchId: true,
+          mainGroupId: true,
           status: true,
           createdAt: true,
         },
@@ -148,8 +214,21 @@ export default async function accountRoutes(fastify: FastifyInstance) {
         await syncAccountBranches(account.id, targetBranchId, targetExtraBranchIds)
       }
 
+      // 超管：创建授权合厅组关联
+      if (role === Role.CHAOGUAN && targetGroupIds.length > 0) {
+        await syncAccountGroups(account.id, targetGroupIds)
+      }
+
       const allBranchIds = await loadAccountBranchIds(account.id, account.branchId)
-      return reply.code(201).send({ ...account, branchIds: allBranchIds })
+      const allGroupIds = await loadAccountGroupIds(account.id)
+      // 查询主合厅组信息（若存在）
+      const mainGroup = account.mainGroupId
+        ? await prisma.branchGroup.findUnique({
+            where: { id: account.mainGroupId },
+            select: { id: true, name: true },
+          })
+        : null
+      return reply.code(201).send({ ...account, branchIds: allBranchIds, groupIds: allGroupIds, mainGroup })
     }
   )
 
@@ -178,10 +257,13 @@ export default async function accountRoutes(fastify: FastifyInstance) {
           nickname: true,
           role: true,
           branchId: true,
+          mainGroupId: true,
           status: true,
           createdAt: true,
           branch: { select: { id: true, name: true } },
+          mainGroup: { select: { id: true, name: true } },
           accountBranches: { select: { branchId: true, branch: { select: { id: true, name: true } } } },
+          accountGroups: { select: { groupId: true, group: { select: { id: true, name: true } } } },
         },
         orderBy: { createdAt: 'desc' },
       })
@@ -193,17 +275,23 @@ export default async function accountRoutes(fastify: FastifyInstance) {
           ...(a.branch ? [a.branch] : []),
           ...a.accountBranches.map((ab) => ab.branch),
         ]
+        const groupIds = a.accountGroups.map((ag) => ag.groupId)
+        const groups = a.accountGroups.map((ag) => ag.group)
         return {
           id: a.id,
           username: a.username,
           nickname: a.nickname,
           role: a.role,
           branchId: a.branchId,
+          mainGroupId: a.mainGroupId,
+          mainGroup: a.mainGroup,
           branchIds: allBranchIds,
+          groupIds,
           status: a.status,
           createdAt: a.createdAt,
           branch: a.branch,
           branches: allBranches,
+          groups,
         }
       })
 
@@ -345,13 +433,15 @@ export default async function accountRoutes(fastify: FastifyInstance) {
     { preHandler: [authenticate, requireRole(Role.CHAOGUAN)] },
     async (request, reply) => {
       const { id } = request.params as { id: string }
-      const { username, password, role, branchId, nickname, branchIds } = request.body as {
+      const { username, password, role, branchId, nickname, branchIds, groupIds, mainGroupId } = request.body as {
         username?: string
         password?: string
         role?: Role
         branchId?: number | null
         nickname?: string | null
         branchIds?: number[]
+        groupIds?: number[]
+        mainGroupId?: number | null
       }
       const currentUser = request.user
 
@@ -392,6 +482,7 @@ export default async function accountRoutes(fastify: FastifyInstance) {
         passwordHash?: string
         role?: Role
         branchId?: number | null
+        mainGroupId?: number | null
       } = {}
 
       if (username !== undefined && username !== account.username) {
@@ -472,7 +563,58 @@ export default async function accountRoutes(fastify: FastifyInstance) {
         newExtraBranchIds = []
       }
 
-      if (Object.keys(updateData).length === 0 && !needSyncBranches) {
+      // 超管合厅组授权：仅会长可设置，且仅对超管角色生效
+      let needSyncGroups = false
+      let newGroupIds: number[] = []
+      if (groupIds !== undefined && currentUser.role === Role.HUIZHANG && finalRole === Role.CHAOGUAN) {
+        needSyncGroups = true
+        newGroupIds = groupIds
+        // 校验授权合厅组存在
+        if (newGroupIds.length > 0) {
+          const groups = await prisma.branchGroup.findMany({
+            where: { id: { in: newGroupIds } },
+            select: { id: true },
+          })
+          if (groups.length !== newGroupIds.length) {
+            return reply.code(400).send({ error: '部分合厅组不存在' })
+          }
+        }
+      }
+
+      // 如果角色从超管改为非超管，清除授权合厅组
+      if (role !== undefined && role !== Role.CHAOGUAN && account.role === Role.CHAOGUAN) {
+        needSyncGroups = true
+        newGroupIds = []
+      }
+
+      // 主合厅组设置：仅会长可设置，且仅对超管角色生效
+      // mainGroupId 为 null 表示清除主合厅组；为数字表示设置主合厅组
+      if (mainGroupId !== undefined && currentUser.role === Role.HUIZHANG && finalRole === Role.CHAOGUAN) {
+        if (mainGroupId !== null) {
+          // 校验主合厅组存在
+          const group = await prisma.branchGroup.findUnique({ where: { id: mainGroupId } })
+          if (!group) {
+            return reply.code(400).send({ error: '主合厅组不存在' })
+          }
+          // 确保主合厅组在授权合厅组列表中
+          if (!newGroupIds.includes(mainGroupId)) {
+            newGroupIds = [...newGroupIds, mainGroupId]
+            needSyncGroups = true
+          }
+        }
+        if (mainGroupId !== account.mainGroupId) {
+          updateData.mainGroupId = mainGroupId
+        }
+      }
+
+      // 如果角色从超管改为非超管，清除主合厅组
+      if (role !== undefined && role !== Role.CHAOGUAN && account.role === Role.CHAOGUAN) {
+        if (account.mainGroupId !== null) {
+          updateData.mainGroupId = null
+        }
+      }
+
+      if (Object.keys(updateData).length === 0 && !needSyncBranches && !needSyncGroups) {
         return reply.code(400).send({ error: '没有需要更新的字段' })
       }
 
@@ -485,9 +627,11 @@ export default async function accountRoutes(fastify: FastifyInstance) {
           nickname: true,
           role: true,
           branchId: true,
+          mainGroupId: true,
           status: true,
           createdAt: true,
           branch: { select: { id: true, name: true } },
+          mainGroup: { select: { id: true, name: true } },
         },
       })
 
@@ -496,11 +640,17 @@ export default async function accountRoutes(fastify: FastifyInstance) {
         await syncAccountBranches(accountId, updated.branchId, newExtraBranchIds)
       }
 
-      // 账户信息变更后失效该账户的授权厅缓存（角色/主厅/额外授权厅可能已变）
+      // 同步授权合厅组
+      if (needSyncGroups) {
+        await syncAccountGroups(accountId, newGroupIds)
+      }
+
+      // 账户信息变更后失效该账户的授权缓存（角色/主厅/额外授权厅/合厅组/主合厅组可能已变）
       invalidateAuthCache(accountId)
 
       const allBranchIds = await loadAccountBranchIds(updated.id, updated.branchId)
-      return reply.send({ ...updated, branchIds: allBranchIds })
+      const allGroupIds = await loadAccountGroupIds(updated.id)
+      return reply.send({ ...updated, branchIds: allBranchIds, groupIds: allGroupIds })
     }
   )
 }

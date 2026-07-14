@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   dataRecordsApi,
   deductionsApi,
@@ -12,6 +12,7 @@ import { formatDate } from "../../utils";
 import type {
   DataRecord,
   NamingLevel,
+  RewardRule,
   StatCycle,
 } from "../../types";
 import { emptyForm, type EditableRecord, type RecordForm } from "./types";
@@ -36,6 +37,12 @@ interface EditRecordModalProps {
   editNamingsEnabled: boolean;
   // 是否可编辑扣减
   canEditDeduction: boolean;
+  // 合厅组模式：按各厅 statCycle 计算 weekStart 和冠名等级
+  isGroupMode: boolean;
+  getRecordWeekStart: (branchId?: number) => string;
+  getBranchCycle: (branchId?: number) => StatCycle;
+  getNamingLevels: (branchId?: number) => NamingLevel[];
+  getRewardRule: (branchId?: number) => RewardRule | null;
   // 成功回调
   onSaved: () => void | Promise<void>;
 }
@@ -55,23 +62,70 @@ export default function EditRecordModal({
   zcInputEnabled,
   editNamingsEnabled,
   canEditDeduction,
+  isGroupMode,
+  getRecordWeekStart,
+  getBranchCycle,
+  getNamingLevels,
+  getRewardRule,
   onSaved,
 }: EditRecordModalProps) {
   const toast = useToast();
   const [editForm, setEditForm] = useState<RecordForm>(emptyForm);
   const [editSubmitting, setEditSubmitting] = useState(false);
 
+  // 合厅组模式下，按当前记录所属厅计算各项配置（冠名等级、统计周期、输入开关）
+  const effectiveNamingLevels = useMemo(
+    () =>
+      isGroupMode && record?.branchId
+        ? getNamingLevels(record.branchId)
+        : namingLevels,
+    [isGroupMode, record?.branchId, getNamingLevels, namingLevels],
+  );
+  const effectiveBranchCycle = useMemo(
+    () =>
+      isGroupMode && record?.branchId
+        ? getBranchCycle(record.branchId)
+        : branchCycle,
+    [isGroupMode, record?.branchId, getBranchCycle, branchCycle],
+  );
+  // 合厅组模式下，按当前记录所属厅的奖励规则决定收光/全麦输入开关
+  const branchRule = useMemo(
+    () =>
+      isGroupMode && record?.branchId ? getRewardRule(record.branchId) : null,
+    [isGroupMode, record?.branchId, getRewardRule],
+  );
+  const effSgEnabled = isGroupMode
+    ? branchRule
+      ? branchRule.sgEnabled
+      : true
+    : sgInputEnabled;
+  const effQmEnabled = isGroupMode
+    ? branchRule
+      ? branchRule.qmEnabled
+      : true
+    : qmInputEnabled;
+  const effZcEnabled = isGroupMode
+    ? branchRule
+      ? branchRule.zcEnabled
+      : false
+    : zcInputEnabled;
+  // 合厅组模式下，仅当当前记录所属厅有冠名等级配置时显示冠名输入
+  const effEditNamings =
+    isGroupMode && record?.branchId
+      ? effectiveBranchCycle === "MONTH" && effectiveNamingLevels.length > 0
+      : editNamingsEnabled;
+
   // 当 record 变化时初始化表单
   useEffect(() => {
     if (!record) return;
     // 填充现有冠名数量：基于当前厅的冠名等级初始化（值为 0 时显示空字符串便于输入）
     const namingMap: Record<string, string> = {};
-    if (editNamingsEnabled) {
+    if (effEditNamings) {
       const existingMap = new Map<number, number>();
       for (const n of record.namings ?? []) {
         existingMap.set(n.levelId, n.count);
       }
-      for (const lv of namingLevels) {
+      for (const lv of effectiveNamingLevels) {
         const cnt = existingMap.get(lv.id) ?? 0;
         namingMap[String(lv.id)] = cnt ? String(cnt) : "";
       }
@@ -104,16 +158,16 @@ export default function EditRecordModal({
       return;
     }
     // 厅规则关闭收光/全麦转换时，对应字段强制为 0 不参与录入
-    const sg = sgInputEnabled ? Number(editForm.sg) : 0;
+    const sg = effSgEnabled ? Number(editForm.sg) : 0;
     const mx = Number(editForm.mx);
-    const qm = qmInputEnabled ? Number(editForm.qm) : 0;
-    const zcDays = zcInputEnabled ? Number(editForm.zcDays) : 0;
+    const qm = effQmEnabled ? Number(editForm.qm) : 0;
+    const zcDays = effZcEnabled ? Number(editForm.zcDays) : 0;
     if (
-      (sgInputEnabled && (!Number.isInteger(sg) || sg < 0)) ||
+      (effSgEnabled && (!Number.isInteger(sg) || sg < 0)) ||
       !Number.isInteger(mx) ||
       mx < 0 ||
-      (qmInputEnabled && (!Number.isInteger(qm) || qm < 0)) ||
-      (zcInputEnabled && (!Number.isInteger(zcDays) || zcDays < 0))
+      (effQmEnabled && (!Number.isInteger(qm) || qm < 0)) ||
+      (effZcEnabled && (!Number.isInteger(zcDays) || zcDays < 0))
     ) {
       toast.error("收光/麦序/全麦/主持天数必须为非负整数");
       return;
@@ -129,9 +183,9 @@ export default function EditRecordModal({
 
     // 校验并构造冠名数量数组（仅按月统计厅启用）
     let namings: { levelId: number; count: number }[] | undefined;
-    if (editNamingsEnabled) {
+    if (effEditNamings) {
       namings = [];
-      for (const lv of namingLevels) {
+      for (const lv of effectiveNamingLevels) {
         const raw = editForm.namings[String(lv.id)] ?? "0";
         const cnt = Number(raw);
         if (!Number.isInteger(cnt) || cnt < 0) {
@@ -170,19 +224,26 @@ export default function EditRecordModal({
       // 扣减周期必须基于厅的统计周期（branchCycle），而非用户视图周期（isMonthCycle），
       // 否则与 data-query.ts 查询时的周期匹配不一致，会导致扣减保存了但查不到
       // 扣减为 0 时删除记录（实现"可增删"语义），正值时 upsert
-      if (canEditDeduction && effectiveBranchId && targetPersonnelId) {
+      // 合厅组模式：按记录所属厅计算 weekStart 和 cycle
+      const deduBranchId = isGroupMode
+        ? record.branchId ?? effectiveBranchId
+        : effectiveBranchId;
+      if (canEditDeduction && deduBranchId && targetPersonnelId) {
         const cycleParam: "WEEK" | "MONTH" =
-          branchCycle === "MONTH" ? "MONTH" : "WEEK";
-        const weekParam = formatDate(
-          branchCycle === "MONTH"
-            ? new Date(weekStart.getFullYear(), weekStart.getMonth(), 1)
-            : weekStart,
-        );
+          effectiveBranchCycle === "MONTH" ? "MONTH" : "WEEK";
+        // 合厅组模式使用 getRecordWeekStart 按各厅 statCycle 归一化
+        const weekParam = isGroupMode
+          ? getRecordWeekStart(record.branchId)
+          : formatDate(
+              effectiveBranchCycle === "MONTH"
+                ? new Date(weekStart.getFullYear(), weekStart.getMonth(), 1)
+                : weekStart,
+            );
         try {
           if (deduction === 0) {
             // 扣减为 0：删除该周期扣减记录（清零）
             await deductionsApi.remove({
-              branchId: effectiveBranchId,
+              branchId: deduBranchId,
               personnelId: targetPersonnelId,
               weekStart: weekParam,
               cycle: cycleParam,
@@ -190,7 +251,7 @@ export default function EditRecordModal({
           } else {
             // 正值：upsert 覆盖旧值（可增可减）
             await deductionsApi.upsert({
-              branchId: effectiveBranchId,
+              branchId: deduBranchId,
               personnelId: targetPersonnelId,
               weekStart: weekParam,
               cycle: cycleParam,
@@ -258,7 +319,7 @@ export default function EditRecordModal({
           <div>
             <label className="block text-xs text-textSecondary mb-1">
               收光
-              {!sgInputEnabled && (
+              {!effSgEnabled && (
                 <span className="ml-1 text-[10px] text-textMuted">
                   （已关闭）
                 </span>
@@ -268,12 +329,12 @@ export default function EditRecordModal({
               type="number"
               min={0}
               step={1}
-              value={sgInputEnabled ? editForm.sg : ""}
+              value={effSgEnabled ? editForm.sg : ""}
               onChange={(e) =>
                 setEditForm({ ...editForm, sg: e.target.value })
               }
-              placeholder={sgInputEnabled ? "0" : "已关闭"}
-              disabled={!sgInputEnabled}
+              placeholder={effSgEnabled ? "0" : "已关闭"}
+              disabled={!effSgEnabled}
               className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             />
           </div>
@@ -296,7 +357,7 @@ export default function EditRecordModal({
           <div>
             <label className="block text-xs text-textSecondary mb-1">
               全麦
-              {!qmInputEnabled && (
+              {!effQmEnabled && (
                 <span className="ml-1 text-[10px] text-textMuted">
                   （已关闭）
                 </span>
@@ -306,19 +367,19 @@ export default function EditRecordModal({
               type="number"
               min={0}
               step={1}
-              value={qmInputEnabled ? editForm.qm : ""}
+              value={effQmEnabled ? editForm.qm : ""}
               onChange={(e) =>
                 setEditForm({ ...editForm, qm: e.target.value })
               }
-              placeholder={qmInputEnabled ? "0" : "已关闭"}
-              disabled={!qmInputEnabled}
+              placeholder={effQmEnabled ? "0" : "已关闭"}
+              disabled={!effQmEnabled}
               className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             />
           </div>
         </div>
 
         {/* 主持天数：仅厅管理页开启主持福利时显示 */}
-        {zcInputEnabled && (
+        {effZcEnabled && (
           <div>
             <label className="block text-xs text-textSecondary mb-1">
               主持天数
@@ -338,7 +399,7 @@ export default function EditRecordModal({
         )}
 
         {/* 冠名数量：仅按月统计厅且已配置冠名等级时显示 */}
-        {editNamingsEnabled && (
+        {effEditNamings && (
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="block text-xs text-textSecondary">
@@ -349,7 +410,7 @@ export default function EditRecordModal({
               </span>
             </div>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {namingLevels.map((lv) => (
+              {effectiveNamingLevels.map((lv) => (
                 <div key={lv.id}>
                   <label className="block text-[11px] text-textSecondary mb-0.5">
                     {lv.name}
@@ -389,7 +450,7 @@ export default function EditRecordModal({
             <label className="block text-xs text-textSecondary mb-1">
               福利扣减
               <span className="ml-1 text-[10px] text-textMuted">
-                （{branchCycle === "MONTH" ? "按月" : "按周"}扣减，最终福利 =
+                （{effectiveBranchCycle === "MONTH" ? "按月" : "按周"}扣减，最终福利 =
                 福利 - 扣减）
               </span>
             </label>

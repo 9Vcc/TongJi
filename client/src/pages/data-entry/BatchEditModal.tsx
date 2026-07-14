@@ -12,12 +12,15 @@ interface BatchEditModalProps {
   onClose: () => void;
   allRows: DisplayRow[];
   selectedKeys: Set<string>;
-  effectiveBranchId: number | undefined;
   recordWeekStart: string;
+  // 合厅组模式：按各厅 statCycle 归一化录入 weekStart
+  getRecordWeekStart: (branchId?: number) => string;
   sgInputEnabled: boolean;
   qmInputEnabled: boolean;
   zcInputEnabled: boolean;
   isHuizhang: boolean;
+  isGroupMode: boolean;
+  hasTarget: boolean;
   // 共用备注（与批量添加/删除共享）
   batchRemark: string;
   onBatchRemarkChange: (v: string) => void;
@@ -31,12 +34,14 @@ export default function BatchEditModal({
   onClose,
   allRows,
   selectedKeys,
-  effectiveBranchId,
   recordWeekStart,
+  getRecordWeekStart,
   sgInputEnabled,
   qmInputEnabled,
   zcInputEnabled,
   isHuizhang,
+  isGroupMode,
+  hasTarget,
   batchRemark,
   onBatchRemarkChange,
   onSaved,
@@ -86,7 +91,7 @@ export default function BatchEditModal({
 
   // 批量保存：逐条 create/update
   const handleBatchSubmit = async () => {
-    if (!effectiveBranchId) {
+    if (!hasTarget) {
       toast.error(isHuizhang ? "请选择厅" : "当前账户未关联厅");
       return;
     }
@@ -162,6 +167,7 @@ export default function BatchEditModal({
             });
           } else {
             // 未录入：新建（按行匹配的 branchId，含备注）
+            // 合厅组模式：按各厅 statCycle 归一化 weekStart
             await dataRecordsApi.create({
               personnelId: item.personnelId,
               branchId: item.branchId,
@@ -169,7 +175,9 @@ export default function BatchEditModal({
               mx: item.mx,
               qm: item.qm,
               zcDays: item.zcDays,
-              weekStart: recordWeekStart,
+              weekStart: isGroupMode
+                ? getRecordWeekStart(item.branchId)
+                : recordWeekStart,
               remark: batchRemark.trim() || undefined,
             });
           }

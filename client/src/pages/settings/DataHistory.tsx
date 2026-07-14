@@ -22,6 +22,7 @@ import {
 import { useAuth } from '../../hooks/useAuth'
 import { useToast } from '../../hooks/useToast'
 import { Skeleton } from '../../components/Skeleton'
+import GroupedSelect from '../../components/GroupedSelect'
 import SubPageHeader from '../../components/SubPageHeader'
 import SearchableSelect from '../../components/SearchableSelect'
 import { formatDateTime, getWeekRangeText, getMonthRangeText } from '../../utils'
@@ -501,14 +502,6 @@ export default function DataHistoryPage() {
     setFilterPersonnelId('')
   }
 
-  if (!canView) {
-    return (
-      <div className="py-12 text-center text-sm text-textMuted">
-        无权访问此页面
-      </div>
-    )
-  }
-
   const hasFilter = filterDate || filterBranchId || filterPersonnelId
 
   // 人员 ID → 名称映射
@@ -549,6 +542,14 @@ export default function DataHistoryPage() {
     if (activeSection === 'delete') return deleteLogs
     return []
   }, [activeSection, createLogs, updateLogs, deleteLogs])
+
+  if (!canView) {
+    return (
+      <div className="py-12 text-center text-sm text-textMuted">
+        无权访问此页面
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-5">
@@ -609,18 +610,16 @@ export default function DataHistoryPage() {
               <label className="block text-xs text-textSecondary mb-1">
                 厅
               </label>
-              <select
+              <GroupedSelect
                 value={filterBranchId}
-                onChange={(e) => setFilterBranchId(e.target.value)}
-                className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer"
-              >
-                <option value="">全部</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => setFilterBranchId(val)}
+                fullWidth
+                topOption={{ value: '', label: '全部' }}
+                options={branches.map((b) => ({
+                  value: String(b.id),
+                  label: b.name,
+                }))}
+              />
             </div>
           )}
 

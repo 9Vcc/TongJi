@@ -7,25 +7,29 @@ import prisma from '../lib/prisma'
 /**
  * 超管授权厅 LRU 缓存
  * key: accountId
- * value: branchIds 数组（主厅 + 额外授权厅）
+ * value: { branchIds: number[], groupIds: number[] }
  * TTL 60s 平衡时效性与 DB 压力；max 1000 足以容纳所有账户
  */
-const branchIdsCache = new LRUCache<number, number[]>({
+interface AuthCacheEntry {
+  branchIds: number[]
+  groupIds: number[]
+}
+const authCache = new LRUCache<number, AuthCacheEntry>({
   max: 1000,
   ttl: 60_000,
 })
 
 /**
- * 失效指定账户的授权厅缓存
- * 在账户状态变更、删除、修改授权厅等场景调用
+ * 失效指定账户的授权缓存
+ * 在账户状态变更、删除、修改授权厅/合厅组等场景调用
  */
 export function invalidateAuthCache(accountId: number): void {
-  branchIdsCache.delete(accountId)
+  authCache.delete(accountId)
 }
 
 /**
  * 认证中间件：验证 JWT，将用户信息挂载到 request.user
- * 超管的 branchIds 优先从 LRU 缓存读取，未命中再查 DB 并写入缓存
+ * 超管的 branchIds 和 groupIds 优先从 LRU 缓存读取，未命中再查 DB 并写入缓存
  */
 export async function authenticate(request: FastifyRequest, reply: FastifyReply) {
   const authHeader = request.headers.authorization
@@ -36,25 +40,35 @@ export async function authenticate(request: FastifyRequest, reply: FastifyReply)
   const token = authHeader.substring(7)
   try {
     const payload = verifyToken(token)
-    // 超管：从数据库加载所有授权厅（主厅 + AccountBranch 额外授权厅）
+    // 超管：从数据库加载所有授权厅（主厅 + AccountBranch 额外授权厅）和授权合厅组
+    // 注意：超管主厅可能是合厅组（mainGroupId），此时 branchId 可为 null，但仍需加载授权信息
     let branchIds: number[] = []
-    if (payload.role === Role.CHAOGUAN && payload.branchId !== null) {
-      const cached = branchIdsCache.get(payload.id)
+    let groupIds: number[] = []
+    if (payload.role === Role.CHAOGUAN) {
+      const cached = authCache.get(payload.id)
       if (cached !== undefined) {
-        branchIds = cached
+        branchIds = cached.branchIds
+        groupIds = cached.groupIds
       } else {
-        const extra = await prisma.accountBranch.findMany({
-          where: { accountId: payload.id },
-          select: { branchId: true },
-        })
-        branchIds = [
-          payload.branchId,
-          ...extra.map((ab) => ab.branchId),
-        ]
-        branchIdsCache.set(payload.id, branchIds)
+        const [extra, groups] = await Promise.all([
+          prisma.accountBranch.findMany({
+            where: { accountId: payload.id },
+            select: { branchId: true },
+          }),
+          prisma.accountGroup.findMany({
+            where: { accountId: payload.id },
+            select: { groupId: true },
+          }),
+        ])
+        branchIds =
+          payload.branchId !== null
+            ? [payload.branchId, ...extra.map((ab) => ab.branchId)]
+            : extra.map((ab) => ab.branchId)
+        groupIds = groups.map((ag) => ag.groupId)
+        authCache.set(payload.id, { branchIds, groupIds })
       }
     }
-    request.user = { ...payload, branchIds }
+    request.user = { ...payload, branchIds, groupIds }
   } catch {
     return reply.code(401).send({ error: '无效或过期的认证令牌' })
   }
@@ -76,6 +90,20 @@ export function canAccessBranch(
 }
 
 /**
+ * 检查用户是否有权查看指定合厅组
+ * 会长：所有合厅组
+ * 超管：AccountGroup 授权的合厅组（groupIds）
+ */
+export function canAccessGroup(
+  user: { role: Role; groupIds: number[] },
+  groupId: number
+): boolean {
+  if (user.role === Role.HUIZHANG) return true
+  if (user.role === Role.CHAOGUAN) return user.groupIds.includes(groupId)
+  return false
+}
+
+/**
  * 获取用户可访问的所有厅 ID 列表
  * 会长：返回 null（表示全部厅）
  * 超管：返回 branchIds
@@ -87,6 +115,20 @@ export function getAccessibleBranchIds(
   if (user.role === Role.HUIZHANG) return null
   if (user.role === Role.CHAOGUAN) return user.branchIds
   return user.branchId !== null ? [user.branchId] : []
+}
+
+/**
+ * 获取用户可访问的所有合厅组 ID 列表
+ * 会长：返回 null（表示全部合厅组）
+ * 超管：返回 groupIds
+ * 管理：返回空数组（不支持合厅组授权）
+ */
+export function getAccessibleGroupIds(
+  user: { role: Role; groupIds: number[] }
+): number[] | null {
+  if (user.role === Role.HUIZHANG) return null
+  if (user.role === Role.CHAOGUAN) return user.groupIds
+  return []
 }
 
 /**

@@ -25,6 +25,7 @@ import {
   dashboardApi,
   rankingApi,
   branchesApi,
+  branchGroupsApi,
   dataQueryApi,
   rewardRulesApi,
   getErrorMessage,
@@ -46,9 +47,11 @@ import type {
   RankingItem,
   RewardRule,
   Branch,
+  BranchGroup,
   StatCycle,
 } from "../types";
 import AnimatedNumber from "../components/AnimatedNumber";
+import GroupedSelect from "../components/GroupedSelect";
 import {
   KpiCardSkeleton,
   Skeleton,
@@ -147,11 +150,16 @@ export default function Dashboard() {
   const [compare, setCompare] = useState<DashboardCompare | null>(null);
   const [top3, setTop3] = useState<RankingItem[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [branchGroups, setBranchGroups] = useState<BranchGroup[]>([]);
   const [availableWeeks, setAvailableWeeks] = useState<string[]>([]);
   // 非会长默认锁定到自己所在厅；会长默认未选厅
   const [branchId, setBranchId] = useState<number | undefined>(() =>
     isHuizhang ? undefined : (user?.branchId ?? undefined),
   );
+  // 合厅组选中 ID（与 branchId 互斥）
+  const [selectedGroupId, setSelectedGroupId] = useState<number | undefined>();
+  // 合厅组模式
+  const isGroupMode = selectedGroupId !== undefined;
   // 本周数据汇总卡片专用排名数据（跟随页面顶部全局 branchId 切换）
   const [chartRanking, setChartRanking] = useState<RankingItem[]>([]);
   // 当前厅奖励规则（用于判断全麦转换是否关闭）
@@ -166,12 +174,22 @@ export default function Dashboard() {
     ? "rgba(148, 163, 184, 0.15)"
     : "rgba(107, 114, 128, 0.15)";
 
-  // 当前统计周期：直接跟随所选厅的 statCycle（按周就是按周，按月就是按月）
+  // 选中的合厅组对象
+  const selectedGroup = useMemo(
+    () => branchGroups.find((g) => g.id === selectedGroupId),
+    [branchGroups, selectedGroupId],
+  );
+
+  // 当前统计周期：直接跟随所选厅的 statCycle；合厅组取组成员的 statCycle（同组合一）
   const currentCycle: StatCycle = useMemo(() => {
+    if (isGroupMode && selectedGroup) {
+      const activeBranches = selectedGroup.branches.filter((b) => !b.closed);
+      return activeBranches[0]?.statCycle ?? "WEEK";
+    }
     if (!branchId) return "WEEK";
     const branch = branches.find((b) => b.id === branchId);
     return branch?.statCycle ?? "WEEK";
-  }, [branches, branchId]);
+  }, [branches, branchId, isGroupMode, selectedGroup]);
   const isMonthCycle = currentCycle === "MONTH";
   // 周期文案
   const periodWord = isMonthCycle ? "月" : "周";
@@ -191,7 +209,10 @@ export default function Dashboard() {
     availableMonths,
     selectedMonthRef,
   } = usePeriodNavigator({
-    branch: branches.find((b) => b.id === branchId) ?? null,
+    branch:
+      isGroupMode && selectedGroup
+        ? ({ statCycle: currentCycle } as Pick<Branch, "statCycle">)
+        : (branches.find((b) => b.id === branchId) ?? null),
     availableWeeks,
     initialWeekStart: getMonthStart(new Date()),
   });
@@ -217,56 +238,78 @@ export default function Dashboard() {
         setBranches(list.filter((b) => !b.closed));
       })
       .catch(() => {});
+    // 加载合厅组列表（会长查全部，超管查授权的合厅组）
+    if (canSelectBranch) {
+      branchGroupsApi
+        .list()
+        .then(setBranchGroups)
+        .catch(() => {});
+    }
   }, []);
 
   // 获取可用周列表
   useEffect(() => {
-    dataQueryApi
-      .getWeeks(branchId)
-      .then(setAvailableWeeks)
-      .catch(() => {});
-  }, [branchId]);
+    if (isGroupMode && selectedGroup) {
+      const groupBranchIds = selectedGroup.branches
+        .filter((b) => !b.closed)
+        .map((b) => b.id);
+      dataQueryApi
+        .getWeeks(undefined, groupBranchIds)
+        .then(setAvailableWeeks)
+        .catch(() => {});
+    } else {
+      dataQueryApi
+        .getWeeks(branchId)
+        .then(setAvailableWeeks)
+        .catch(() => {});
+    }
+  }, [branchId, isGroupMode, selectedGroup]);
 
   useEffect(() => {
-    if (!branchId) return;
+    // 合厅组模式或单厅模式：均需有有效选择才查询
+    if (!branchId && !isGroupMode) return;
     const weekParam = formatDate(weekStart);
     setLoading(true);
+    const groupId = isGroupMode ? selectedGroupId : undefined;
     Promise.all([
-      dashboardApi.getSummary(weekParam, branchId, currentCycle),
-      dashboardApi.getCompare(weekParam, branchId, currentCycle),
-      dashboardApi.getTop3(weekParam, branchId, currentCycle),
-      rewardRulesApi.get(branchId),
+      dashboardApi.getSummary(weekParam, branchId, currentCycle, undefined, groupId),
+      dashboardApi.getCompare(weekParam, branchId, currentCycle, undefined, groupId),
+      dashboardApi.getTop3(weekParam, branchId, currentCycle, undefined, groupId),
+      // 合厅组模式不加载单厅规则（qmEnabled 默认 true 显示全麦）
+      isGroupMode ? Promise.resolve([]) : rewardRulesApi.get(branchId!),
     ])
       .then(([s, c, t, rs]) => {
         setSummary(s);
         setCompare(c);
         setTop3(t);
-        setRules(rs);
+        setRules(rs as RewardRule[]);
       })
       .catch((err) => {
         toast.error(getErrorMessage(err));
       })
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekStart, branchId, currentCycle]);
+  }, [weekStart, branchId, currentCycle, isGroupMode, selectedGroupId]);
 
-  // 全麦是否计入福利：仅当选中厅且该厅规则关闭全麦转换时为 false
+  // 全麦是否计入福利：合厅组模式默认显示全麦；单厅模式仅当该厅规则关闭全麦转换时为 false
   const qmEnabled = useMemo(() => {
+    if (isGroupMode) return true;
     if (!branchId) return true;
     const rule = rules.find((r) => r.branchId === branchId);
     return rule ? rule.qmEnabled : true;
-  }, [rules, branchId]);
+  }, [rules, branchId, isGroupMode]);
 
   // 加载本期数据汇总卡片专用排名数据（跟随页面顶部全局 branchId 切换）
   useEffect(() => {
-    if (!branchId) return;
+    if (!branchId && !isGroupMode) return;
     const weekParam = formatDate(weekStart);
+    const groupId = isGroupMode ? selectedGroupId : undefined;
     rankingApi
-      .getRanking(weekParam, branchId, currentCycle)
+      .getRanking(weekParam, branchId, currentCycle, undefined, groupId)
       .then(setChartRanking)
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekStart, branchId, currentCycle]);
+  }, [weekStart, branchId, currentCycle, isGroupMode, selectedGroupId]);
 
   // 周统计厅显示用的 weekStart（周一格式）
   // weekStart 可能是本月1日（初始值或月统计厅切换过来），getWeekStart 转为所在周周一
@@ -491,40 +534,30 @@ export default function Dashboard() {
             <ChevronLeft size={16} />
           </button>
           {isMonthCycle ? (
-            <select
+            <GroupedSelect
               value={selectedMonthRef}
-              onChange={(e) => setWeekStart(new Date(e.target.value))}
-              aria-label="选择月份"
-              className="px-4 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary min-w-[220px] focus:outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/50 cursor-pointer"
-            >
-              {availableMonths.map((m) => (
-                <option key={m.key} value={m.ref}>
-                  {getMonthRangeText(m.ref)}
-                </option>
-              ))}
-            </select>
+              onChange={(val) => setWeekStart(new Date(val))}
+              options={availableMonths.map((m) => ({
+                value: m.ref,
+                label: getMonthRangeText(m.ref),
+              }))}
+              minWidth={220}
+            />
           ) : (
-            <select
+            <GroupedSelect
               value={formatDate(weekDisplayStart)}
-              onChange={(e) => setWeekStart(new Date(e.target.value))}
-              aria-label="选择周次"
-              className="px-4 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary min-w-[220px] focus:outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/50 cursor-pointer"
-            >
-              {!availableWeeks.includes(formatDate(weekDisplayStart)) && (
-                <option value={formatDate(weekDisplayStart)}>
-                  {getWeekRangeText(weekDisplayStart)}
-                </option>
-              )}
-              {availableWeeks
-                .slice()
-                .sort()
-                .reverse()
-                .map((w) => (
-                  <option key={w} value={w}>
-                    {getWeekRangeText(w)}
-                  </option>
-                ))}
-            </select>
+              onChange={(val) => setWeekStart(new Date(val))}
+              options={[
+                ...(!availableWeeks.includes(formatDate(weekDisplayStart))
+                  ? [{ value: formatDate(weekDisplayStart), label: getWeekRangeText(weekDisplayStart) }]
+                  : []),
+                ...availableWeeks.slice().sort().reverse().map((w) => ({
+                  value: w,
+                  label: getWeekRangeText(w),
+                })),
+              ]}
+              minWidth={220}
+            />
           )}
           <button
             onClick={handleNext}
@@ -551,37 +584,63 @@ export default function Dashboard() {
           </span>
         </div>
 
-        <select
-          value={branchId ?? ""}
-          onChange={(e) =>
-            setBranchId(e.target.value ? Number(e.target.value) : undefined)
+        <GroupedSelect
+          value={
+            isGroupMode
+              ? `g${selectedGroupId}`
+              : (branchId !== undefined ? String(branchId) : "")
           }
-          aria-label="选择厅"
-          className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/50 cursor-pointer"
-        >
-          {canSelectBranch && (
-            <option value="">{isHuizhang ? "未选厅" : "全部授权厅"}</option>
-          )}
-          {branches.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-              {b.statCycle === "MONTH" ? "（按月）" : ""}
-            </option>
-          ))}
-        </select>
+          onChange={(val) => {
+            if (val.startsWith("g")) {
+              // 选择合厅组：清空厅选择
+              setSelectedGroupId(Number(val.slice(1)));
+              setBranchId(undefined);
+            } else {
+              // 选择普通厅：清空合厅组选择
+              setSelectedGroupId(undefined);
+              setBranchId(val ? Number(val) : undefined);
+            }
+          }}
+          placeholder="选择厅"
+          topOption={
+            canSelectBranch
+              ? { value: "", label: isHuizhang ? "未选厅" : "全部授权厅" }
+              : undefined
+          }
+          groups={[
+            ...(branchGroups.length > 0
+              ? [{
+                  label: "合厅组",
+                  options: branchGroups.map((g) => ({
+                    value: `g${g.id}`,
+                    label: `${g.name}（${g.branches.filter((b) => !b.closed).length}个厅）`,
+                  })),
+                }]
+              : []),
+            {
+              label: "厅",
+              options: branches.map((b) => ({
+                value: String(b.id),
+                label: `${b.name}${b.statCycle === "MONTH" ? "（按月）" : ""}`,
+              })),
+            },
+          ]}
+          minWidth={180}
+          maxWidth={280}
+        />
       </div>
 
       {/* 数据区域：weekStart/branchId 变化时重新触发入场动画 */}
       <AnimatePresence mode="wait">
         <motion.div
-          key={`${formatDate(weekStart)}-${branchId ?? "all"}`}
+          key={`${formatDate(weekStart)}-${branchId ?? "all"}-${selectedGroupId ?? ""}`}
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
           className="space-y-5"
         >
-          {!branchId ? (
+          {!branchId && !isGroupMode ? (
             <div className="bg-card border border-border rounded-xl px-5 py-16 text-center text-sm text-textMuted">
               请先选择厅
             </div>
