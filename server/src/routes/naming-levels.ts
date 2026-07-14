@@ -4,7 +4,7 @@ import { authenticate, requireRole, canAccessBranch, getAccessibleBranchIds } fr
 import { Role, StatCycle } from '../../generated/prisma/client'
 import { createNotification } from '../services/notification'
 import { NotificationType } from '../../generated/prisma/client'
-import { isNonNegInt } from '../utils/validation'
+import { isNonNegInt, isNonNegDecimal2 } from '../utils/validation'
 
 interface NamingLevelInput {
   name?: string
@@ -38,7 +38,10 @@ export default async function namingLevelRoutes(fastify: FastifyInstance) {
         orderBy: [{ threshold: 'desc' }, { sortOrder: 'desc' }, { id: 'asc' }],
       })
 
-      return reply.send(levels)
+      // Decimal 字段序列化为 string，需转为 number 保持前端类型一致
+      return reply.send(
+        levels.map((l) => ({ ...l, reward: Number(l.reward) }))
+      )
     }
   )
 
@@ -71,8 +74,8 @@ export default async function namingLevelRoutes(fastify: FastifyInstance) {
       if (!isNonNegInt(threshold) || threshold! <= 0) {
         return reply.code(400).send({ error: '收光阈值必须为正整数' })
       }
-      if (reward !== undefined && !isNonNegInt(reward)) {
-        return reply.code(400).send({ error: '福利必须为非负整数' })
+      if (reward !== undefined && !isNonNegDecimal2(reward)) {
+        return reply.code(400).send({ error: '福利必须为非负数（最多两位小数）' })
       }
 
       // 校验厅存在且为按月统计
@@ -102,7 +105,7 @@ export default async function namingLevelRoutes(fastify: FastifyInstance) {
         `分部【${branch.name}】新增冠名等级【${name.trim()}】`
       )
 
-      return reply.code(201).send(created)
+      return reply.code(201).send({ ...created, reward: Number(created.reward) })
     }
   )
 
@@ -147,8 +150,8 @@ export default async function namingLevelRoutes(fastify: FastifyInstance) {
         data.threshold = body.threshold
       }
       if (body.reward !== undefined) {
-        if (!isNonNegInt(body.reward)) {
-          return reply.code(400).send({ error: '福利必须为非负整数' })
+        if (!isNonNegDecimal2(body.reward)) {
+          return reply.code(400).send({ error: '福利必须为非负数（最多两位小数）' })
         }
         data.reward = body.reward
       }
@@ -174,7 +177,7 @@ export default async function namingLevelRoutes(fastify: FastifyInstance) {
         `分部【${existing.branch.name}】冠名等级【${existing.name}】已更新`
       )
 
-      return reply.send(updated)
+      return reply.send({ ...updated, reward: Number(updated.reward) })
     }
   )
 

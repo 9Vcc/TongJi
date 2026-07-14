@@ -4,6 +4,7 @@ import { authenticate, canAccessBranch, getAccessibleBranchIds } from '../middle
 import { Role, StatCycle } from '../../generated/prisma/client'
 import { getWeekStart } from '../utils/week'
 import { resolveQueryBranchId } from '../utils/branch'
+import { toDecimal2 } from '../utils/validation'
 
 interface RewardRuleLike {
   sgRatio: number
@@ -130,13 +131,13 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
           levelId: n.levelId,
           levelName: n.level.name,
           count: n.count,
-          reward: n.level.reward,
+          reward: Number(n.level.reward),
         }))
         const namingWelfare = namings.reduce((s, n) => s + n.count * n.reward, 0)
         const baseWelfare = rule
           ? calcWelfare(r.sg, r.mx, r.qm, r.zcDays, rule)
           : r.sg * 3 + r.qm * 3
-        const welfare = baseWelfare + namingWelfare
+        const welfare = toDecimal2(baseWelfare + namingWelfare)
         const deduction = deductionMap.get(`${r.branchId}:${r.personnelId}`) ?? 0
         return {
           id: r.id,
@@ -151,7 +152,7 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
           zcDays: r.zcDays,
           welfare,
           deduction,
-          finalWelfare: welfare - deduction,
+          finalWelfare: toDecimal2(welfare - deduction),
           namings,
           remark: r.remark,
           updatedAt: r.updatedAt,

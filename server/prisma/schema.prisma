@@ -114,7 +114,7 @@ model NamingLevel {
   branchId  Int
   name      String // 等级名称，如"周冠"、"月冠"
   threshold Int    // 收光阈值（达到此值转换1个冠名）
-  reward    Int    @default(0) // 每个冠名的福利金额
+  reward    Decimal @default(0) @db.Decimal(10, 2) // 每个冠名的福利金额（支持两位小数）
   sortOrder Int    @default(0) // 排序值（大在前，用于逐级扣减顺序）
   createdAt DateTime @default(now())
 

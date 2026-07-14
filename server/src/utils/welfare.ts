@@ -4,6 +4,7 @@ import {
   getPeriodStart,
   getPeriodEnd,
 } from './period'
+import { toDecimal2 } from './validation'
 // resolveQueryBranchId 已抽取到 ./branch，此处重新导出以保持向后兼容
 // （export.ts、notifications.ts 仍从此处导入）
 export { resolveQueryBranchId } from './branch'
@@ -223,7 +224,7 @@ export async function computeRanking(
     }),
   ])
   const ruleMap = new Map(rules.map((r) => [r.branchId, r]))
-  const levelInfoMap = new Map(namingLevels.map((l) => [l.id, { name: l.name, reward: l.reward }]))
+  const levelInfoMap = new Map(namingLevels.map((l) => [l.id, { name: l.name, reward: Number(l.reward) }]))
   // 按 (branchId, personnelId) 索引扣减金额
   const deductionMap = new Map<string, number>()
   for (const d of deductions) {
@@ -333,9 +334,9 @@ export async function computeRanking(
         baseWelfare,
         zcWelfare,
         rankReward,
-        namingWelfare,
+        namingWelfare: toDecimal2(namingWelfare),
         deduction: deductionMap.get(`${branchId}:${p.personnelId}`) ?? 0,
-        totalWelfare: Math.max(0, baseWelfare + zcWelfare + rankReward + namingWelfare - (deductionMap.get(`${branchId}:${p.personnelId}`) ?? 0)),
+        totalWelfare: Math.max(0, toDecimal2(baseWelfare + zcWelfare + rankReward + namingWelfare - (deductionMap.get(`${branchId}:${p.personnelId}`) ?? 0))),
         namings,
       })
     })
