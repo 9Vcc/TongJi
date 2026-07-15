@@ -1,0 +1,112 @@
+/* ============ 全局聚光灯效果 ============ */
+/* GlobalSpotlight 组件监听鼠标移动，为所有卡片设置 CSS 变量 */
+/* 光晕只在卡片内通过伪元素显示，不创建全局悬浮 div */
+
+/* --gs-color 设置在 :root 上，所有卡片通过继承自动获得主题色 */
+:root {
+  --gs-color: 93, 135, 255;
+}
+
+/* ============ 卡片响应聚光灯 ============ */
+/* --gs-color: 主色 RGB 字符串（从 :root 继承，由 JS 动态更新） */
+/* --gs-x / --gs-y: 鼠标相对卡片位置（百分比） */
+/* --gs-intensity: 发光强度 0-1（由 JS 根据距离设置） */
+.art-card,
+.art-card-sm,
+.magic-bento-card,
+.pc-card {
+  --gs-x: 50%;
+  --gs-y: 50%;
+  --gs-intensity: 0;
+  position: relative;
+}
+
+/* chroma-card 仅设置变量，不覆盖其已有 ::before */
+.chroma-card {
+  --gs-x: 50%;
+  --gs-y: 50%;
+  --gs-intensity: 0;
+  position: relative;
+}
+
+/* ============ ::after 表面光晕 ============ */
+/* 径向渐变背景，只在鼠标附近显示，被卡片 border-radius 裁剪 */
+.art-card::after,
+.art-card-sm::after,
+.magic-bento-card::after,
+.pc-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    200px circle at var(--gs-x) var(--gs-y),
+    rgba(var(--gs-color), calc(var(--gs-intensity) * 0.16)) 0%,
+    rgba(var(--gs-color), calc(var(--gs-intensity) * 0.08)) 35%,
+    rgba(var(--gs-color), calc(var(--gs-intensity) * 0.03)) 65%,
+    transparent 85%
+  );
+  pointer-events: none;
+  opacity: var(--gs-intensity);
+  transition: opacity 0.2s ease;
+  z-index: 0;
+}
+
+.dark .art-card::after,
+.dark .art-card-sm::after,
+.dark .magic-bento-card::after,
+.dark .pc-card::after {
+  background: radial-gradient(
+    200px circle at var(--gs-x) var(--gs-y),
+    rgba(var(--gs-color), calc(var(--gs-intensity) * 0.24)) 0%,
+    rgba(var(--gs-color), calc(var(--gs-intensity) * 0.12)) 35%,
+    rgba(var(--gs-color), calc(var(--gs-intensity) * 0.04)) 65%,
+    transparent 85%
+  );
+}
+
+/* ============ ::before 边框光晕（局部，仅鼠标附近的边框发光） ============ */
+/* 径向渐变 + mask-composite 只渲染边框区域 */
+/* 径向渐变本身是局部的 → 只有鼠标附近的边框部分发光，而非整个边框均匀发光 */
+.art-card::before,
+.art-card-sm::before,
+.magic-bento-card::before,
+.pc-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: radial-gradient(
+    180px circle at var(--gs-x) var(--gs-y),
+    rgba(var(--gs-color), calc(var(--gs-intensity) * 0.70)) 0%,
+    rgba(var(--gs-color), calc(var(--gs-intensity) * 0.35)) 35%,
+    rgba(var(--gs-color), calc(var(--gs-intensity) * 0.10)) 60%,
+    transparent 80%
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: var(--gs-intensity);
+  transition: opacity 0.2s ease;
+  z-index: 0;
+}
+
+.dark .art-card::before,
+.dark .art-card-sm::before,
+.dark .magic-bento-card::before,
+.dark .pc-card::before {
+  background: radial-gradient(
+    180px circle at var(--gs-x) var(--gs-y),
+    rgba(var(--gs-color), calc(var(--gs-intensity) * 0.90)) 0%,
+    rgba(var(--gs-color), calc(var(--gs-intensity) * 0.45)) 35%,
+    rgba(var(--gs-color), calc(var(--gs-intensity) * 0.15)) 60%,
+    transparent 80%
+  );
+}

@@ -80,17 +80,18 @@ function ToastView({
   const config = {
     success: {
       icon: CheckCircle,
-      bg: 'bg-success',
+      // 用深色背景 + 白字，确保对比度
+      bg: 'bg-[#0ea5a0]',
       text: 'text-white',
     },
     error: {
       icon: AlertCircle,
-      bg: 'bg-danger',
+      bg: 'bg-[#e53935]',
       text: 'text-white',
     },
     info: {
       icon: Info,
-      bg: 'bg-primary',
+      bg: 'bg-[#4a72e8]',
       text: 'text-white',
     },
   }[toast.type]
@@ -104,11 +105,11 @@ function ToastView({
       animate={{ opacity: 1, x: 0, scale: 1 }}
       exit={{ opacity: 0, x: 100, scale: 0.9 }}
       transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-      className={`flex items-center gap-2 px-4 py-3 rounded-lg ${config.bg} ${config.text} min-w-[260px] max-w-[400px] shadow-lg`}
+      className={`flex items-center gap-2 px-4 py-3 rounded-lg ${config.bg} ${config.text} min-w-[260px] max-w-[400px] shadow-xl ring-1 ring-black/10`}
     >
-      <Icon size={18} />
-      <span className="flex-1 text-sm">{toast.message}</span>
-      <button onClick={onClose} className="opacity-80 hover:opacity-100">
+      <Icon size={18} className="shrink-0" />
+      <span className="flex-1 text-sm font-medium">{toast.message}</span>
+      <button onClick={onClose} className="opacity-80 hover:opacity-100 shrink-0 cursor-pointer">
         <X size={16} />
       </button>
     </motion.div>

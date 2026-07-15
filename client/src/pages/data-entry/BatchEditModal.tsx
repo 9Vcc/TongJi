@@ -211,14 +211,14 @@ export default function BatchEditModal({
         <>
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+            className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
           >
             取消
           </button>
           <button
             onClick={handleBatchSubmit}
             disabled={batchSubmitting}
-            className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-custom-sm text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
           >
             {batchSubmitting ? (
               <Spinner className="h-4 w-4" />
@@ -247,7 +247,7 @@ export default function BatchEditModal({
             value={batchRemark}
             onChange={(e) => onBatchRemarkChange(e.target.value)}
             placeholder="必填，最多 100 字"
-            className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+            className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
           />
         </div>
         <div className="max-h-[60vh] overflow-y-auto scrollbar-thin space-y-2">
@@ -260,7 +260,7 @@ export default function BatchEditModal({
               return (
                 <div
                   key={k}
-                  className={`p-3 border rounded-lg ${
+                  className={`p-3 border rounded-custom-sm ${
                     r.isRecorded
                       ? "border-border bg-card"
                       : "border-amber-200 dark:border-amber-900/40 bg-amber-50/50 dark:bg-amber-900/10"
@@ -272,7 +272,7 @@ export default function BatchEditModal({
                         {r.personnelName}
                       </span>
                       {!r.isRecorded && (
-                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-warning/10 text-warning">
                           未录入
                         </span>
                       )}
@@ -303,7 +303,7 @@ export default function BatchEditModal({
                         }
                         placeholder={sgInputEnabled ? "0" : "已关闭"}
                         disabled={!sgInputEnabled}
-                        className="w-full px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                       />
                     </div>
                     <div>
@@ -319,7 +319,7 @@ export default function BatchEditModal({
                           handleBatchFieldChange(k, "mx", e.target.value)
                         }
                         placeholder="0"
-                        className="w-full px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+                        className="w-full px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
                       />
                     </div>
                     <div>
@@ -341,7 +341,7 @@ export default function BatchEditModal({
                         }
                         placeholder={qmInputEnabled ? "0" : "已关闭"}
                         disabled={!qmInputEnabled}
-                        className="w-full px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                       />
                     </div>
                     {zcInputEnabled && (
@@ -358,7 +358,7 @@ export default function BatchEditModal({
                             handleBatchFieldChange(k, "zcDays", e.target.value)
                           }
                           placeholder="0"
-                          className="w-full px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+                          className="w-full px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
                         />
                       </div>
                     )}

@@ -128,8 +128,8 @@ const DragVerify = forwardRef<DragVerifyHandle, DragVerifyProps>(function DragVe
         height: `${height}px`,
         lineHeight: `${height}px`,
         background: value
-          ? (completedBg ?? 'rgb(var(--color-primary) / 0.15)')
-          : (background ?? 'rgb(var(--color-border) / 0.5)'),
+          ? (completedBg ?? 'color-mix(in srgb, var(--color-primary) 15%, transparent)')
+          : (background ?? 'color-mix(in srgb, var(--color-border) 50%, transparent)'),
         borderRadius: `${height / 2}px`,
       }}
     >
@@ -141,8 +141,8 @@ const DragVerify = forwardRef<DragVerifyHandle, DragVerifyProps>(function DragVe
           maxWidth: '100%',
           height: `${height}px`,
           background: value
-            ? (completedBg ?? 'rgb(var(--color-primary))')
-            : (progressBarBg ?? 'rgb(var(--color-primary) / 0.7)'),
+            ? (completedBg ?? 'var(--color-primary)')
+            : (progressBarBg ?? 'color-mix(in srgb, var(--color-primary) 70%, transparent)'),
           borderRadius: `${height / 2}px 0 0 ${height / 2}px`,
           transition: isMoving ? 'none' : 'width 0.3s ease',
         }}
@@ -156,8 +156,8 @@ const DragVerify = forwardRef<DragVerifyHandle, DragVerifyProps>(function DragVe
           height: `${height}px`,
           lineHeight: `${height}px`,
           color: value
-            ? 'rgb(var(--color-primary))'
-            : (textColor ?? 'rgb(var(--color-text-muted))'),
+            ? '#ffffff'
+            : (textColor ?? 'var(--color-text-muted)'),
           fontSize: '13px',
         }}
       >
@@ -172,7 +172,7 @@ const DragVerify = forwardRef<DragVerifyHandle, DragVerifyProps>(function DragVe
         style={{
           width: `${height}px`,
           height: `${height}px`,
-          background: handlerBg ?? 'rgb(var(--color-card))',
+          background: handlerBg ?? 'var(--color-card)',
           transform: `translateX(${offset}px)`,
           transition: isMoving ? 'none' : 'transform 0.3s ease',
           borderRadius: '50%',

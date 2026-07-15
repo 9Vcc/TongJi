@@ -323,7 +323,7 @@ export default function Personnel() {
           <button
             onClick={openAdd}
             disabled={!canAdd || !hasBranchSelected}
-            className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-custom-sm text-sm font-medium hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
             title={!hasBranchSelected ? '请先选择厅' : undefined}
           >
             <Plus size={16} />
@@ -334,7 +334,7 @@ export default function Personnel() {
               <button
                 onClick={() => setExportDropdownOpen(!exportDropdownOpen)}
                 disabled={!hasBranchSelected || exporting !== null}
-                className="flex items-center gap-1.5 px-3 py-2 border border-border bg-card text-textPrimary rounded-lg text-sm font-medium hover:bg-surface disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-2 border border-border bg-card text-textPrimary rounded-custom-sm text-sm font-medium hover:bg-surface disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
                 title={!hasBranchSelected ? '请先选择厅' : undefined}
               >
                 <Download size={16} />
@@ -346,7 +346,7 @@ export default function Personnel() {
                     className="fixed inset-0 z-10"
                     onClick={() => setExportDropdownOpen(false)}
                   />
-                  <div className="absolute right-0 mt-1 w-32 bg-card border border-border rounded-lg shadow-lg z-20 overflow-hidden">
+                  <div className="absolute right-0 mt-1 w-32 bg-card border border-border rounded-custom-sm shadow-lg z-20 overflow-hidden">
                     <button
                       onClick={() => handleExportPersonnel('excel')}
                       className="w-full text-left px-3 py-2 text-sm text-textPrimary hover:bg-surface transition-colors duration-200 cursor-pointer"
@@ -369,7 +369,7 @@ export default function Personnel() {
 
       {/* 未选厅时提示 */}
       {!hasBranchSelected ? (
-        <div className="bg-card border border-border rounded-xl px-5 py-16 text-center text-sm text-textMuted">
+        <div className="art-card px-5 py-16 text-center text-sm text-textMuted">
           请先选择厅
         </div>
       ) : (
@@ -386,7 +386,7 @@ export default function Personnel() {
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="搜索姓名（支持中文首字母）"
               aria-label="搜索人员"
-              className="w-full pl-10 pr-10 py-2.5 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/50 transition-colors duration-200"
+              className="w-full pl-10 pr-10 py-2.5 border border-border rounded-custom-sm bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus-visible:ring-2 focus-visible:ring-primary/50 transition-colors duration-200"
             />
             {searchTerm && (
               <button
@@ -400,7 +400,7 @@ export default function Personnel() {
           </div>
 
           {/* 人员表格 */}
-          <div className="bg-card border border-border rounded-xl overflow-hidden">
+          <div className="art-card overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-surface border-b border-border">
@@ -511,7 +511,7 @@ export default function Personnel() {
                 <button
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page <= 1}
-                  className="p-1.5 border border-border rounded-md bg-card text-textSecondary hover:text-textPrimary hover:border-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+                  className="p-1.5 border border-border rounded-custom-sm bg-card text-textSecondary hover:text-textPrimary hover:border-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
                   aria-label="上一页"
                 >
                   <ChevronLeft size={16} />
@@ -522,7 +522,7 @@ export default function Personnel() {
                 <button
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page >= totalPages}
-                  className="p-1.5 border border-border rounded-md bg-card text-textSecondary hover:text-textPrimary hover:border-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+                  className="p-1.5 border border-border rounded-custom-sm bg-card text-textSecondary hover:text-textPrimary hover:border-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
                   aria-label="下一页"
                 >
                   <ChevronRight size={16} />
@@ -542,14 +542,14 @@ export default function Personnel() {
           <>
             <button
               onClick={() => setAddOpen(false)}
-              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+              className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
             >
               取消
             </button>
             <button
               onClick={handleSubmit}
               disabled={submitting}
-              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-custom-sm text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
             >
               {submitting && <Spinner className="h-4 w-4" />}
               {submitting
@@ -563,10 +563,10 @@ export default function Personnel() {
       >
         <div className="space-y-4">
           {/* 标签页切换 */}
-          <div className="flex gap-1 p-1 bg-surface rounded-lg border border-border">
+          <div className="flex gap-1 p-1 bg-surface rounded-custom-sm border border-border">
             <button
               onClick={() => setAddTab('single')}
-              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors duration-200 cursor-pointer ${
+              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-custom-sm text-sm font-medium transition-colors duration-200 cursor-pointer ${
                 addTab === 'single'
                   ? 'bg-card text-primary shadow-sm'
                   : 'text-textSecondary hover:text-textPrimary'
@@ -577,7 +577,7 @@ export default function Personnel() {
             </button>
             <button
               onClick={() => setAddTab('batch')}
-              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors duration-200 cursor-pointer ${
+              className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-custom-sm text-sm font-medium transition-colors duration-200 cursor-pointer ${
                 addTab === 'batch'
                   ? 'bg-card text-primary shadow-sm'
                   : 'text-textSecondary hover:text-textPrimary'
@@ -597,7 +597,7 @@ export default function Personnel() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="请输入人员姓名"
-                className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+                className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
               />
             </div>
           )}
@@ -616,7 +616,7 @@ export default function Personnel() {
                 onChange={(e) => setBatchText(e.target.value)}
                 placeholder={'张三\n李四\n王五\n赵六'}
                 rows={8}
-                className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 resize-y font-mono"
+                className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200 resize-y font-mono"
               />
               {batchPreviewCount > 0 && (
                 <p className="mt-1 text-xs text-textMuted">
@@ -663,14 +663,14 @@ export default function Personnel() {
           <>
             <button
               onClick={() => setRenameOpen(false)}
-              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+              className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
             >
               取消
             </button>
             <button
               onClick={handleRename}
               disabled={renaming}
-              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-custom-sm text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
             >
               {renaming && <Spinner className="h-4 w-4" />}
               {renaming ? '处理中...' : '保存'}
@@ -696,7 +696,7 @@ export default function Personnel() {
               placeholder="请输入新姓名"
               autoFocus
               maxLength={50}
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+              className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
             />
           </div>
         </div>
@@ -711,13 +711,13 @@ export default function Personnel() {
           <>
             <button
               onClick={() => setDeleteOpen(false)}
-              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+              className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
             >
               取消
             </button>
             <button
               onClick={handleDelete}
-              className="flex items-center gap-1.5 px-4 py-2 bg-danger text-white rounded-lg text-sm font-medium hover:bg-danger-hover transition-colors duration-200 cursor-pointer"
+              className="flex items-center gap-1.5 px-4 py-2 bg-danger text-white rounded-custom-sm text-sm font-medium hover:bg-danger-hover transition-colors duration-200 cursor-pointer"
             >
               <Trash2 size={16} />
               确认移除

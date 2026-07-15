@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Trophy, Info, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Trophy, Info, ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
 import {
   rankingApi,
   rewardRulesApi,
@@ -15,12 +15,11 @@ import {
   formatDate,
   getWeekRangeText,
   getMonthRangeText,
-  rankBadgeColors,
-  rankRowBg,
   formatNamings,
 } from '../utils'
 import { Skeleton } from '../components/Skeleton'
 import GroupedSelect from '../components/GroupedSelect'
+import SpotlightCard from '../components/SpotlightCard'
 import type {
   RankingItem,
   RewardRule,
@@ -168,18 +167,21 @@ function BranchRankingCard({
   const top10 = useMemo(() => ranking.slice(0, 10), [ranking])
 
   return (
-    <div className="bg-card border border-border rounded-xl overflow-hidden">
-      {/* 卡片头部：厅名 + 周期标签 */}
-      <div className="flex items-center gap-2 px-5 py-4 border-b border-border flex-wrap">
-        <Trophy size={18} className="text-warning" />
-        <h3 className="text-base font-semibold text-textPrimary">{branch.name}</h3>
+    <SpotlightCard className="">
+      {/* 卡片头部：厅名 + 周期标签（现代化：图标徽章 + 大字厅名 + 胶囊周期标签） */}
+      <div className="flex items-center gap-3 px-5 py-4 border-b border-border flex-wrap bg-gradient-to-r from-primary/5 to-transparent">
+        <div className="w-9 h-9 rounded-custom-sm bg-warning/15 flex items-center justify-center shrink-0">
+          <Trophy size={18} className="text-warning" />
+        </div>
+        <h3 className="text-lg font-bold text-textPrimary tracking-tight">{branch.name}</h3>
         <span
-          className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${
             isMonthCycle
-              ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
-              : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+              ? 'bg-warning/10 text-warning'
+              : 'bg-success/10 text-success'
           }`}
         >
+          <Calendar size={12} />
           {isMonthCycle ? '按月统计' : '按周统计'}
         </span>
       </div>
@@ -187,7 +189,7 @@ function BranchRankingCard({
       <div className="flex items-center gap-2 px-5 py-3 border-b border-border flex-wrap">
         <button
           onClick={handlePrev}
-          className="p-1.5 border border-border rounded-md bg-card text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+          className="p-1.5 border border-border rounded-custom-sm bg-card text-textSecondary hover:text-primary hover:border-primary hover:bg-primary/5 tad-200 cursor-pointer"
           aria-label={isMonthCycle ? '上一月' : '上一周'}
         >
           <ChevronLeft size={14} />
@@ -215,14 +217,14 @@ function BranchRankingCard({
         )}
         <button
           onClick={handleNext}
-          className="p-1.5 border border-border rounded-md bg-card text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+          className="p-1.5 border border-border rounded-custom-sm bg-card text-textSecondary hover:text-primary hover:border-primary hover:bg-primary/5 tad-200 cursor-pointer"
           aria-label={isMonthCycle ? '下一月' : '下一周'}
         >
           <ChevronRight size={14} />
         </button>
         <button
           onClick={handleThisPeriod}
-          className="px-2.5 py-1.5 border border-border rounded-md bg-card text-xs text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+          className="px-2.5 py-1.5 border border-border rounded-custom-sm bg-card text-xs text-textSecondary hover:text-primary hover:border-primary hover:bg-primary/5 tad-200 cursor-pointer"
         >
           {isMonthCycle ? '本月' : '本周'}
         </button>
@@ -230,22 +232,22 @@ function BranchRankingCard({
       {/* 排名表格 */}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-surface border-b border-border">
-            <tr className="text-left text-textSecondary">
-              <th className="px-3 py-2 font-medium">排名</th>
-              <th className="px-3 py-2 font-medium">人员</th>
-              <th className="px-3 py-2 font-medium">收光</th>
-              <th className="px-3 py-2 font-medium">麦序</th>
+          <thead className="bg-g-100/50 dark:bg-g-100/5 border-b border-border/50">
+            <tr className="text-left text-textMuted">
+              <th className="px-4 py-3 text-xs uppercase tracking-wider font-medium">排名</th>
+              <th className="px-4 py-3 text-xs uppercase tracking-wider font-medium">人员</th>
+              <th className="px-4 py-3 text-xs uppercase tracking-wider font-medium">收光</th>
+              <th className="px-4 py-3 text-xs uppercase tracking-wider font-medium">麦序</th>
               {qmEnabled && (
-                <th className="px-3 py-2 font-medium">全麦</th>
+                <th className="px-4 py-3 text-xs uppercase tracking-wider font-medium">全麦</th>
               )}
               {zcEnabled && (
-                <th className="px-3 py-2 font-medium">主持</th>
+                <th className="px-4 py-3 text-xs uppercase tracking-wider font-medium">主持</th>
               )}
               {isMonthCycle && (
-                <th className="px-3 py-2 font-medium">冠名</th>
+                <th className="px-4 py-3 text-xs uppercase tracking-wider font-medium">冠名</th>
               )}
-              <th className="px-3 py-2 font-medium">总福利</th>
+              <th className="px-4 py-3 text-xs uppercase tracking-wider font-medium">总福利</th>
             </tr>
           </thead>
           <tbody>
@@ -253,18 +255,18 @@ function BranchRankingCard({
               <tr>
                 <td
                   colSpan={5 + (qmEnabled ? 1 : 0) + (zcEnabled ? 1 : 0) + (isMonthCycle ? 1 : 0)}
-                  className="px-3 py-8 text-center text-textMuted"
+                  className="px-4 py-10 text-center text-textMuted"
                 >
                   暂无数据
                 </td>
               </tr>
             ) : top10.length === 0 ? (
               Array.from({ length: 5 }).map((_, i) => (
-                <tr key={i} className="border-b border-border last:border-0">
+                <tr key={i} className="border-b border-border/50 last:border-0">
                   {Array.from({
                     length: 5 + (qmEnabled ? 1 : 0) + (zcEnabled ? 1 : 0) + (isMonthCycle ? 1 : 0),
                   }).map((_, j) => (
-                    <td key={j} className="px-3 py-2">
+                    <td key={j} className="px-4 py-3">
                       <Skeleton className="h-5 w-full" />
                     </td>
                   ))}
@@ -272,11 +274,24 @@ function BranchRankingCard({
               ))
             ) : (
               top10.map((item) => {
-                const isTop3 = item.rank <= 3
-                const rowBg = isTop3 ? rankRowBg[item.rank - 1] : ''
-                const badgeColor = isTop3
-                  ? rankBadgeColors[item.rank - 1]
-                  : '#94A3B8'
+                // 排名徽章样式：前三名使用渐变背景 + 阴影，第1名金色高亮
+                const badgeClass =
+                  item.rank === 1
+                    ? 'bg-gradient-to-br from-amber-400 to-yellow-500 text-white shadow-md shadow-amber-500/30'
+                    : item.rank === 2
+                    ? 'bg-gradient-to-br from-slate-300 to-slate-400 text-white shadow-md shadow-slate-400/30'
+                    : item.rank === 3
+                    ? 'bg-gradient-to-br from-orange-300 to-orange-400 text-white shadow-md shadow-orange-400/30'
+                    : 'bg-g-200 text-textSecondary'
+                // Top3 行背景：精致渐变 + 左侧 3px 竖条指示器（border-l-4）
+                const rowBgClass =
+                  item.rank === 1
+                    ? 'bg-gradient-to-r from-amber-50/80 to-transparent dark:from-amber-900/10 border-l-4 border-amber-400'
+                    : item.rank === 2
+                    ? 'bg-gradient-to-r from-slate-50/80 to-transparent dark:from-slate-700/10 border-l-4 border-slate-400'
+                    : item.rank === 3
+                    ? 'bg-gradient-to-r from-orange-50/80 to-transparent dark:from-orange-900/10 border-l-4 border-orange-400'
+                    : ''
                 const hasNaming =
                   isMonthCycle &&
                   item.namings &&
@@ -284,38 +299,37 @@ function BranchRankingCard({
                 return (
                   <tr
                     key={`${item.branchId}-${item.personnelId}`}
-                    className={`border-b border-border last:border-0 ${rowBg} hover:bg-surface dark:hover:bg-surface/50 transition-colors duration-200`}
+                    className={`border-b border-border/50 last:border-0 ${rowBgClass} hover:bg-primary/5 transition-colors duration-200`}
                   >
-                    <td className="px-3 py-2">
+                    <td className="px-4 py-3">
                       <div
-                        className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-semibold font-mono shadow-sm"
-                        style={{ backgroundColor: badgeColor }}
+                        className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold font-mono ${badgeClass}`}
                       >
                         {item.rank}
                       </div>
                     </td>
-                    <td className="px-3 py-2 text-textPrimary font-medium">
+                    <td className="px-4 py-3 text-textPrimary font-medium">
                       {item.personnelName}
                     </td>
-                    <td className="px-3 py-2 text-textPrimary font-mono">{item.sg}</td>
-                    <td className="px-3 py-2 text-textPrimary font-mono">{item.mx}</td>
+                    <td className="px-4 py-3 text-textPrimary font-mono font-bold">{item.sg}</td>
+                    <td className="px-4 py-3 text-textPrimary font-mono font-bold">{item.mx}</td>
                     {qmEnabled && (
-                      <td className="px-3 py-2 text-textPrimary font-mono">{item.qm}</td>
+                      <td className="px-4 py-3 text-textPrimary font-mono font-bold">{item.qm}</td>
                     )}
                     {zcEnabled && (
-                      <td className="px-3 py-2 text-textPrimary font-mono">{item.zcDays}</td>
+                      <td className="px-4 py-3 text-textPrimary font-mono font-bold">{item.zcDays}</td>
                     )}
                     {isMonthCycle && (
-                      <td className="px-3 py-2 text-textPrimary text-xs whitespace-nowrap">
+                      <td className="px-4 py-3 text-textPrimary text-xs whitespace-nowrap">
                         {formatNamings(item.namings)}
                       </td>
                     )}
-                    <td className="px-3 py-2">
-                      <div className="text-textPrimary font-semibold font-mono">
+                    <td className="px-4 py-3">
+                      <div className="text-textPrimary font-bold font-mono text-base">
                         {item.totalWelfare}
                       </div>
                       {hasNaming && (item.namingWelfare ?? 0) > 0 && (
-                        <div className="text-[10px] text-amber-600 dark:text-amber-400 font-mono mt-0.5">
+                        <div className="text-[10px] text-warning font-mono mt-0.5">
                           含冠名 {item.namingWelfare}
                         </div>
                       )}
@@ -327,7 +341,7 @@ function BranchRankingCard({
           </tbody>
         </table>
       </div>
-    </div>
+    </SpotlightCard>
   )
 }
 
@@ -362,29 +376,33 @@ function WelfareRuleCard({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -8 }}
         transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-        className="bg-card border border-border rounded-xl p-5"
       >
+        <SpotlightCard className="p-5">
+        {/* 头部：渐变图标装饰 + 胶囊周期标签，提升视觉层次 */}
         <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <Info size={18} className="text-primary" />
-            <h3 className="text-base font-semibold text-textPrimary">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-custom-sm bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center shrink-0">
+              <Info size={18} className="text-primary" />
+            </div>
+            <h3 className="text-lg font-bold text-textPrimary tracking-tight">
               福利计算说明
             </h3>
           </div>
           <span
-            className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium ${
               isMonthCycle
-                ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
-                : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                ? 'bg-warning/10 text-warning'
+                : 'bg-success/10 text-success'
             }`}
           >
+            <Calendar size={12} />
             {isMonthCycle ? '按月统计周期' : '按周统计周期'}
           </span>
         </div>
         {!currentRule && loading ? (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="border border-border rounded-lg p-4 bg-card">
+              <div key={i} className="border border-border rounded-custom-sm p-4 bg-gradient-to-br from-card to-g-100/30 dark:from-card dark:to-g-100/5">
                 <Skeleton className="h-3 w-20 mb-2" />
                 <Skeleton className="h-6 w-16 mb-2" />
                 <Skeleton className="h-3 w-24" />
@@ -452,6 +470,7 @@ function WelfareRuleCard({
             暂无规则数据
           </div>
         )}
+        </SpotlightCard>
       </motion.div>
     </AnimatePresence>
   )
@@ -470,22 +489,26 @@ function RuleCard({
 }) {
   return (
     <div
-      className={`border rounded-lg p-4 bg-card card-hover ${
+      className={`border rounded-custom-sm p-4 bg-gradient-to-br from-card to-g-100/30 dark:from-card dark:to-g-100/5 card-hover transition-all ${
         enabled
-          ? 'border-border hover:border-primary/50'
+          ? 'border-border hover:border-primary/30 hover:-translate-y-0.5 hover:shadow-md'
           : 'border-border opacity-60'
       }`}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="text-xs text-textSecondary">{label}</div>
-        {!enabled && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 text-slate-500 dark:bg-slate-700 dark:text-slate-400">
+        {enabled ? (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-success/10 text-success font-medium">
+            启用
+          </span>
+        ) : (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-g-200 text-textMuted font-medium">
             已关闭
           </span>
         )}
       </div>
       <div
-        className={`text-lg font-semibold mt-1 font-mono ${
+        className={`text-xl font-bold mt-1.5 font-mono ${
           enabled ? 'text-textPrimary' : 'text-textMuted line-through'
         }`}
       >
@@ -505,14 +528,15 @@ function RankingCardSkeleton() {
       {Array.from({ length: 2 }).map((_, i) => (
         <div
           key={i}
-          className="bg-card border border-border rounded-xl overflow-hidden"
+          className="art-card overflow-hidden"
         >
-          <div className="flex items-center gap-2 px-5 py-4 border-b border-border">
+          <div className="flex items-center gap-3 px-5 py-4 border-b border-border bg-gradient-to-r from-primary/5 to-transparent">
+            <Skeleton className="w-9 h-9 rounded-custom-sm shrink-0" />
             <Skeleton className="h-5 w-32" />
           </div>
           <div className="p-0">
             {Array.from({ length: 5 }).map((_, j) => (
-              <div key={j} className="border-b border-border last:border-0 px-3 py-2">
+              <div key={j} className="border-b border-border/50 last:border-0 px-4 py-3">
                 <div className="flex gap-2">
                   {Array.from({ length: 6 }).map((_, k) => (
                     <Skeleton key={k} className="h-5 flex-1" />

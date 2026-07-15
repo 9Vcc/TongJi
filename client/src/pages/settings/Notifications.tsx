@@ -28,13 +28,13 @@ const TYPE_MAP: Record<
 > = {
   RULE_CHANGE: {
     label: '规则变更',
-    cls: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300',
+    cls: 'bg-warning/10 text-warning',
     icon: SettingsIcon,
   },
   RANK_PUBLISH: {
     label: '排名公布',
     cls:
-      'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300',
+      'bg-success/10 text-success',
     icon: Trophy,
   },
   DATA_CHANGE: {
@@ -163,7 +163,7 @@ export default function NotificationsPage() {
 
       {/* 筛选栏 */}
       <motion.div
-        className="bg-card border border-border rounded-xl p-4"
+        className="art-card p-4"
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
@@ -224,7 +224,7 @@ export default function NotificationsPage() {
 
       {/* 通知表格 */}
       <motion.div
-        className="bg-card border border-border rounded-xl p-5"
+        className="art-card p-5"
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, delay: 0.05, ease: [0.16, 1, 0.3, 1] }}
@@ -247,7 +247,7 @@ export default function NotificationsPage() {
             <button
               onClick={handleMarkAllRead}
               disabled={loading || unreadCount === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
               title="将当前列表中的未读通知全部标记为已读"
             >
               <CheckCheck size={14} />
@@ -256,7 +256,7 @@ export default function NotificationsPage() {
             <button
               onClick={handleClearRead}
               disabled={loading || readCount === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg text-sm text-textSecondary hover:text-danger hover:border-danger disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-danger hover:border-danger disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
               title="清空当前列表中的已读通知"
             >
               <Trash2 size={14} />
@@ -269,7 +269,7 @@ export default function NotificationsPage() {
             Array.from({ length: 5 }).map((_, i) => (
               <div
                 key={i}
-                className="flex items-center gap-3 px-4 py-3 border border-border rounded-lg"
+                className="flex items-center gap-3 px-4 py-3 border border-border rounded-custom-sm"
               >
                 <Skeleton className="h-5 w-5 rounded" />
                 <div className="flex-1 space-y-2">
@@ -294,7 +294,7 @@ export default function NotificationsPage() {
               return (
                 <div
                   key={n.id}
-                  className={`flex items-start gap-3 px-4 py-3 border border-border rounded-lg transition-colors duration-200 ${
+                  className={`flex items-start gap-3 px-4 py-3 border border-border rounded-custom-sm transition-colors duration-200 ${
                     !n.isRead ? 'bg-primary/5 border-primary/30' : ''
                   }`}
                 >

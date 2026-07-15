@@ -266,7 +266,7 @@ function DetailView({
 
   return (
     <motion.div
-      className="bg-card border border-border rounded-xl overflow-hidden"
+      className="art-card overflow-hidden"
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
@@ -560,7 +560,7 @@ export default function DataHistoryPage() {
 
       {/* 筛选栏（始终显示） */}
       <motion.div
-        className="bg-card border border-border rounded-xl p-4"
+        className="art-card p-4"
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
@@ -589,7 +589,7 @@ export default function DataHistoryPage() {
                 type="date"
                 value={filterDate}
                 onChange={(e) => setFilterDate(e.target.value)}
-                className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer"
+                className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200 cursor-pointer"
               />
               {filterDate && (
                 <button
@@ -671,13 +671,13 @@ export default function DataHistoryPage() {
                 <motion.button
                   key={type}
                   onClick={() => setActiveSection(type)}
-                  className={`bg-card border border-border rounded-xl p-5 text-left transition-all duration-200 cursor-pointer ${config.cardCls}`}
+                  className={`art-card p-5 text-left transition-all duration-200 cursor-pointer ${config.cardCls}`}
                   whileHover={{ y: -2 }}
                   transition={{ duration: 0.2 }}
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div
-                      className={`p-2.5 rounded-lg ${config.badgeCls}`}
+                      className={`p-2.5 rounded-custom-sm ${config.badgeCls}`}
                     >
                       <Icon size={22} />
                     </div>

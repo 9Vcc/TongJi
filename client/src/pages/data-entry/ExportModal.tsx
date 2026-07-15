@@ -271,14 +271,14 @@ export default function ExportModal({
         <>
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+            className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
           >
             取消
           </button>
           <button
             onClick={() => handleExport("excel")}
             disabled={exporting !== null}
-            className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-custom-sm text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
           >
             {exporting === "excel" ? (
               <Spinner className="h-4 w-4" />
@@ -294,7 +294,7 @@ export default function ExportModal({
           <button
             onClick={() => handleExport("csv")}
             disabled={exporting !== null}
-            className="flex items-center gap-1.5 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:border-primary disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2 border border-border rounded-custom-sm text-sm font-medium hover:border-primary disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
           >
             {exporting === "csv" ? (
               <Spinner className="h-4 w-4" />
@@ -316,7 +316,7 @@ export default function ExportModal({
           <label className="block text-xs text-textSecondary mb-2">
             导出周期
           </label>
-          <div className="inline-flex items-center px-3 py-2 rounded-lg bg-card border border-border text-sm text-textPrimary">
+          <div className="inline-flex items-center px-3 py-2 rounded-custom-sm bg-card border border-border text-sm text-textPrimary">
             {isGroupMode
               ? `合厅组导出 - 各厅按各自统计周期${
                   branchCycle === "MONTH" ? "（当前按月导航）" : "（当前按周导航）"
@@ -350,7 +350,7 @@ export default function ExportModal({
                   setExportDate(formatDate(getWeekStart(new Date(val))));
                 }
               }}
-              className="w-full px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer"
+              className="w-full px-3 py-2 border border-border rounded-custom-sm bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200 cursor-pointer"
             />
           ) : exportCycle === "MONTH" ? (
             <GroupedSelect
@@ -381,7 +381,7 @@ export default function ExportModal({
             <label className="block text-xs text-textSecondary mb-2">
               将导出的成员厅（{groupBranches.length}个）
             </label>
-            <div className="max-h-40 overflow-y-auto rounded-lg border border-border bg-card">
+            <div className="max-h-40 overflow-y-auto rounded-custom-sm border border-border bg-card">
               <ul className="divide-y divide-border">
                 {groupBranches.map((b) => (
                   <li
@@ -392,7 +392,7 @@ export default function ExportModal({
                     <span
                       className={
                         b.statCycle === "MONTH"
-                          ? "text-amber-600 dark:text-amber-400"
+                          ? "text-warning"
                           : "text-textSecondary"
                       }
                     >

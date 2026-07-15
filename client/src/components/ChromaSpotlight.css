@@ -1,0 +1,96 @@
+/* ============ ChromaSpotlight 聚光灯灰度容器 ============ */
+.chroma-spotlight {
+  position: relative;
+  --x: 50%;
+  --y: 50%;
+  --r: 220px;
+}
+
+/* 灰度遮罩层：绝对定位覆盖整个容器 */
+.chroma-spotlight-overlay,
+.chroma-spotlight-fade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  background: rgba(0, 0, 0, 0.001);
+}
+
+/* 暗色模式：灰度 + 亮度降低较多 */
+.dark .chroma-spotlight-overlay,
+.dark .chroma-spotlight-fade {
+  backdrop-filter: grayscale(1) brightness(0.75);
+  -webkit-backdrop-filter: grayscale(1) brightness(0.75);
+}
+
+/* 亮色模式：灰度 + 轻微亮度/对比度降低 */
+.chroma-spotlight-overlay,
+.chroma-spotlight-fade {
+  backdrop-filter: grayscale(1) brightness(0.92) contrast(0.95);
+  -webkit-backdrop-filter: grayscale(1) brightness(0.92) contrast(0.95);
+}
+
+/* overlay：常驻灰度遮罩，聚光灯内透明（露出彩色） */
+.chroma-spotlight-overlay {
+  mask-image: radial-gradient(
+    circle var(--r) at var(--x) var(--y),
+    transparent 0%,
+    transparent 15%,
+    rgba(0, 0, 0, 0.1) 30%,
+    rgba(0, 0, 0, 0.22) 45%,
+    rgba(0, 0, 0, 0.35) 60%,
+    rgba(0, 0, 0, 0.5) 75%,
+    rgba(0, 0, 0, 0.68) 88%,
+    white 100%
+  );
+  -webkit-mask-image: radial-gradient(
+    circle var(--r) at var(--x) var(--y),
+    transparent 0%,
+    transparent 15%,
+    rgba(0, 0, 0, 0.1) 30%,
+    rgba(0, 0, 0, 0.22) 45%,
+    rgba(0, 0, 0, 0.35) 60%,
+    rgba(0, 0, 0, 0.5) 75%,
+    rgba(0, 0, 0, 0.68) 88%,
+    white 100%
+  );
+}
+
+/* fade：鼠标离开时淡入的全屏灰度遮罩 */
+.chroma-spotlight-fade {
+  z-index: 4;
+  opacity: 1;
+  transition: opacity 0.25s ease;
+  mask-image: radial-gradient(
+    circle var(--r) at var(--x) var(--y),
+    white 0%,
+    white 15%,
+    rgba(255, 255, 255, 0.9) 30%,
+    rgba(255, 255, 255, 0.78) 45%,
+    rgba(255, 255, 255, 0.65) 60%,
+    rgba(255, 255, 255, 0.5) 75%,
+    rgba(255, 255, 255, 0.32) 88%,
+    transparent 100%
+  );
+  -webkit-mask-image: radial-gradient(
+    circle var(--r) at var(--x) var(--y),
+    white 0%,
+    white 15%,
+    rgba(255, 255, 255, 0.9) 30%,
+    rgba(255, 255, 255, 0.78) 45%,
+    rgba(255, 255, 255, 0.65) 60%,
+    rgba(255, 255, 255, 0.5) 75%,
+    rgba(255, 255, 255, 0.32) 88%,
+    transparent 100%
+  );
+}
+
+/* 尊重减少动画偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .chroma-spotlight-overlay,
+  .chroma-spotlight-fade {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    display: none;
+  }
+}

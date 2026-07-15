@@ -1,0 +1,66 @@
+/* ============ TiltCard 3D 倾斜卡片 ============ */
+.tilt-card {
+  position: relative;
+  perspective: 800px;
+  /* 鼠标位置 & 旋转角度变量（由 JS 设置） */
+  --tilt-px: 50%;
+  --tilt-py: 50%;
+  --tilt-rx: 0deg;
+  --tilt-ry: 0deg;
+  /* 光晕颜色：默认主色半透明 */
+  --tilt-glow: color-mix(in srgb, var(--art-primary) 45%, transparent);
+  /* 光晕可见度：悬停时显现 */
+  --tilt-active: 0;
+}
+
+.tilt-card:hover {
+  --tilt-active: 1;
+}
+
+/* 背后光晕：跟随鼠标的径向光 */
+.tilt-card-glow {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at var(--tilt-px) var(--tilt-py),
+    var(--tilt-glow) 0%,
+    transparent 50%
+  );
+  filter: blur(32px) saturate(1.2);
+  opacity: calc(0.7 * var(--tilt-active));
+  transition: opacity 400ms ease;
+  border-radius: inherit;
+}
+
+/* 旋转容器：承载实际内容，应用 3D 旋转变换 */
+.tilt-card-shell {
+  position: relative;
+  z-index: 1;
+  transform-style: preserve-3d;
+  transform: rotateX(var(--tilt-rx)) rotateY(var(--tilt-ry));
+  transition: transform 500ms cubic-bezier(0.16, 1, 0.3, 1);
+  border-radius: inherit;
+}
+
+/* 悬停时缩短过渡时间，使倾斜响应更灵敏 */
+.tilt-card:hover .tilt-card-shell {
+  transition: transform 80ms ease-out;
+}
+
+/* 暗色模式下光晕稍强 */
+.dark .tilt-card {
+  --tilt-glow: color-mix(in srgb, var(--art-primary) 55%, transparent);
+}
+
+/* 尊重用户减少动画偏好 */
+@media (prefers-reduced-motion: reduce) {
+  .tilt-card-shell {
+    transform: none !important;
+    transition: none !important;
+  }
+  .tilt-card-glow {
+    display: none;
+  }
+}

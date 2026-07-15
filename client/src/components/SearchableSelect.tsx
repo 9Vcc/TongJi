@@ -177,7 +177,7 @@ export default function SearchableSelect({
           onKeyDown={handleKeyDown}
           disabled={disabled}
           placeholder={placeholder}
-          className="w-full pl-8 pr-8 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:bg-surface disabled:cursor-not-allowed transition-colors duration-200"
+          className="w-full pl-8 pr-8 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:bg-surface disabled:cursor-not-allowed transition-colors duration-200"
         />
         {/* 右侧按钮：清除 或 展开箭头 */}
         <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">

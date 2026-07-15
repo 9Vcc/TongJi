@@ -133,7 +133,7 @@ function NumberInput({
           const v = e.target.value
           onChange(v === '' ? 0 : Number(v))
         }}
-        className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
+        className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200 disabled:opacity-40 disabled:cursor-not-allowed"
       />
     </div>
   )
@@ -699,7 +699,7 @@ export default function BranchesPage() {
       {/* 合厅组管理（仅会长可见） */}
       {isHuizhang && (
         <motion.div
-          className="bg-card border border-border rounded-xl p-5"
+          className="art-card p-5"
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
@@ -721,7 +721,7 @@ export default function BranchesPage() {
               {Array.from({ length: 2 }).map((_, i) => (
                 <div
                   key={i}
-                  className="border border-border rounded-lg p-4"
+                  className="border border-border rounded-custom-sm p-4"
                 >
                   <Skeleton className="h-5 w-40 mb-3" />
                   <div className="flex gap-2">
@@ -742,7 +742,7 @@ export default function BranchesPage() {
                 return (
                   <div
                     key={group.id}
-                    className="border border-border rounded-lg overflow-hidden shadow-sm"
+                    className="border border-border rounded-custom-sm overflow-hidden shadow-sm"
                   >
                     {/* 卡片头部（可点击折叠） */}
                     <div className="flex items-center justify-between px-4 py-3 bg-surface">
@@ -803,7 +803,7 @@ export default function BranchesPage() {
                             group.branches.map((b) => (
                               <span
                                 key={b.id}
-                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-surface border border-border text-xs text-textPrimary"
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-custom-sm bg-surface border border-border text-xs text-textPrimary"
                               >
                                 {b.name}
                                 <button
@@ -820,7 +820,7 @@ export default function BranchesPage() {
                           )}
                           <button
                             onClick={() => openAddBranchToGroupModal(group)}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-dashed border-border text-xs text-textSecondary hover:text-primary hover:border-primary transition-colors duration-200 cursor-pointer"
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-custom-sm border border-dashed border-border text-xs text-textSecondary hover:text-primary hover:border-primary transition-colors duration-200 cursor-pointer"
                           >
                             <Plus size={12} />
                             添加厅
@@ -837,7 +837,7 @@ export default function BranchesPage() {
       )}
 
       <motion.div
-        className="bg-card border border-border rounded-xl p-5"
+        className="art-card p-5"
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
@@ -865,7 +865,7 @@ export default function BranchesPage() {
               <button
                 onClick={openCreateGroupModal}
                 disabled={selectedBranchIds.size < 2}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-border text-textPrimary rounded-lg text-sm font-medium hover:border-primary hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-border disabled:hover:text-textPrimary transition-colors duration-200 cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-border text-textPrimary rounded-custom-sm text-sm font-medium hover:border-primary hover:text-primary disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-border disabled:hover:text-textPrimary transition-colors duration-200 cursor-pointer"
                 title="选择 2 个及以上厅后可合并为合厅组"
               >
                 <GitMerge size={16} />
@@ -875,7 +875,7 @@ export default function BranchesPage() {
             {isHuizhang && (
               <button
                 onClick={openAddBranchModal}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors duration-200 cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-custom-sm text-sm font-medium hover:bg-primary-hover transition-colors duration-200 cursor-pointer"
               >
                 <Plus size={16} />
                 添加厅
@@ -1070,14 +1070,14 @@ export default function BranchesPage() {
           <>
             <button
               onClick={() => setBranchModalOpen(false)}
-              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+              className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
             >
               取消
             </button>
             <button
               onClick={handleBranchSubmit}
               disabled={branchSubmitting}
-              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-custom-sm text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
             >
               {branchSubmitting && <Spinner className="h-4 w-4" />}
               {branchSubmitting
@@ -1102,7 +1102,7 @@ export default function BranchesPage() {
               onChange={(e) => setBranchName(e.target.value)}
               placeholder="请输入厅名称"
               autoFocus
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+              className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
             />
           </div>
           <div>
@@ -1115,7 +1115,7 @@ export default function BranchesPage() {
                   key={c}
                   type="button"
                   onClick={() => setBranchCycle(c)}
-                  className={`px-4 py-2.5 rounded-lg text-sm border transition-colors duration-200 cursor-pointer ${
+                  className={`px-4 py-2.5 rounded-custom-sm text-sm border transition-colors duration-200 cursor-pointer ${
                     branchCycle === c
                       ? 'border-primary bg-primary/10 text-primary font-medium'
                       : 'border-border bg-card text-textSecondary hover:border-primary'
@@ -1141,14 +1141,14 @@ export default function BranchesPage() {
           <>
             <button
               onClick={() => setRuleModalOpen(false)}
-              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+              className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
             >
               取消
             </button>
             <button
               onClick={handleRuleSave}
               disabled={ruleSaving || ruleLoading}
-              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-custom-sm text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
             >
               {ruleSaving ? <Spinner className="h-4 w-4" /> : <Gift size={16} />}
               {ruleSaving ? '保存中...' : '保存规则'}
@@ -1333,7 +1333,7 @@ export default function BranchesPage() {
           </p>
 
           {/* 等级列表 */}
-          <div className="overflow-x-auto border border-border rounded-lg">
+          <div className="overflow-x-auto border border-border rounded-custom-sm">
             <table className="w-full text-sm">
               <thead className="bg-surface border-b border-border">
                 <tr className="text-left text-textSecondary">
@@ -1428,7 +1428,7 @@ export default function BranchesPage() {
                     setNamingForm({ ...namingForm, name: e.target.value })
                   }
                   placeholder="如：周冠、月冠"
-                  className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+                  className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
                 />
               </div>
               <div>
@@ -1447,7 +1447,7 @@ export default function BranchesPage() {
                     })
                   }
                   placeholder="如：100"
-                  className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+                  className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
                 />
               </div>
               <div>
@@ -1466,7 +1466,7 @@ export default function BranchesPage() {
                     })
                   }
                   placeholder="如：50.50"
-                  className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+                  className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
                 />
               </div>
             </div>
@@ -1474,7 +1474,7 @@ export default function BranchesPage() {
               <button
                 onClick={handleNamingSubmit}
                 disabled={namingSubmitting}
-                className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+                className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-custom-sm text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
               >
                 {namingSubmitting ? <Spinner className="h-4 w-4" /> : <Plus size={16} />}
                 {namingFormId ? '保存修改' : '添加等级'}
@@ -1482,7 +1482,7 @@ export default function BranchesPage() {
               {namingFormId && (
                 <button
                   onClick={resetNamingForm}
-                  className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+                  className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
                 >
                   取消编辑
                 </button>
@@ -1510,14 +1510,14 @@ export default function BranchesPage() {
                 setDeletePassword('')
               }}
               disabled={deleting}
-              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer disabled:opacity-60"
+              className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer disabled:opacity-60"
             >
               取消
             </button>
             <button
               onClick={handleConfirmDelete}
               disabled={deleting || !deletePassword}
-              className="flex items-center gap-1.5 px-4 py-2 bg-danger text-white rounded-lg text-sm font-medium hover:bg-danger/90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+              className="flex items-center gap-1.5 px-4 py-2 bg-danger text-white rounded-custom-sm text-sm font-medium hover:bg-danger/90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
             >
               {deleting ? <Spinner className="h-4 w-4" /> : <Trash2 size={16} />}
               {deleting ? '删除中...' : '确认删除'}
@@ -1526,7 +1526,7 @@ export default function BranchesPage() {
         }
       >
         <div className="space-y-3">
-          <div className="p-3 rounded-lg bg-danger/10 border border-danger/20">
+          <div className="p-3 rounded-custom-sm bg-danger/10 border border-danger/20">
             <p className="text-sm text-danger font-medium">
               危险操作：删除厅「{deleteTarget?.name}」
             </p>
@@ -1550,7 +1550,7 @@ export default function BranchesPage() {
               }}
               placeholder="登录密码"
               autoFocus
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-danger focus:ring-1 focus:ring-danger transition-colors duration-200"
+              className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-danger focus:ring-1 focus:ring-danger transition-colors duration-200"
             />
           </div>
         </div>
@@ -1566,14 +1566,14 @@ export default function BranchesPage() {
             <button
               onClick={() => setToggleTarget(null)}
               disabled={toggling}
-              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer disabled:opacity-60"
+              className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer disabled:opacity-60"
             >
               取消
             </button>
             <button
               onClick={handleConfirmToggle}
               disabled={toggling}
-              className={`flex items-center gap-1.5 px-4 py-2 text-white rounded-lg text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer ${
+              className={`flex items-center gap-1.5 px-4 py-2 text-white rounded-custom-sm text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer ${
                 toggleTarget?.closed
                   ? 'bg-success hover:bg-success/90'
                   : 'bg-amber-600 hover:bg-amber-700'
@@ -1591,7 +1591,7 @@ export default function BranchesPage() {
               确认开启厅「{toggleTarget.name}」？开启后该厅将恢复在公开看板/排名中显示，并允许录入新数据。
             </p>
           ) : (
-            <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+            <div className="p-3 rounded-custom-sm bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
               <p className="text-sm text-amber-700 dark:text-amber-400 font-medium">
                 关闭厅「{toggleTarget?.name}」
               </p>
@@ -1612,14 +1612,14 @@ export default function BranchesPage() {
           <>
             <button
               onClick={() => setCreateGroupModalOpen(false)}
-              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+              className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
             >
               取消
             </button>
             <button
               onClick={handleCreateGroup}
               disabled={creatingGroup}
-              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-custom-sm text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
             >
               {creatingGroup ? (
                 <Spinner className="h-4 w-4" />
@@ -1648,7 +1648,7 @@ export default function BranchesPage() {
               }}
               placeholder="请输入合厅组名称"
               autoFocus
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+              className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
             />
           </div>
           <div>
@@ -1661,7 +1661,7 @@ export default function BranchesPage() {
                 .map((b) => (
                   <span
                     key={b.id}
-                    className="inline-flex items-center px-2 py-1 rounded-md bg-surface border border-border text-xs text-textPrimary"
+                    className="inline-flex items-center px-2 py-1 rounded-custom-sm bg-surface border border-border text-xs text-textPrimary"
                   >
                     {b.name}
                   </span>
@@ -1687,14 +1687,14 @@ export default function BranchesPage() {
                 setRenameGroupName('')
               }}
               disabled={renamingGroup}
-              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer disabled:opacity-60"
+              className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer disabled:opacity-60"
             >
               取消
             </button>
             <button
               onClick={handleRenameGroup}
               disabled={renamingGroup}
-              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-custom-sm text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
             >
               {renamingGroup ? (
                 <Spinner className="h-4 w-4" />
@@ -1719,7 +1719,7 @@ export default function BranchesPage() {
             }}
             placeholder="请输入新的合厅组名称"
             autoFocus
-            className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+            className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
           />
         </div>
       </Modal>
@@ -1734,14 +1734,14 @@ export default function BranchesPage() {
             <button
               onClick={() => setDissolveGroupTarget(null)}
               disabled={dissolvingGroup}
-              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer disabled:opacity-60"
+              className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer disabled:opacity-60"
             >
               取消
             </button>
             <button
               onClick={handleDissolveGroup}
               disabled={dissolvingGroup}
-              className="flex items-center gap-1.5 px-4 py-2 bg-danger text-white rounded-lg text-sm font-medium hover:bg-danger/90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+              className="flex items-center gap-1.5 px-4 py-2 bg-danger text-white rounded-custom-sm text-sm font-medium hover:bg-danger/90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
             >
               {dissolvingGroup ? (
                 <Spinner className="h-4 w-4" />
@@ -1753,7 +1753,7 @@ export default function BranchesPage() {
           </>
         }
       >
-        <div className="p-3 rounded-lg bg-danger/10 border border-danger/20">
+        <div className="p-3 rounded-custom-sm bg-danger/10 border border-danger/20">
           <p className="text-sm text-danger font-medium">
             解散合厅组「{dissolveGroupTarget?.name}」
           </p>
@@ -1779,14 +1779,14 @@ export default function BranchesPage() {
                 setAddBranchId(null)
               }}
               disabled={addingBranch}
-              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer disabled:opacity-60"
+              className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer disabled:opacity-60"
             >
               取消
             </button>
             <button
               onClick={handleAddBranchToGroup}
               disabled={addingBranch || !addBranchId}
-              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-custom-sm text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
             >
               {addingBranch ? (
                 <Spinner className="h-4 w-4" />

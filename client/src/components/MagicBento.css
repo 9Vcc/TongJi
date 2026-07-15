@@ -1,0 +1,170 @@
+/* ============ MagicBento 魔法便当盒网格 ============ */
+
+.mb-card-grid {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.5rem;
+  font-size: clamp(0.875rem, 0.85rem + 0.3vw, 1.125rem);
+  position: relative;
+}
+
+/* 响应式列数：移动端1列，平板2列，桌面3列 */
+@media (max-width: 599px) {
+  .mb-card-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (min-width: 600px) {
+  .mb-card-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .mb-card-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* ============ 卡片基础样式（适配项目主题变量） ============ */
+.magic-bento-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+  min-height: 160px;
+  width: 100%;
+  padding: 1.25rem;
+  border-radius: var(--custom-radius, 12px);
+  border: 1px solid var(--art-card-border, #2f293a);
+  background: var(--default-box-color, #fff);
+  font-weight: 300;
+  overflow: hidden;
+  transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+  cursor: pointer;
+
+  /* 粒子效果使用的主色 RGB（"r, g, b" 格式） */
+  --glow-color: 93, 135, 255;
+}
+
+.magic-bento-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
+  border-color: color-mix(in srgb, var(--art-primary, #5d87ff) 30%, transparent);
+}
+
+/* ============ 卡片内容区 ============ */
+.magic-bento-card__header,
+.magic-bento-card__content {
+  display: flex;
+  position: relative;
+  color: var(--art-gray-800, #383853);
+}
+
+.magic-bento-card__header {
+  gap: 0.75rem;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.magic-bento-card__icon {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: calc(var(--custom-radius, 12px) / 2 + 2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--art-primary, #5d87ff) 10%, transparent);
+  color: var(--art-primary, #5d87ff);
+}
+
+.magic-bento-card__label {
+  font-size: 0.75rem;
+  color: var(--art-gray-500, #949eb7);
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--art-gray-500, #949eb7) 10%, transparent);
+}
+
+.magic-bento-card__content {
+  flex-direction: column;
+}
+
+.magic-bento-card__title {
+  font-weight: 600;
+  font-size: 1rem;
+  margin: 0 0 0.25em;
+  color: var(--art-gray-800, #383853);
+}
+
+.magic-bento-card__description {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--art-gray-600, #7987a1);
+  margin: 0;
+  opacity: 0.9;
+  --clamp-desc: 2;
+}
+
+/* 点击区域 */
+.magic-bento-card__clickable {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  height: 100%;
+  cursor: pointer;
+}
+
+/* ============ 文字自动隐藏 ============ */
+.magic-bento-card--text-autohide .magic-bento-card__title,
+.magic-bento-card--text-autohide .magic-bento-card__description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.magic-bento-card--text-autohide .magic-bento-card__title {
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+
+.magic-bento-card--text-autohide .magic-bento-card__description {
+  -webkit-line-clamp: var(--clamp-desc);
+  line-clamp: var(--clamp-desc);
+}
+
+/* ============ 边框光晕效果 ============ */
+/* 边框光晕由全局聚光灯 GlobalSpotlight 统一处理（.magic-bento-card::after） */
+/* 这里仅保留悬停时的阴影增强 */
+.magic-bento-card--border-glow:hover {
+  box-shadow:
+    0 4px 20px color-mix(in srgb, var(--art-primary, #5d87ff) 12%, transparent),
+    0 0 30px color-mix(in srgb, var(--art-primary, #5d87ff) 8%, transparent);
+}
+
+/* ============ 粒子容器 ============ */
+.mb-particle-container {
+  position: relative;
+  overflow: hidden;
+}
+
+.mb-particle::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: rgba(var(--glow-color), 0.2);
+  border-radius: 50%;
+  z-index: -1;
+}
+
+.mb-section {
+  position: relative;
+}
+
+/* ============ 尊重减少动画偏好 ============ */
+/* 边框光晕的 prefers-reduced-motion 由 GlobalSpotlight.css 统一处理 */

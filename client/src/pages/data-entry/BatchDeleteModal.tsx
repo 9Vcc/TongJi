@@ -90,14 +90,14 @@ export default function BatchDeleteModal({
         <>
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+            className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
           >
             取消
           </button>
           <button
             onClick={handleBatchDeleteSubmit}
             disabled={batchDeleteSubmitting}
-            className="flex items-center gap-1.5 px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-medium hover:bg-red-600 disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2 bg-red-500 text-white rounded-custom-sm text-sm font-medium hover:bg-red-600 disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
           >
             {batchDeleteSubmitting ? (
               <Spinner className="h-4 w-4" />
@@ -125,7 +125,7 @@ export default function BatchDeleteModal({
             value={batchRemark}
             onChange={(e) => onBatchRemarkChange(e.target.value)}
             placeholder="必填，最多 100 字"
-            className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+            className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
           />
         </div>
       </div>

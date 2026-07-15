@@ -478,31 +478,31 @@ export default function DataEntry() {
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={handlePrev}
-              className="p-2 border border-border rounded-lg bg-card text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+              className="p-2 border border-border rounded-custom-sm bg-card text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
             >
               <ChevronLeft size={16} />
             </button>
-            <div className="px-4 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary min-w-[220px] text-center">
+            <div className="px-4 py-2 border border-border rounded-custom-sm bg-card text-sm text-textPrimary min-w-[220px] text-center">
               {isMonthCycle
                 ? getMonthRangeText(weekStart)
                 : getWeekRangeText(weekStart)}
             </div>
             <button
               onClick={handleNext}
-              className="p-2 border border-border rounded-lg bg-card text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+              className="p-2 border border-border rounded-custom-sm bg-card text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
             >
               <ChevronRight size={16} />
             </button>
             <button
               onClick={handleThisPeriod}
-              className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+              className="px-3 py-2 border border-border rounded-custom-sm bg-card text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
             >
               {isMonthCycle ? "本月" : "本周"}
             </button>
             {/* 厅配置统计周期标签 */}
             {branchCycle === "MONTH" && (
               <span
-                className="px-2.5 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                className="px-2.5 py-1 rounded-full text-xs font-medium bg-warning/10 text-warning"
                 title="该厅配置为按月统计"
               >
                 月统计厅
@@ -511,7 +511,7 @@ export default function DataEntry() {
             {/* 合厅组模式：合并同名开关 */}
             {isGroupMode && (
               <label
-                className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg bg-card text-xs text-textSecondary cursor-pointer select-none"
+                className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-custom-sm bg-card text-xs text-textSecondary cursor-pointer select-none"
                 title="开启后同名人员合并为一行，数据按各厅累加"
               >
                 <input
@@ -595,7 +595,7 @@ export default function DataEntry() {
           {selectedKeys.size > 0 && (
             <button
               onClick={handleOpenBatchEdit}
-              className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors duration-200 cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-custom-sm text-sm font-medium hover:bg-primary-hover transition-colors duration-200 cursor-pointer"
             >
               <CheckSquare size={16} />
               编辑（{selectedKeys.size}）
@@ -604,7 +604,7 @@ export default function DataEntry() {
           {selectedKeys.size > 0 && (
             <button
               onClick={handleOpenBatchAdd}
-              className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors duration-200 cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-custom-sm text-sm font-medium hover:bg-primary-hover transition-colors duration-200 cursor-pointer"
             >
               <UserPlus size={16} />
               添加（{selectedKeys.size}）
@@ -613,7 +613,7 @@ export default function DataEntry() {
           {selectedKeys.size > 0 && canDelete && (
             <button
               onClick={() => setBatchDeleteOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-2 bg-red-500 text-white rounded-lg text-sm font-medium hover:bg-red-600 transition-colors duration-200 cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-2 bg-red-500 text-white rounded-custom-sm text-sm font-medium hover:bg-red-600 transition-colors duration-200 cursor-pointer"
             >
               <Trash2 size={16} />
               删除（{selectedKeys.size}）
@@ -622,7 +622,7 @@ export default function DataEntry() {
           {selectedKeys.size > 0 && (
             <button
               onClick={() => setSelectedKeys(new Set())}
-              className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg bg-card text-sm text-textSecondary hover:border-danger hover:text-danger transition-colors duration-200 cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-custom-sm bg-card text-sm text-textSecondary hover:border-danger hover:text-danger transition-colors duration-200 cursor-pointer"
               title="取消所有选择"
             >
               <X size={16} />
@@ -632,7 +632,7 @@ export default function DataEntry() {
           <button
             onClick={() => setImportOpen(true)}
             disabled={!hasTarget || isGroupMode}
-            className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary hover:border-primary hover:text-textPrimary disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-custom-sm bg-card text-sm text-textPrimary hover:border-primary hover:text-textPrimary disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
             title={
               isGroupMode
                 ? "合厅模式下暂不支持导入"
@@ -648,7 +648,7 @@ export default function DataEntry() {
             <button
               onClick={() => setExportOpen(true)}
               disabled={!hasTarget}
-              className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-custom-sm bg-card text-sm text-textPrimary hover:border-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
               title={!hasTarget ? "请先选择厅" : undefined}
             >
               <Download size={16} />
@@ -659,14 +659,14 @@ export default function DataEntry() {
       </div>
       {/* 合厅模式下导入禁用提示 */}
       {isGroupMode && (
-        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-900/40 rounded-lg text-xs text-amber-700 dark:text-amber-300">
+        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-900/40 rounded-custom-sm text-xs text-amber-700 dark:text-amber-300">
           <Layers size={12} />
           合厅模式下暂不支持导入，请切换到单个厅进行操作；导出将分别导出各成员厅并打包为 zip
         </div>
       )}
 
       {/* 人员搜索框 */}
-      <div className="bg-card border border-border rounded-xl p-3">
+      <div className="art-card p-3">
         <div className="flex items-center gap-2 flex-wrap">
           <div className="relative flex-1 max-w-xs min-w-[180px]">
             <Search
@@ -678,13 +678,13 @@ export default function DataEntry() {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="搜索人员姓名"
-              className="w-full pl-9 pr-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+              className="w-full pl-9 pr-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
             />
           </div>
           {/* 最近一条录入备注：搜索框后展示 */}
           {latestRemark && (
             <div
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/5 border border-primary/20 rounded-lg text-xs text-primary max-w-md truncate"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/5 border border-primary/20 rounded-custom-sm text-xs text-primary max-w-md truncate"
               title={latestRemark}
             >
               <span className="text-textMuted">最近备注：</span>

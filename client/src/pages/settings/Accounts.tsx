@@ -324,7 +324,7 @@ export default function AccountsPage() {
         desc="创建、编辑、禁用或删除系统账户，分配角色与厅"
       />
       <motion.div
-        className="bg-card border border-border rounded-xl p-5"
+        className="art-card p-5"
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
@@ -338,7 +338,7 @@ export default function AccountsPage() {
           </div>
           <button
             onClick={openAddAccountModal}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover transition-colors duration-200 cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white rounded-custom-sm text-sm font-medium hover:bg-primary-hover transition-colors duration-200 cursor-pointer"
           >
             <UserPlus size={16} />
             添加账户
@@ -484,14 +484,14 @@ export default function AccountsPage() {
           <>
             <button
               onClick={() => setAccountModalOpen(false)}
-              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+              className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
             >
               取消
             </button>
             <button
               onClick={handleAccountSubmit}
               disabled={accountSubmitting}
-              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-custom-sm text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
             >
               {accountSubmitting && <Spinner className="h-4 w-4" />}
               {accountSubmitting
@@ -516,7 +516,7 @@ export default function AccountsPage() {
                 setAccountForm({ ...accountForm, username: e.target.value })
               }
               placeholder="请输入用户名"
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+              className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
             />
           </div>
 
@@ -534,7 +534,7 @@ export default function AccountsPage() {
                 setAccountForm({ ...accountForm, nickname: e.target.value })
               }
               placeholder="可选，最多 50 字"
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+              className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
             />
           </div>
 
@@ -560,7 +560,7 @@ export default function AccountsPage() {
                 placeholder={
                   editingAccount ? '输入新密码以修改' : '请输入密码'
                 }
-                className="w-full px-3 py-2 pr-10 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+                className="w-full px-3 py-2 pr-10 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
               />
               <button
                 type="button"
@@ -607,7 +607,7 @@ export default function AccountsPage() {
                   <span className="text-textMuted">（至少勾选一个；第一个勾选的为主厅）</span>
                 )}
               </label>
-              <div className="max-h-40 overflow-auto border border-border rounded-lg p-2 space-y-0.5">
+              <div className="max-h-40 overflow-auto border border-border rounded-custom-sm p-2 space-y-0.5">
                 {/* 厅列表 */}
                 {branches.map((b) => {
                   const checked = accountForm.branchIds.includes(b.id)
@@ -773,14 +773,14 @@ export default function AccountsPage() {
             <button
               onClick={() => setConfirmAction(null)}
               disabled={confirmSubmitting}
-              className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+              className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
             >
               取消
             </button>
             <button
               onClick={handleConfirmSubmit}
               disabled={confirmSubmitting}
-              className={`flex items-center gap-1.5 px-4 py-2 text-white rounded-lg text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer ${
+              className={`flex items-center gap-1.5 px-4 py-2 text-white rounded-custom-sm text-sm font-medium disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer ${
                 confirmAction?.type === 'delete'
                   ? 'bg-danger hover:bg-danger/90'
                   : confirmAction?.account.status === 'ACTIVE'

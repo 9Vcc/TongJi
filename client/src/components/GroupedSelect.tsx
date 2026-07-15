@@ -193,11 +193,10 @@ export default function GroupedSelect({
     ? {}
     : { minWidth: `${effectiveMinWidth}px`, maxWidth: maxWidth > 0 ? `${maxWidth}px` : undefined }
 
-  const defaultBtnClass = 'flex items-center justify-between gap-2 px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer'
+  const defaultBtnClass = 'flex items-center justify-between gap-2 px-3 py-2 border border-border rounded-lg bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200 cursor-pointer'
 
   return (
-    <div className={`relative ${fullWidth ? 'w-full' : ''}`} ref={containerRef}>
-      <button
+    <div className={`relative grouped-select-container ${fullWidth ? 'w-full' : ''}`} ref={containerRef}>      <button
         ref={buttonRef}
         type="button"
         disabled={disabled}

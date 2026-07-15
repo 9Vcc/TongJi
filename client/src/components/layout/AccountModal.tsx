@@ -145,7 +145,7 @@ export default function AccountModal({
               }}
               placeholder="可选，最多 50 字"
               autoFocus
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
             />
           </div>
           <div className="flex justify-end gap-2 pt-1">
@@ -181,7 +181,7 @@ export default function AccountModal({
               onChange={(e) => setCurrentPassword(e.target.value)}
               placeholder="请输入当前密码"
               autoFocus
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
             />
           </div>
           <div>
@@ -195,7 +195,7 @@ export default function AccountModal({
               onChange={(e) => setNewPassword(e.target.value)}
               placeholder="请输入新密码"
               maxLength={50}
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
             />
           </div>
           <div>
@@ -213,7 +213,7 @@ export default function AccountModal({
               }}
               placeholder="请再次输入新密码"
               maxLength={50}
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+              className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
             />
           </div>
           <div className="flex justify-end gap-2 pt-1">

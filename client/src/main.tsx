@@ -6,16 +6,19 @@ import App from './App.tsx'
 import { AuthProvider } from './hooks/useAuth'
 import { ToastProvider } from './hooks/useToast'
 import { ThemeProvider } from './hooks/useTheme'
+import { AppearanceProvider } from './hooks/useAppearance'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
       <ThemeProvider>
-        <ToastProvider>
-          <AuthProvider>
-            <App />
-          </AuthProvider>
-        </ToastProvider>
+        <AppearanceProvider>
+          <ToastProvider>
+            <AuthProvider>
+              <App />
+            </AuthProvider>
+          </ToastProvider>
+        </AppearanceProvider>
       </ThemeProvider>
     </BrowserRouter>
   </StrictMode>

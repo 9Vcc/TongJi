@@ -52,6 +52,8 @@ import type {
 } from "../types";
 import AnimatedNumber from "../components/AnimatedNumber";
 import GroupedSelect from "../components/GroupedSelect";
+import SpotlightCard from "../components/SpotlightCard";
+import AnimatedContent from "../components/AnimatedContent";
 import {
   KpiCardSkeleton,
   Skeleton,
@@ -104,7 +106,7 @@ function KpiCard({
           : "text-textMuted";
 
   return (
-    <div className="bg-card border border-border rounded-xl p-5 card-hover hover:border-primary/50">
+    <SpotlightCard className="p-5 card-hover hover:border-primary/50">
       <div className="flex items-center justify-between">
         <div className="flex-1 min-w-0">
           <div className="text-sm text-textSecondary">{title}</div>
@@ -129,13 +131,13 @@ function KpiCard({
           )}
         </div>
         <div
-          className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+          className="w-10 h-10 rounded-custom-sm flex items-center justify-center shrink-0"
           style={{ backgroundColor: `rgb(${color} / 0.1)` }}
         >
           <Icon size={20} style={{ color: `rgb(${color})` }} />
         </div>
       </div>
-    </div>
+    </SpotlightCard>
   );
 }
 
@@ -529,7 +531,7 @@ export default function Dashboard() {
           <button
             onClick={handlePrev}
             aria-label={isMonthCycle ? "上一月" : "上一周"}
-            className="p-2 border border-border rounded-lg bg-card text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+            className="p-2 border border-border rounded-custom-sm bg-card text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
           >
             <ChevronLeft size={16} />
           </button>
@@ -562,21 +564,21 @@ export default function Dashboard() {
           <button
             onClick={handleNext}
             aria-label={isMonthCycle ? "下一月" : "下一周"}
-            className="p-2 border border-border rounded-lg bg-card text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+            className="p-2 border border-border rounded-custom-sm bg-card text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
           >
             <ChevronRight size={16} />
           </button>
           <button
             onClick={handleThisPeriod}
-            className="px-3 py-2 border border-border rounded-lg bg-card text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+            className="px-3 py-2 border border-border rounded-custom-sm bg-card text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
           >
             {isMonthCycle ? "本月" : "本周"}
           </button>
           <span
             className={`px-2.5 py-1 rounded-full text-xs font-medium ${
               isMonthCycle
-                ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
-                : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                ? "bg-warning/10 text-warning"
+                : "bg-success/10 text-success"
             }`}
             title={isMonthCycle ? "该厅按月统计" : "该厅按周统计"}
           >
@@ -641,7 +643,7 @@ export default function Dashboard() {
           className="space-y-5"
         >
           {!branchId && !isGroupMode ? (
-            <div className="bg-card border border-border rounded-xl px-5 py-16 text-center text-sm text-textMuted">
+            <div className="art-card px-5 py-16 text-center text-sm text-textMuted">
               请先选择厅
             </div>
           ) : (
@@ -694,7 +696,8 @@ export default function Dashboard() {
           </div>
 
           {/* 主看板：本期数据汇总（各厅指标对比）柱状图 */}
-          <div className="bg-card border border-border rounded-xl p-5">
+          <AnimatedContent distance={60} duration={0.8} threshold={0.1}>
+          <SpotlightCard className="p-5">
             <h3 className="text-base font-semibold text-textPrimary mb-4">
               {thisPeriodWord}数据汇总（各厅对比）
             </h3>
@@ -711,27 +714,31 @@ export default function Dashboard() {
                 <Bar data={branchChart} options={branchChartOptions} />
               )}
             </div>
-          </div>
+          </SpotlightCard>
+          </AnimatedContent>
 
           {/* 周期对比柱状图（本期 vs 上期）：仅当本期与上期均有数据时显示 */}
           {compare &&
             compare.thisWeek.personnelCount > 0 &&
             compare.lastWeek.personnelCount > 0 && (
-              <div className="bg-card border border-border rounded-xl p-5">
+              <AnimatedContent distance={60} duration={0.8} delay={0.1} threshold={0.1}>
+              <SpotlightCard className="p-5">
                 <h3 className="text-base font-semibold text-textPrimary mb-4">
                   {periodWord}对比（{thisPeriodWord} vs {lastPeriodWord}）
                 </h3>
                 <div className="h-72">
                   <Bar data={compareChart} options={chartOptions} />
                 </div>
-              </div>
+              </SpotlightCard>
+              </AnimatedContent>
             )}
 
           {/* Top3 排名 */}
           {top3.length === 0 ? (
             <Top3Skeleton />
           ) : (
-            <div className="bg-card border border-border rounded-xl p-5">
+            <AnimatedContent distance={60} duration={0.8} delay={0.15} threshold={0.1}>
+            <div className="art-card p-5">
               <div className="flex items-center gap-2 mb-4">
                 <Trophy size={18} className="text-warning" />
                 <h3 className="text-base font-semibold text-textPrimary">
@@ -759,9 +766,9 @@ export default function Dashboard() {
                             .map((n) => `${n.levelName}×${n.count}`)
                             .join(" ");
                           return (
-                            <div
+                            <SpotlightCard
                               key={item.personnelId}
-                              className="border border-border rounded-lg p-4 flex items-center gap-3 card-hover hover:border-primary/50"
+                              className="rounded-custom-sm p-4 flex items-center gap-3 card-hover hover:border-primary/50"
                             >
                               <div
                                 className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold font-mono shrink-0"
@@ -777,12 +784,12 @@ export default function Dashboard() {
                                   麦序 {item.mx} · 福利 {item.totalWelfare}
                                 </div>
                                 {namingText && (
-                                  <div className="text-[10px] text-amber-600 dark:text-amber-400 font-mono mt-0.5">
+                                  <div className="text-[10px] text-warning font-mono mt-0.5">
                                     冠名 {namingText}
                                   </div>
                                 )}
                               </div>
-                            </div>
+                            </SpotlightCard>
                           );
                         })}
                       </div>
@@ -791,6 +798,7 @@ export default function Dashboard() {
                 </div>
               )}
             </div>
+            </AnimatedContent>
           )}
           </>
           )}

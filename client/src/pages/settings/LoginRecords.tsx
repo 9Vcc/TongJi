@@ -127,7 +127,7 @@ export default function LoginRecordsPage() {
 
       {/* 筛选栏 */}
       <motion.div
-        className="bg-card border border-border rounded-xl p-4"
+        className="art-card p-4"
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
@@ -170,7 +170,7 @@ export default function LoginRecordsPage() {
                 type="date"
                 value={filterDate}
                 onChange={(e) => setFilterDate(e.target.value)}
-                className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 cursor-pointer"
+                className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200 cursor-pointer"
               />
               {filterDate && (
                 <button
@@ -189,7 +189,7 @@ export default function LoginRecordsPage() {
 
       {/* 登录记录表格 */}
       <motion.div
-        className="bg-card border border-border rounded-xl p-5"
+        className="art-card p-5"
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, delay: 0.05, ease: [0.16, 1, 0.3, 1] }}

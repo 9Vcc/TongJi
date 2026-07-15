@@ -1,0 +1,170 @@
+/* ============ ProfileCard 风格包装器 ============ */
+/* 借鉴 React Bits ProfileCard 的视觉效果，适配项目主题与表单内容 */
+
+.pc-card-wrapper {
+  perspective: 800px;
+  position: relative;
+  touch-action: none;
+
+  /* 鼠标位置变量（由 tiltEngine JS 设置） */
+  --pointer-x: 50%;
+  --pointer-y: 50%;
+  --pointer-from-center: 0;
+  --pointer-from-top: 0.5;
+  --pointer-from-left: 0.5;
+  --card-opacity: 0;
+  --rotate-x: 0deg;
+  --rotate-y: 0deg;
+  --background-x: 50%;
+  --background-y: 50%;
+
+  /* 可定制变量 */
+  --card-radius: calc(var(--custom-radius) + 8px);
+  --behind-glow-color: color-mix(in srgb, var(--art-primary) 50%, transparent);
+  --behind-glow-size: 50%;
+  --inner-gradient: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--art-primary) 12%, transparent) 0%,
+    color-mix(in srgb, var(--art-primary) 4%, transparent) 100%
+  );
+}
+
+/* ============ 背后光晕：跟随鼠标的径向光 ============ */
+.pc-behind {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at var(--pointer-x) var(--pointer-y),
+    var(--behind-glow-color) 0%,
+    transparent var(--behind-glow-size)
+  );
+  filter: blur(40px) saturate(1.2);
+  opacity: calc(0.85 * var(--card-opacity));
+  transition: opacity 250ms ease;
+  border-radius: var(--card-radius);
+}
+
+.pc-card-wrapper:hover,
+.pc-card-wrapper.active {
+  --card-opacity: 1;
+}
+
+/* ============ 卡片外壳 ============ */
+.pc-card-shell {
+  position: relative;
+  z-index: 1;
+  border-radius: var(--card-radius);
+}
+
+.pc-card-shell.entering .pc-card {
+  transition: transform 180ms ease-out;
+}
+
+/* ============ 卡片主体 ============ */
+.pc-card {
+  position: relative;
+  border-radius: var(--card-radius);
+  background: var(--default-box-color);
+  border: 1px solid var(--art-card-border);
+  box-shadow:
+    0 4px 24px -8px rgba(0, 0, 0, 0.12),
+    0 2px 8px -4px rgba(0, 0, 0, 0.06),
+    rgba(0, 0, 0, 0.1) calc((var(--pointer-from-left) * 8px) - 3px)
+      calc((var(--pointer-from-top) * 16px) - 6px) 20px -5px;
+  transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  transform: translateZ(0) rotateX(0deg) rotateY(0deg);
+  backface-visibility: hidden;
+  overflow: hidden;
+}
+
+.pc-card:hover,
+.pc-card.active {
+  transition: none;
+  transform: translateZ(0) rotateX(var(--rotate-y)) rotateY(var(--rotate-x));
+}
+
+/* ============ 内部容器 ============ */
+.pc-inside {
+  position: relative;
+  inset: 0;
+  background-image: var(--inner-gradient);
+  border-radius: inherit;
+}
+
+/* ============ 表面光泽：跟随鼠标的径向高光 ============ */
+.pc-inside::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at var(--pointer-x) var(--pointer-y),
+    color-mix(in srgb, var(--art-primary) 10%, transparent) 0%,
+    transparent 50%
+  );
+  opacity: var(--card-opacity);
+  transition: opacity 250ms ease;
+  z-index: 1;
+  border-radius: inherit;
+}
+
+/* ============ 眩光层：增强深色模式立体感 ============ */
+.pc-inside::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    farthest-corner circle at var(--pointer-x) var(--pointer-y),
+    color-mix(in srgb, var(--art-primary) 8%, transparent) 12%,
+    transparent 90%
+  );
+  mix-blend-mode: overlay;
+  filter: brightness(0.9) contrast(1.1);
+  opacity: calc(0.6 * var(--card-opacity));
+  transition: opacity 250ms ease;
+  z-index: 2;
+  border-radius: inherit;
+}
+
+/* 确保表单内容在光泽和眩光之上 */
+.pc-inside > * {
+  position: relative;
+  z-index: 3;
+}
+
+/* ============ 暗色模式增强 ============ */
+.dark .pc-card {
+  box-shadow:
+    0 4px 24px -8px rgba(0, 0, 0, 0.4),
+    0 2px 8px -4px rgba(0, 0, 0, 0.3),
+    rgba(0, 0, 0, 0.5) calc((var(--pointer-from-left) * 8px) - 3px)
+      calc((var(--pointer-from-top) * 16px) - 6px) 20px -5px;
+}
+
+.dark .pc-inside::before {
+  background: radial-gradient(
+    circle at var(--pointer-x) var(--pointer-y),
+    color-mix(in srgb, var(--art-primary) 14%, transparent) 0%,
+    transparent 50%
+  );
+}
+
+.dark .pc-inside::after {
+  opacity: calc(0.8 * var(--card-opacity));
+}
+
+/* ============ 尊重减少动画偏好 ============ */
+@media (prefers-reduced-motion: reduce) {
+  .pc-card {
+    transform: none !important;
+    transition: none !important;
+  }
+  .pc-behind,
+  .pc-inside::before,
+  .pc-inside::after {
+    display: none;
+  }
+}

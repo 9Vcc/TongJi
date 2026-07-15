@@ -324,7 +324,7 @@ export default function AnimatedCharacters({
   const isHidingPassword = passwordLength > 0 && !showPassword
   const isLookingAway = isPasswordFocused && !showPassword
 
-  const primaryColor = 'rgb(var(--color-primary))'
+  const primaryColor = 'var(--color-primary)'
   const darkColor = '#2D2D2D'
   const orangeColor = '#FF9B6B'
   const yellowColor = '#E8D754'

@@ -15,7 +15,7 @@ export default function ThemeToggle() {
   return (
     <button
       onClick={handleQuickToggle}
-      className="icon-rotate-hover p-2 rounded-lg text-textSecondary hover:text-textPrimary hover:bg-surface transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+      className="icon-rotate-hover p-2 rounded-custom-sm text-textSecondary hover:text-textPrimary hover:bg-surface transition-colors duration-200 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
       aria-label="切换主题"
       title={`当前：${resolvedTheme === 'dark' ? '暗黑' : '明亮'}（点击切换）`}
     >

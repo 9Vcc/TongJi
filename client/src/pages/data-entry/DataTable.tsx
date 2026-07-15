@@ -71,7 +71,7 @@ export default function DataTable({
         {loading && !hasRecords ? (
           <TableSkeleton rows={6} columns={8} />
         ) : (
-          <div className="bg-card border border-border rounded-xl overflow-hidden">
+          <div className="art-card overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-surface border-b border-border">

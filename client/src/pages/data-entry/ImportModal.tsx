@@ -100,14 +100,14 @@ export default function ImportModal({
         <>
           <button
             onClick={onClose}
-            className="px-4 py-2 border border-border rounded-lg text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+            className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
           >
             取消
           </button>
           <button
             onClick={handleImport}
             disabled={importing}
-            className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+            className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-custom-sm text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
           >
             {importing && <Spinner className="h-4 w-4" />}
             {importing ? "导入中..." : "开始导入"}
@@ -155,7 +155,7 @@ export default function ImportModal({
             value={importRemark}
             onChange={(e) => setImportRemark(e.target.value)}
             placeholder="必填，最多 100 字"
-            className="w-full px-3 py-2 border border-border rounded-lg text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200"
+            className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
           />
         </div>
 
@@ -165,7 +165,7 @@ export default function ImportModal({
               type="file"
               accept=".xlsx,.xls"
               onChange={(e) => setExcelFile(e.target.files?.[0] ?? null)}
-              className="block w-full text-sm text-textSecondary file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-primary file:text-white file:text-sm file:font-medium hover:file:bg-primary-hover cursor-pointer"
+              className="block w-full text-sm text-textSecondary file:mr-3 file:py-2 file:px-4 file:rounded-custom-sm file:border-0 file:bg-primary file:text-white file:text-sm file:font-medium hover:file:bg-primary-hover cursor-pointer"
             />
             {excelFile && (
               <p className="mt-2 text-xs text-textSecondary">
@@ -186,7 +186,7 @@ export default function ImportModal({
                 "姓名\t收光\t麦序\t全麦\n张三\t10\t40\t5\n李四\t8\t35\t3"
               }
               rows={8}
-              className="w-full px-3 py-2 border border-border rounded-lg text-sm font-mono bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors duration-200 resize-y"
+              className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm font-mono bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200 resize-y"
             />
             <p className="mt-2 text-xs text-textMuted">
               支持Tab分隔或逗号分隔，第一行若包含"姓名"将被视为表头跳过。

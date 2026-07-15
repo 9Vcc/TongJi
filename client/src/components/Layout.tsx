@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode, type CSSProperties } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { X } from 'lucide-react'
@@ -9,6 +9,8 @@ import type { Notification } from '../types'
 import Sidebar from './layout/Sidebar'
 import TopBar from './layout/TopBar'
 import AccountModal from './layout/AccountModal'
+import SettingsPanel from './layout/SettingsPanel'
+import GlobalSpotlight from './GlobalSpotlight'
 
 interface LayoutProps {
   children: ReactNode
@@ -26,6 +28,8 @@ export default function Layout({ children }: LayoutProps) {
 
   // 账户管理弹窗
   const [accountModalOpen, setAccountModalOpen] = useState(false)
+  // 外观设置面板
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const unreadCount = notifications.filter((n) => !n.isRead).length
 
@@ -84,13 +88,15 @@ export default function Layout({ children }: LayoutProps) {
 
   return (
     <div className="min-h-screen bg-surface">
+      {/* 全局聚光灯：跟随鼠标照亮附近卡片 */}
+      <GlobalSpotlight />
+
       {/* 固定侧边栏（独立，不随页面滚动） */}
       <Sidebar
         sidebarOpen={sidebarOpen}
         setSidebarOpen={setSidebarOpen}
         sidebarCollapsed={sidebarCollapsed}
         setSidebarCollapsed={setSidebarCollapsed}
-        onOpenAccount={() => setAccountModalOpen(true)}
       />
 
       {/* 遮罩层（移动端） */}
@@ -108,13 +114,18 @@ export default function Layout({ children }: LayoutProps) {
       </AnimatePresence>
 
       {/* 主内容区（左侧留出侧边栏宽度，随折叠状态动画） */}
+      {/* sidebar-content 类通过 CSS 变量 --sidebar-w 控制 margin-left，仅在 lg 屏幕生效 */}
       <div
-        className={`flex flex-col min-h-screen transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-          sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-60'
-        }`}
+        className="sidebar-content flex flex-col min-h-screen"
+        style={{ '--sidebar-w': sidebarCollapsed ? '4rem' : '15rem' } as CSSProperties}
       >
         <TopBar
           onOpenSidebar={() => setSidebarOpen(true)}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenAccount={() => setAccountModalOpen(true)}
+          onLogout={handleLogout}
+          sidebarCollapsed={sidebarCollapsed}
+          setSidebarCollapsed={setSidebarCollapsed}
           notifOpen={notifOpen}
           setNotifOpen={setNotifOpen}
           notifications={notifications}
@@ -128,7 +139,7 @@ export default function Layout({ children }: LayoutProps) {
         />
 
         {/* 内容区 */}
-        <main className="flex-1 p-4 lg:p-6 overflow-y-auto">{children}</main>
+        <main id="main-scroll" className="flex-1 p-4 lg:p-6 overflow-y-auto">{children}</main>
       </div>
 
       {/* 移动端关闭按钮 */}
@@ -154,6 +165,9 @@ export default function Layout({ children }: LayoutProps) {
         onClose={() => setAccountModalOpen(false)}
         onLoggedOut={handleLogout}
       />
+
+      {/* 外观设置面板（主色预设 / 边框阴影模式 / 圆角系数） */}
+      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   )
 }
