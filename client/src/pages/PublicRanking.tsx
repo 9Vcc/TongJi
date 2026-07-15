@@ -116,8 +116,8 @@ export default function PublicRanking() {
         }}
       />
 
-      {/* 顶部标题栏（磨砂玻璃） */}
-      <header className="relative z-10 sticky top-0 border-b border-border/60"
+      {/* 顶部标题栏（磨砂玻璃）：z-30 确保在 fixed 背景层（z-0）之上 */}
+      <header className="sticky top-0 z-30 border-b border-border/60"
         style={{
           backgroundColor: 'color-mix(in srgb, var(--default-box-color) 50%, transparent)',
           backdropFilter: 'blur(20px) saturate(1.3)',

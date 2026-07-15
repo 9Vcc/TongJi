@@ -90,8 +90,10 @@ const DotField = memo(({
       sizeRef.current = {
         w,
         h,
-        offsetX: rect.left + window.scrollX,
-        offsetY: rect.top + window.scrollY,
+        // 使用相对 viewport 的坐标（不含 scroll），配合 clientX/clientY
+        // 这样 fixed 容器滚动后坐标仍正确，不会多算滚动偏移
+        offsetX: rect.left,
+        offsetY: rect.top,
       }
 
       buildDots(w, h)
@@ -124,8 +126,10 @@ const DotField = memo(({
 
     const onMouseMove = (e: MouseEvent) => {
       const s = sizeRef.current
-      mouseRef.current.x = e.pageX - s.offsetX
-      mouseRef.current.y = e.pageY - s.offsetY
+      // 使用 clientX/clientY（相对 viewport），配合 offsetX/offsetY（rect.left/top）
+      // 确保滚动后鼠标位置仍然正确，发光始终跟随鼠标而非随滚动偏移
+      mouseRef.current.x = e.clientX - s.offsetX
+      mouseRef.current.y = e.clientY - s.offsetY
     }
 
     const updateMouseSpeed = () => {
