@@ -342,14 +342,14 @@ function PublicBranchCard({
           {isMonthCycle ? "本月" : "本周"}
         </button>
       </div>
-      {/* 排名表格：只显示排名、人员、麦序 */}
+      {/* 排名表格：只显示排名、人员、麦序（整体居中） */}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-g-100/50 dark:bg-g-100/5 border-b border-border/60">
-            <tr className="text-left text-textMuted">
+            <tr className="text-center text-textMuted">
               <th className="px-4 py-3 font-medium text-xs uppercase tracking-wider">排名</th>
               <th className="px-4 py-3 font-medium text-xs uppercase tracking-wider">人员</th>
-              <th className="px-4 py-3 font-medium text-xs uppercase tracking-wider text-right">麦序</th>
+              <th className="px-4 py-3 font-medium text-xs uppercase tracking-wider">麦序</th>
             </tr>
           </thead>
           <tbody>
@@ -411,9 +411,9 @@ function PublicBranchCard({
                         : undefined
                     }
                   >
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-center">
                       <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs font-mono ${badgeClass} ${item.rank <= 3 ? "text-white" : ""}`}
+                        className={`w-8 h-8 mx-auto rounded-full flex items-center justify-center font-bold text-xs font-mono ${badgeClass} ${item.rank <= 3 ? "text-white" : ""}`}
                       >
                         {item.rank === 1 ? (
                           <Crown size={13} className="text-white" />
@@ -424,12 +424,12 @@ function PublicBranchCard({
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-textPrimary font-medium">
+                    <td className="px-4 py-3 text-center text-textPrimary font-medium">
                       <span className={item.rank === 1 ? "font-semibold" : ""}>
                         {item.personnelName}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-textPrimary font-mono font-bold text-base text-right tabular-nums">
+                    <td className="px-4 py-3 text-center text-textPrimary font-mono font-bold text-base tabular-nums">
                       {item.mx}
                     </td>
                   </tr>
