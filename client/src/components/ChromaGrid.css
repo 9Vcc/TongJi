@@ -177,20 +177,12 @@
   pointer-events: none;
   z-index: 3;
   background: rgba(0, 0, 0, 0.001);
-}
-
-/* 暗色模式：灰度 + 亮度降低 */
-.dark .chroma-overlay,
-.dark .chroma-fade {
-  backdrop-filter: grayscale(1) brightness(0.75);
-  -webkit-backdrop-filter: grayscale(1) brightness(0.75);
-}
-
-/* 亮色模式：灰度 + 轻微亮度降低 + 轻微对比度降低 */
-.chroma-overlay,
-.chroma-fade {
-  backdrop-filter: grayscale(1) brightness(0.92) contrast(0.95);
-  -webkit-backdrop-filter: grayscale(1) brightness(0.92) contrast(0.95);
+  /*
+   * 默认隐藏灰度遮罩，避免在触屏/移动端浏览器（尤其 iOS Safari）上
+   * 因 backdrop-filter 与 mask-image 组合渲染缺陷而出现整层灰色遮罩。
+   * 仅在具备精确指针（鼠标）的设备上通过下方媒体查询重新启用。
+   */
+  display: none;
 }
 
 /* overlay：常驻灰度遮罩，聚光灯内透明（露出彩色） */
@@ -246,6 +238,31 @@
     rgba(255, 255, 255, 0.32) 88%,
     transparent 100%
   );
+}
+
+/* ============ 灰度滤镜：仅在具备鼠标的设备上启用 ============ */
+/* iOS Safari 对 backdrop-filter + mask-image 的组合渲染存在缺陷，     */
+/* 会把整层灰度滤镜铺满而非只作用于 mask 区域。触屏设备又无鼠标交互，    */
+/* 因此仅在 hover + fine pointer 设备上启用聚光灯灰度效果。            */
+@media (hover: hover) and (pointer: fine) {
+  .chroma-overlay,
+  .chroma-fade {
+    display: block;
+  }
+
+  /* 暗色模式：灰度 + 亮度降低 */
+  .dark .chroma-overlay,
+  .dark .chroma-fade {
+    backdrop-filter: grayscale(1) brightness(0.75);
+    -webkit-backdrop-filter: grayscale(1) brightness(0.75);
+  }
+
+  /* 亮色模式：灰度 + 轻微亮度降低 + 轻微对比度降低 */
+  .chroma-overlay,
+  .chroma-fade {
+    backdrop-filter: grayscale(1) brightness(0.92) contrast(0.95);
+    -webkit-backdrop-filter: grayscale(1) brightness(0.92) contrast(0.95);
+  }
 }
 
 /* ============ 尊重减少动画偏好 ============ */
