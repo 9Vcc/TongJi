@@ -38,7 +38,7 @@ export default function Sidebar({
     <aside
       className={`sidebar-aside fixed inset-y-0 left-0 z-40 bg-card border-r border-border flex flex-col overflow-hidden ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-      }`}
+      }${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}
       style={{ width: sidebarCollapsed ? '4rem' : '15rem' }}
     >
       {/* Logo */}
@@ -48,7 +48,7 @@ export default function Sidebar({
         </div>
         <span
           className={`sidebar-text text-lg font-semibold text-textPrimary ml-2 ${
-            sidebarCollapsed ? 'lg:opacity-0 lg:w-0 lg:ml-0' : 'lg:opacity-100'
+            sidebarCollapsed ? 'lg:opacity-0 lg:max-w-0 lg:ml-0' : 'lg:opacity-100 lg:max-w-[200px]'
           }`}
         >
           统计系统
@@ -79,7 +79,7 @@ export default function Sidebar({
               <Icon size={18} className="shrink-0" />
               <span
                 className={`sidebar-text ${
-                  sidebarCollapsed ? 'lg:opacity-0 lg:w-0' : 'lg:opacity-100'
+                  sidebarCollapsed ? 'lg:opacity-0 lg:max-w-0' : 'lg:opacity-100 lg:max-w-[200px]'
                 }`}
               >
                 {item.label}

@@ -355,12 +355,20 @@
   }
 }
 
+/* 展开方向：文字延迟淡入，等待侧栏宽度展开后再显示 */
 .sidebar-text {
-  transition-property: opacity, width, margin-left;
-  transition-duration: 300ms;
-  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  transition-property: opacity, max-width, margin-left;
+  transition-duration: 200ms, 300ms, 300ms;
+  transition-timing-function: ease, cubic-bezier(0.16, 1, 0.3, 1), cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: 100ms, 0ms, 0ms;
   overflow: hidden;
   white-space: nowrap;
+}
+
+/* 折叠方向：文字立即淡出，不等待宽度收缩 */
+.sidebar-collapsed .sidebar-text {
+  transition-duration: 150ms, 300ms, 300ms;
+  transition-delay: 0ms, 0ms, 0ms;
 }
 
 /* ============ 边框/阴影双模式（data-box-mode） ============ */
