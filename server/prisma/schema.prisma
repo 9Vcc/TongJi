@@ -67,6 +67,7 @@ model Account {
   loginRecords       LoginRecord[] @relation("AccountLoginRecords")
   deductions        Deduction[]   @relation("DeductionCreatedBy")
   mxTimeSlotRecords  MxTimeSlotRecord[] @relation("MxTimeSlotRecordCreator")
+  fines              Fine[]         @relation("FineCreatedBy")
   accountBranches    AccountBranch[]
   accountGroups      AccountGroup[]
 
@@ -393,4 +394,38 @@ model MxTimeSlotRecord {
   @@index([recordId])
   @@index([slotDate])
   @@index([recordId, slotDate, slotIndex])
+}
+
+// ============ 罚款人员表（独立于数据录入人员，不与厅同步）============
+model FinePersonnel {
+  id        Int      @id @default(autoincrement())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  fines Fine[]
+
+  @@index([name])
+}
+
+// ============ 罚款记录表 ============
+// 独立于厅和 DataRecord，仅会长可管理
+// reasonType: 罚款原因分类（LATE=迟到, VIOLATION=违规, OTHER=其他）
+model Fine {
+  id          Int      @id @default(autoincrement())
+  personnelId Int
+  amount      Int      // 罚款金额（正整数）
+  fineDate    DateTime // 罚款日期
+  reasonType  String   @default("OTHER") // 原因分类：LATE/VIOLATION/OTHER
+  remark      String?  // 备注
+  createdBy   Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  personnel FinePersonnel @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  creator   Account       @relation("FineCreatedBy", fields: [createdBy], references: [id])
+
+  @@index([personnelId])
+  @@index([fineDate])
+  @@index([reasonType])
 }

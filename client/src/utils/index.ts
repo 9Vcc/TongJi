@@ -112,6 +112,15 @@ export function getMonthRangeText(date: Date | string): string {
 }
 
 /**
+ * 将 YYYY-MM 格式月份格式化为中文：2026-06 → "2026年6月"
+ */
+export function formatMonthCN(month: string): string {
+  const m = /^(\d{4})-(\d{2})$/.exec(month)
+  if (!m) return month
+  return `${Number(m[1])}年${Number(m[2])}月`
+}
+
+/**
  * 生成导出文件名中的日期段（中文格式）
  * - MONTH: "2026年6月排名"
  * - WEEK: "2026年6月第X周排名"（X 为该周在该月的第几周，以周一日期为准）

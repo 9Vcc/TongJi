@@ -26,6 +26,7 @@ import loginRecordRoutes from './routes/login-records';
 import namingLevelRoutes from './routes/naming-levels';
 import deductionRoutes from './routes/deductions';
 import timeSlotMultiplierRoutes from './routes/time-slot-multipliers';
+import fineRoutes from './routes/fines';
 import publicRoutes from './routes/public';
 
 const isDev = process.env.NODE_ENV !== 'production';
@@ -174,6 +175,9 @@ fastify.register(deductionRoutes);
 
 // 时间段倍率管理路由
 fastify.register(timeSlotMultiplierRoutes);
+
+// 罚款记录路由（仅会长可访问）
+fastify.register(fineRoutes);
 
 // 公开排名路由（无需登录，所有人可查看）
 fastify.register(publicRoutes);

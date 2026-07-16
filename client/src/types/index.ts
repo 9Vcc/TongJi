@@ -129,6 +129,55 @@ export interface Deduction {
   personnel?: { id: number; name: string }
 }
 
+// 罚款原因分类
+export type FineReasonType = 'LATE' | 'VIOLATION' | 'OTHER'
+
+// 罚款人员（独立于数据录入人员，不与厅同步）
+export interface FinePersonnel {
+  id: number
+  name: string
+  createdAt: string
+  updatedAt: string
+  _count?: { fines: number }
+}
+
+// 罚款人员批量导入结果
+export interface FinePersonnelBatchResult {
+  created: number
+  skipped: number
+  total: number
+  createdNames: string[]
+  skippedNames: string[]
+}
+
+// 罚款记录
+export interface Fine {
+  id: number
+  personnelId: number
+  amount: number
+  fineDate: string
+  reasonType: FineReasonType
+  remark: string | null
+  createdBy: number
+  createdAt: string
+  updatedAt: string
+  personnel: { id: number; name: string }
+}
+
+// 罚款汇总
+export interface FineSummary {
+  totalAmount: number
+  totalCount: number
+  byPersonnel: {
+    personnelId: number
+    name: string
+    count: number
+    amount: number
+  }[]
+  byReasonType: Record<string, { count: number; amount: number }>
+  byMonth: Record<string, { count: number; amount: number }>
+}
+
 // 冠名等级
 export interface NamingLevel {
   id: number

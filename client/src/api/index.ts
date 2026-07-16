@@ -27,6 +27,11 @@ import type {
   Deduction,
   TimeSlotMultiplier,
   SlotRecordItem,
+  FinePersonnel,
+  FinePersonnelBatchResult,
+  Fine,
+  FineSummary,
+  FineReasonType,
 } from '../types'
 
 const request = axios.create({
@@ -574,6 +579,94 @@ export const deductionsApi = {
   }) {
     return request.delete<unknown, { message: string }>('/deductions', {
       data,
+    })
+  },
+}
+
+// ============ 罚款记录 ============
+export const finesApi = {
+  // 罚款人员管理
+  listPersonnel() {
+    return request.get<unknown, FinePersonnel[]>('/fines/personnel')
+  },
+  createPersonnel(name: string) {
+    return request.post<unknown, FinePersonnel>('/fines/personnel', { name })
+  },
+  // 批量导入罚款人员（names 为姓名数组，按行分隔）
+  batchCreatePersonnel(names: string[]) {
+    return request.post<unknown, FinePersonnelBatchResult>(
+      '/fines/personnel/batch',
+      { names }
+    )
+  },
+  updatePersonnel(id: number, name: string) {
+    return request.put<unknown, FinePersonnel>(`/fines/personnel/${id}`, { name })
+  },
+  deletePersonnel(id: number) {
+    return request.delete<unknown, { message: string }>(`/fines/personnel/${id}`)
+  },
+  // 罚款记录管理
+  listMonths() {
+    return request.get<unknown, string[]>('/fines/months')
+  },
+  list(params?: {
+    month?: string
+    startDate?: string
+    endDate?: string
+    personnelId?: number
+    reasonType?: FineReasonType
+  }) {
+    return request.get<unknown, Fine[]>('/fines', { params })
+  },
+  create(data: {
+    personnelId: number
+    amount: number
+    fineDate: string
+    reasonType: FineReasonType
+    remark?: string
+  }) {
+    return request.post<unknown, Fine>('/fines', data)
+  },
+  update(
+    id: number,
+    data: {
+      personnelId: number
+      amount: number
+      fineDate: string
+      reasonType: FineReasonType
+      remark?: string
+    }
+  ) {
+    return request.put<unknown, Fine>(`/fines/${id}`, data)
+  },
+  delete(id: number) {
+    return request.delete<unknown, { message: string }>(`/fines/${id}`)
+  },
+  // 罚款汇总
+  summary(params?: { month?: string; startDate?: string; endDate?: string }) {
+    return request.get<unknown, FineSummary>('/fines/summary', { params })
+  },
+  // 罚款导出（按人员汇总累加，支持按人员和月份筛选）
+  exportExcel(params: { personnelIds?: number[]; month?: string }) {
+    return request.get<unknown, Blob>('/fines/export/excel', {
+      params: {
+        personnelIds: params.personnelIds?.length
+          ? params.personnelIds.join(',')
+          : undefined,
+        month: params.month,
+      },
+      responseType: 'blob',
+    })
+  },
+  exportCSV(params: { personnelIds?: number[]; month?: string }) {
+    return request.get<unknown, Blob>('/fines/export/csv', {
+      params: {
+        personnelIds: params.personnelIds?.length
+          ? params.personnelIds.join(',')
+          : undefined,
+        month: params.month,
+      },
+      responseType: 'blob',
     })
   },
 }

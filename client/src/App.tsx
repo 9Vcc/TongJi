@@ -15,6 +15,8 @@ const Dashboard = lazy(() => import('./pages/Dashboard'))
 const DataEntry = lazy(() => import('./pages/DataEntry'))
 const Personnel = lazy(() => import('./pages/Personnel'))
 const Settings = lazy(() => import('./pages/Settings'))
+const Fines = lazy(() => import('./pages/Fines'))
+const FineDetails = lazy(() => import('./pages/FineDetails'))
 
 // 设置子页
 const AccountsPage = lazy(() => import('./pages/settings/Accounts'))
@@ -92,6 +94,8 @@ function AppRoutes() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/data" element={<DataEntry />} />
           <Route path="/personnel" element={<Personnel />} />
+          <Route path="/fines" element={<Fines />} />
+          <Route path="/fines/details" element={<FineDetails />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/settings/accounts" element={<AccountsPage />} />
           <Route path="/settings/branches" element={<BranchesPage />} />

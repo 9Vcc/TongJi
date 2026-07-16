@@ -1,22 +1,28 @@
 import { NavLink } from 'react-router-dom'
+import { useAuth } from '../../hooks/useAuth'
 import {
   LayoutDashboard,
   FileInput,
   Users,
   Settings,
   BarChart3,
+  ScrollText,
 } from 'lucide-react'
+import type { Role } from '../../types'
 
 interface NavItem {
   to: string
   label: string
   icon: typeof LayoutDashboard
+  // 仅指定角色可见，未设置则所有角色可见
+  roles?: Role[]
 }
 
 const navItems: NavItem[] = [
   { to: '/dashboard', label: '数据看板', icon: LayoutDashboard },
   { to: '/data', label: '数据录入', icon: FileInput },
   { to: '/personnel', label: '人员管理', icon: Users },
+  { to: '/fines', label: '罚款记录', icon: ScrollText, roles: ['HUIZHANG'] },
   { to: '/settings', label: '系统设置', icon: Settings },
 ]
 
@@ -32,6 +38,11 @@ export default function Sidebar({
   setSidebarOpen,
   sidebarCollapsed,
 }: SidebarProps) {
+  const { user } = useAuth()
+  // 按角色过滤导航项
+  const visibleItems = navItems.filter(
+    (item) => !item.roles || (user && item.roles.includes(user.role))
+  )
   return (
     <aside
       className={`sidebar-aside fixed inset-y-0 left-0 z-40 bg-card border-r border-border flex flex-col overflow-hidden ${
@@ -55,7 +66,7 @@ export default function Sidebar({
 
       {/* 导航菜单 */}
       <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto overflow-x-hidden scrollbar-thin">
-        {navItems.map((item) => {
+        {visibleItems.map((item) => {
           const Icon = item.icon
           return (
             <NavLink

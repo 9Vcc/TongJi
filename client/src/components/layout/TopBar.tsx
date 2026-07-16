@@ -9,6 +9,8 @@ const pageTitleMap: Record<string, string> = {
   '/dashboard': '数据看板',
   '/data': '数据录入',
   '/personnel': '人员管理',
+  '/fines': '罚款记录',
+  '/fines/details': '罚款明细',
   '/settings': '系统设置',
   '/settings/accounts': '账户管理',
   '/settings/branches': '厅管理',
