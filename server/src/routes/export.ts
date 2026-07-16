@@ -148,18 +148,16 @@ export default async function exportRoutes(fastify: FastifyInstance) {
         : ranking[0]?.branchName ?? '全部厅'
 
       // 收集所有出现过的冠名等级（保持顺序，按 levelId 升序）
-      // 记录 levelId → { levelName, branchName }，合并导出时用厅名区分同名等级
-      const namingLevels = new Map<number, { levelName: string; branchName: string }>()
+      // 记录 levelId → levelName；同名但不同 levelId 的等级视为同一列（累加）
+      const namingLevels = new Map<number, string>()
       for (const r of ranking) {
         for (const n of r.namings ?? []) {
           if (!namingLevels.has(n.levelId)) {
-            namingLevels.set(n.levelId, { levelName: n.levelName, branchName: r.branchName })
+            namingLevels.set(n.levelId, n.levelName)
           }
         }
       }
       const hasNaming = namingLevels.size > 0
-      // 多厅合并导出时，冠名列名加厅名前缀避免同名等级冲突
-      const isMultiBranch = new Set(ranking.map((r) => r.branchId)).size > 1
 
       const data = ranking.map((r) => {
         const row: Record<string, string | number> = {
@@ -183,17 +181,18 @@ export default async function exportRoutes(fastify: FastifyInstance) {
         }
         row['排名奖金'] = r.rankBonus
         row['麦序奖励'] = r.maixuBonus
-        // 动态添加冠名列：每等级一列，值为该人员该等级的 count
+        // 动态添加冠名列：每等级一列，列名固定为"冠名·等级名"
+        // 合并导出时同名等级（不同 levelId）通过累加到同一列名避免覆盖丢数据
         if (hasNaming) {
           const namingMap = new Map<number, number>()
           for (const n of r.namings ?? []) {
             namingMap.set(n.levelId, n.count)
           }
-          for (const [levelId, info] of namingLevels) {
-            const colName = isMultiBranch
-              ? `冠名·${info.branchName}·${info.levelName}`
-              : `冠名·${info.levelName}`
-            row[colName] = namingMap.get(levelId) ?? 0
+          for (const [levelId, levelName] of namingLevels) {
+            const colName = `冠名·${levelName}`
+            const val = namingMap.get(levelId) ?? 0
+            // 累加：处理多厅同名等级（不同 levelId）映射到同一列名的情况
+            row[colName] = (row[colName] as number | undefined ?? 0) + val
           }
           row['冠名福利'] = r.namingWelfare
         }
@@ -259,18 +258,25 @@ export default async function exportRoutes(fastify: FastifyInstance) {
         : ranking[0]?.branchName ?? '全部厅'
 
       // 收集所有出现过的冠名等级
-      // 记录 levelId → { levelName, branchName }，合并导出时用厅名区分同名等级
-      const namingLevels = new Map<number, { levelName: string; branchName: string }>()
+      // 记录 levelId → levelName；同名但不同 levelId 的等级视为同一列（累加）
+      const namingLevels = new Map<number, string>()
       for (const r of ranking) {
         for (const n of r.namings ?? []) {
           if (!namingLevels.has(n.levelId)) {
-            namingLevels.set(n.levelId, { levelName: n.levelName, branchName: r.branchName })
+            namingLevels.set(n.levelId, n.levelName)
           }
         }
       }
       const hasNaming = namingLevels.size > 0
-      // 多厅合并导出时，冠名列名加厅名前缀避免同名等级冲突
-      const isMultiBranch = new Set(ranking.map((r) => r.branchId)).size > 1
+      // 收集不重复的 levelName（保持首次出现顺序），用于 CSV 字段定义
+      const uniqueLevelNames: string[] = []
+      const seenLevelNames = new Set<string>()
+      for (const [, levelName] of namingLevels) {
+        if (!seenLevelNames.has(levelName)) {
+          seenLevelNames.add(levelName)
+          uniqueLevelNames.push(levelName)
+        }
+      }
 
       // 构建 CSV 字段：基础列 + 动态冠名列 + 冠名福利 + 扣减 + 总福利
       // 未开启全麦转换的厅不包含全麦列
@@ -294,19 +300,17 @@ export default async function exportRoutes(fastify: FastifyInstance) {
       fields.push({ label: '排名奖金', value: 'rankBonus' })
       fields.push({ label: '麦序奖励', value: 'maixuBonus' })
       if (hasNaming) {
-        for (const [levelId, info] of namingLevels) {
-          const label = isMultiBranch
-            ? `冠名·${info.branchName}·${info.levelName}`
-            : `冠名·${info.levelName}`
-          // 用 levelId 作为字段名保证唯一，避免同名等级冲突
-          fields.push({ label, value: `naming_${levelId}` })
+        // 列名固定为"冠名·等级名"，同名等级合并为一列
+        for (const levelName of uniqueLevelNames) {
+          fields.push({ label: `冠名·${levelName}`, value: `naming_${levelName}` })
         }
         fields.push({ label: '冠名福利', value: 'namingWelfare' })
       }
       fields.push({ label: '扣减', value: 'deduction' })
       fields.push({ label: '总福利', value: 'totalWelfare' })
 
-      // 将 ranking 展平为 CSV 用的行数据：动态冠名等级映射为 naming_<levelId> 字段
+      // 将 ranking 展平为 CSV 用的行数据
+      // 同名等级（不同 levelId）的 count 累加到 naming_<levelName> 字段
       const flatRanking = ranking.map((r) => {
         const row: Record<string, string | number> = {
           rank: r.rank,
@@ -328,12 +332,13 @@ export default async function exportRoutes(fastify: FastifyInstance) {
         row['rankBonus'] = r.rankBonus
         row['maixuBonus'] = r.maixuBonus
         if (hasNaming) {
-          const namingMap = new Map<number, number>()
+          // 按 levelName 累加：同名等级（不同 levelId）合并
+          const namingByName = new Map<string, number>()
           for (const n of r.namings ?? []) {
-            namingMap.set(n.levelId, n.count)
+            namingByName.set(n.levelName, (namingByName.get(n.levelName) ?? 0) + n.count)
           }
-          for (const [levelId] of namingLevels) {
-            row[`naming_${levelId}`] = namingMap.get(levelId) ?? 0
+          for (const levelName of uniqueLevelNames) {
+            row[`naming_${levelName}`] = namingByName.get(levelName) ?? 0
           }
           row['namingWelfare'] = r.namingWelfare
         }
