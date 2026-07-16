@@ -868,6 +868,7 @@ export default function DataEntry() {
         isGroupMode={isGroupMode}
         groupName={groupExportInfo?.name}
         groupBranches={groupExportInfo?.branches}
+        currentWeekStart={weekStart}
       />
     </div>
   );

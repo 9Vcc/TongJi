@@ -38,6 +38,8 @@ interface ExportModalProps {
   isGroupMode?: boolean;
   groupName?: string;
   groupBranches?: GroupBranchInfo[];
+  // 页面当前查看的周期起始日，作为导出弹窗默认日期
+  currentWeekStart?: Date;
 }
 
 export default function ExportModal({
@@ -50,6 +52,7 @@ export default function ExportModal({
   isGroupMode = false,
   groupName,
   groupBranches,
+  currentWeekStart,
 }: ExportModalProps) {
   const toast = useToast();
   const [exportCycle, setExportCycle] = useState<"WEEK" | "MONTH">("WEEK");
@@ -62,6 +65,21 @@ export default function ExportModal({
   const [groupExportMode, setGroupExportMode] = useState<"separate" | "merged">(
     "separate",
   );
+
+  // 计算导出弹窗的默认日期：优先使用页面当前查看的周期起始日
+  // 月统计厅 → 月初1日，周统计厅 → 周一
+  const getDefaultExportDate = (): string => {
+    if (currentWeekStart) {
+      if (branchCycle === "MONTH") {
+        return formatDate(getMonthStart(currentWeekStart));
+      }
+      return formatDate(currentWeekStart);
+    }
+    if (branchCycle === "MONTH") {
+      return formatDate(getMonthStart());
+    }
+    return formatDate(getWeekStart());
+  };
 
   // 打开弹窗：加载历史周次列表，默认选中当前周/月
   // 导出周期固定跟随当前厅的 statCycle，按周厅只能导出按周，按月厅只能导出按月
@@ -84,24 +102,12 @@ export default function ExportModal({
           set.add(formatDate(getWeekStart()));
           const sorted = Array.from(set).sort().reverse();
           setExportWeeks(sorted);
-          if (branchCycle === "MONTH") {
-            const d = new Date();
-            d.setDate(1);
-            setExportDate(formatDate(d));
-          } else {
-            setExportDate(formatDate(getWeekStart()));
-          }
+          setExportDate(getDefaultExportDate());
         } catch {
           if (cancelled) return;
           // 查询失败时回退到当前周/月
           setExportWeeks([]);
-          if (branchCycle === "MONTH") {
-            const d = new Date();
-            d.setDate(1);
-            setExportDate(formatDate(d));
-          } else {
-            setExportDate(formatDate(getWeekStart()));
-          }
+          setExportDate(getDefaultExportDate());
         }
       })();
       return () => {
@@ -126,13 +132,7 @@ export default function ExportModal({
         setExportWeeks(sorted);
         // 导出周期跟随厅配置
         setExportCycle(branchCycle);
-        if (branchCycle === "MONTH") {
-          const d = new Date();
-          d.setDate(1);
-          setExportDate(formatDate(d));
-        } else {
-          setExportDate(formatDate(getWeekStart()));
-        }
+        setExportDate(getDefaultExportDate());
       } catch (err) {
         if (cancelled) return;
         toast.error(getErrorMessage(err));

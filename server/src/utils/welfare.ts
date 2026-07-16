@@ -196,14 +196,18 @@ export async function computeRanking(
       },
     })
     // 过滤：按厅 statCycle 区分归属逻辑
-    // - 月统计厅（MONTH）：weekStart 落在 [当月1日, 下月1日) 范围
+    // - 月统计厅（MONTH）：只保留 weekStart=月初1日 的记录
+    //   （月统计厅录入时 weekStart 归一化为月初1日，与数据录入页查询逻辑一致，
+    //    避免异常/历史多 weekStart 记录导致冠名等数据重复累加）
     // - 按周统计厅（WEEK）：按录入时间归属月，createdAt 落在目标月内才算
     records = rawRecords.filter((r) => {
       if (r.branch.statCycle === StatCycle.WEEK) {
         return r.createdAt >= periodStart && r.createdAt < periodEnd
       }
-      // 月统计厅：DB 查询已按范围过滤，此处直接保留
-      return true
+      // 月统计厅：只保留 weekStart 恰好为月初1日的记录
+      const ws = new Date(r.weekStart)
+      ws.setHours(0, 0, 0, 0)
+      return ws.getTime() === periodStart.getTime()
     })
   } else {
     records = await prisma.dataRecord.findMany({
