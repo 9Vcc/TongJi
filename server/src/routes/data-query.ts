@@ -425,4 +425,56 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
       return reply.send({ remark: latest.remark })
     }
   )
+
+  // GET /api/data-records/latest-slot - 查询当前厅最近一次时间段录入的日期和时间段
+  // 从 MxTimeSlotRecord 查询，所有已认证用户可访问
+  fastify.get(
+    '/api/data-records/latest-slot',
+    { preHandler: [authenticate] },
+    async (request, reply) => {
+      const currentUser = request.user
+      const { branchId: branchIdParam } =
+        request.query as { branchId?: string }
+
+      // 分部权限：与 latest-remark 一致
+      let branchFilter: number | undefined
+      if (currentUser.role === Role.HUIZHANG) {
+        if (branchIdParam) {
+          const n = Number(branchIdParam)
+          branchFilter = Number.isNaN(n) ? undefined : n
+        }
+      } else if (currentUser.role === Role.CHAOGUAN) {
+        if (branchIdParam) {
+          const n = Number(branchIdParam)
+          if (!Number.isNaN(n) && canAccessBranch(currentUser, n)) {
+            branchFilter = n
+          }
+        }
+      } else {
+        branchFilter = currentUser.branchId ?? undefined
+      }
+
+      const accessibleIds = getAccessibleBranchIds(currentUser)
+      const branchIdValue: number | { in: number[] } | undefined =
+        branchFilter ?? (accessibleIds === null ? undefined : { in: accessibleIds })
+
+      // 会长查全部厅时 branchIdValue 为 undefined，不加 branchId 过滤（查所有厅）
+      // 超管/管理必须使用授权厅列表过滤
+      const latest = await prisma.mxTimeSlotRecord.findFirst({
+        where: branchIdValue !== undefined
+          ? { record: { branchId: branchIdValue } }
+          : {},
+        orderBy: { createdAt: 'desc' },
+        select: { slotDate: true, slotIndex: true },
+      })
+
+      if (!latest) {
+        return reply.send({ slotDate: null, slotIndex: null })
+      }
+      // 格式化 slotDate 为 YYYY-MM-DD
+      const d = latest.slotDate
+      const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      return reply.send({ slotDate: dateStr, slotIndex: latest.slotIndex })
+    }
+  )
 }

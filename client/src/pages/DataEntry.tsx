@@ -33,6 +33,15 @@ import GroupedSelect from "../components/GroupedSelect";
 import type { DisplayRow, EditableRecord } from "./data-entry/types";
 import { rowKey } from "./data-entry/types";
 
+// 时间段标签生成（0-2、2-4、...、22-24）
+const slotLabel = (idx: number) => `${idx * 2}-${idx * 2 + 2}`;
+// 将 YYYY-MM-DD 格式化为「X月X日」
+const formatMonthDay = (dateStr: string) => {
+  const d = new Date(dateStr + "T00:00:00");
+  if (Number.isNaN(d.getTime())) return dateStr;
+  return `${d.getMonth() + 1}月${d.getDate()}日`;
+};
+
 export default function DataEntry() {
   const { user } = useAuth();
   const toast = useToast();
@@ -47,6 +56,7 @@ export default function DataEntry() {
   const {
     records,
     latestRemark,
+    latestSlot,
     personnel,
     branches,
     branchGroups,
@@ -73,6 +83,7 @@ export default function DataEntry() {
     sgInputEnabled,
     qmInputEnabled,
     zcInputEnabled,
+    mxSlotEnabled,
     namingLevels,
     editNamingsEnabled,
     loadData,
@@ -681,14 +692,33 @@ export default function DataEntry() {
               className="w-full pl-9 pr-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
             />
           </div>
-          {/* 最近一条录入备注：搜索框后展示 */}
-          {latestRemark && (
+          {/* 最近备注 + 最近录入时段：合并显示在同一块中 */}
+          {(latestRemark || (latestSlot.slotDate && latestSlot.slotIndex !== null)) && (
             <div
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/5 border border-primary/20 rounded-custom-sm text-xs text-primary max-w-md truncate"
-              title={latestRemark}
+              className="flex items-center gap-3 px-3 py-1.5 bg-primary/5 border border-primary/20 rounded-custom-sm text-xs text-primary max-w-2xl"
+              title={
+                [
+                  latestRemark ? `最近备注：${latestRemark}` : '',
+                  latestSlot.slotDate && latestSlot.slotIndex !== null
+                    ? `最近录入：${formatMonthDay(latestSlot.slotDate)} ${slotLabel(latestSlot.slotIndex)}`
+                    : '',
+                ].filter(Boolean).join(' ｜ ')
+              }
             >
-              <span className="text-textMuted">最近备注：</span>
-              <span className="truncate">{latestRemark}</span>
+              {latestRemark && (
+                <span className="flex items-center gap-1.5 truncate">
+                  <span className="text-textMuted shrink-0">最近备注：</span>
+                  <span className="truncate">{latestRemark}</span>
+                </span>
+              )}
+              {latestSlot.slotDate && latestSlot.slotIndex !== null && (
+                <span className="flex items-center gap-1.5 whitespace-nowrap shrink-0">
+                  <span className="text-textMuted">最近录入：</span>
+                  <span>
+                    {formatMonthDay(latestSlot.slotDate)} {slotLabel(latestSlot.slotIndex)}
+                  </span>
+                </span>
+              )}
             </div>
           )}
           <div className="flex items-center gap-1.5">
@@ -807,6 +837,9 @@ export default function DataEntry() {
         sgInputEnabled={sgInputEnabled}
         qmInputEnabled={qmInputEnabled}
         zcInputEnabled={zcInputEnabled}
+        mxSlotEnabled={mxSlotEnabled}
+        effectiveBranchId={effectiveBranchId}
+        effectiveBranchIds={effectiveBranchIds}
         isHuizhang={isHuizhang}
         isGroupMode={isGroupMode}
         hasTarget={hasTarget}

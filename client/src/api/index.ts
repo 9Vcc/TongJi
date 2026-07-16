@@ -25,6 +25,8 @@ import type {
   LoginRecord,
   NamingLevel,
   Deduction,
+  TimeSlotMultiplier,
+  SlotRecordItem,
 } from '../types'
 
 const request = axios.create({
@@ -251,6 +253,16 @@ export const dataRecordsApi = {
   getHistory(id: number) {
     return request.get<unknown, DataHistory[]>(`/data-records/${id}/history`)
   },
+  // 时间段批量录入（麦序按时间段倍率换算）
+  createSlot(data: {
+    branchId?: number
+    weekStart?: string
+    slotDate: string
+    slotIndex: number
+    records: SlotRecordItem[]
+  }) {
+    return request.post<unknown, DataRecord[]>('/data-records/slot', data)
+  },
 }
 
 // ============ 数据查询 ============
@@ -282,6 +294,28 @@ export const dataQueryApi = {
     return request.get<unknown, { remark: string | null }>(
       '/data-records/latest-remark',
       { params: branchId ? { branchId } : {} }
+    )
+  },
+  // 查询当前厅最近一次时间段录入的日期和时间段索引
+  getLatestSlot(branchId?: number) {
+    return request.get<unknown, { slotDate: string | null; slotIndex: number | null }>(
+      '/data-records/latest-slot',
+      { params: branchId ? { branchId } : {} }
+    )
+  },
+}
+
+// ============ 时间段倍率 ============
+export const timeSlotMultipliersApi = {
+  get(branchId: number) {
+    return request.get<unknown, TimeSlotMultiplier[]>('/time-slot-multipliers', {
+      params: { branchId },
+    })
+  },
+  update(branchId: number, multipliers: { slotIndex: number; multiplier: number }[]) {
+    return request.put<unknown, TimeSlotMultiplier[]>(
+      `/time-slot-multipliers/${branchId}`,
+      { multipliers }
     )
   },
 }

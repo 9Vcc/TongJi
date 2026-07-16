@@ -3,7 +3,7 @@ import prisma, { prisma as prismaClient } from '../lib/prisma'
 import { authenticate, requireRole, canAccessBranch } from '../middleware/auth'
 import { Role, HistoryAction, Prisma, StatCycle } from '../../generated/prisma/client'
 import { getWeekStart } from '../utils/week'
-import { isNonNegInt } from '../utils/validation'
+import { isNonNegInt, isNonNegDecimal2 } from '../utils/validation'
 import { convertNaming, getBranchNamingLevels } from '../utils/naming'
 import * as xlsx from 'xlsx'
 
@@ -70,16 +70,20 @@ function validateRecordInput(input: Partial<RecordInput>): string | null {
   }
   // zcDays 未传时默认为 0
   if (input.zcDays === undefined || input.zcDays === null) input.zcDays = 0
-  const fields: [string, unknown][] = [
+  // sg/qm/zcDays 为非负整数
+  const intFields: [string, unknown][] = [
     ['sg', input.sg],
-    ['mx', input.mx],
     ['qm', input.qm],
     ['zcDays', input.zcDays],
   ]
-  for (const [k, v] of fields) {
+  for (const [k, v] of intFields) {
     if (!isNonNegInt(v)) {
       return `${k} 必须为非负整数`
     }
+  }
+  // mx 为非负数（最多两位小数，支持时间段倍率换算后的浮点值）
+  if (!isNonNegDecimal2(input.mx)) {
+    return 'mx 必须为非负数（最多两位小数）'
   }
   return null
 }
@@ -126,8 +130,20 @@ async function assertBranchOpen(branchId: number): Promise<boolean> {
 }
 
 /**
+ * 时间段录入明细信息（可选，传入时创建 MxTimeSlotRecord 明细）
+ */
+interface SlotInfo {
+  slotDate: Date
+  slotIndex: number
+  rawMx: number
+  multiplier: number
+  convertedMx: number
+}
+
+/**
  * 同一人员同一周同一分部只能有一条记录，已存在则累加
  * 若厅为按月统计且配置了冠名等级，录入收光时按阈值整除转换为冠名，余数计入收光
+ * slotInfo 传入时，额外创建 MxTimeSlotRecord 时间段明细记录
  */
 async function upsertRecord(
   client: Prisma.TransactionClient,
@@ -135,7 +151,8 @@ async function upsertRecord(
   createdBy: number,
   weekStart: Date,
   namingLevels: { id: number; threshold: number }[] = [],
-  remark: string | null = null
+  remark: string | null = null,
+  slotInfo?: SlotInfo
 ) {
   // 冠名转换：对本次录入的收光进行逐级扣减转换
   // 若 input.namings 已指定（导入已含冠名列的数据），则跳过转换，直接使用传入的冠名数量
@@ -213,6 +230,23 @@ async function upsertRecord(
         remark,
       },
     })
+    // 创建时间段明细记录
+    if (slotInfo) {
+      await client.mxTimeSlotRecord.create({
+        data: {
+          recordId: existing.id,
+          slotDate: slotInfo.slotDate,
+          slotIndex: slotInfo.slotIndex,
+          rawMx: slotInfo.rawMx,
+          multiplier: slotInfo.multiplier,
+          convertedMx: slotInfo.convertedMx,
+          sg: input.sg,
+          qm: input.qm,
+          zcDays: input.zcDays,
+          createdBy,
+        },
+      })
+    }
     return updated
   }
   const created = await client.dataRecord.create({
@@ -251,6 +285,23 @@ async function upsertRecord(
       remark,
     },
   })
+  // 创建时间段明细记录
+  if (slotInfo) {
+    await client.mxTimeSlotRecord.create({
+      data: {
+        recordId: created.id,
+        slotDate: slotInfo.slotDate,
+        slotIndex: slotInfo.slotIndex,
+        rawMx: slotInfo.rawMx,
+        multiplier: slotInfo.multiplier,
+        convertedMx: slotInfo.convertedMx,
+        sg: input.sg,
+        qm: input.qm,
+        zcDays: input.zcDays,
+        createdBy,
+      },
+    })
+  }
   return created
 }
 
@@ -532,6 +583,128 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         remark
       )
       return reply.code(201).send(record)
+    }
+  )
+
+  // POST /api/data-records/slot - 时间段批量录入（麦序按时间段倍率换算）
+  fastify.post(
+    '/api/data-records/slot',
+    { preHandler: [authenticate, requireRole(Role.GUANLI)] },
+    async (request, reply) => {
+      const currentUser = request.user
+      const body = request.body as {
+        branchId?: number
+        weekStart?: string
+        slotDate?: string
+        slotIndex?: number
+        records?: { personnelId: number; sg: number; rawMx: number; qm: number; zcDays: number }[]
+      }
+
+      // 解析 weekStart
+      const parsedWeekStart = parseWeekStart(body.weekStart)
+      if (parsedWeekStart && !parsedWeekStart.ok) {
+        return reply.code(400).send({ error: parsedWeekStart.error })
+      }
+      const weekStart = parsedWeekStart && parsedWeekStart.ok ? parsedWeekStart.date : getWeekStart()
+
+      // 解析 slotDate
+      const parsedSlotDate = parseWeekStart(body.slotDate)
+      if (!parsedSlotDate || !parsedSlotDate.ok) {
+        return reply.code(400).send({ error: 'slotDate 格式必须为 YYYY-MM-DD' })
+      }
+      const slotDate = parsedSlotDate.date
+
+      // 校验 slotIndex
+      if (!Number.isInteger(body.slotIndex) || body.slotIndex! < 0 || body.slotIndex! >= 12) {
+        return reply.code(400).send({ error: 'slotIndex 必须为 0-11 的整数' })
+      }
+
+      // 校验 records
+      if (!Array.isArray(body.records) || body.records.length === 0) {
+        return reply.code(400).send({ error: '记录列表不能为空' })
+      }
+
+      for (let i = 0; i < body.records.length; i++) {
+        const r = body.records[i]
+        if (!r.personnelId) {
+          return reply.code(400).send({ error: `第${i + 1}条记录：人员ID不能为空` })
+        }
+        if (!isNonNegInt(r.sg)) return reply.code(400).send({ error: `第${i + 1}条记录：收光必须为非负整数` })
+        if (!isNonNegInt(r.rawMx)) return reply.code(400).send({ error: `第${i + 1}条记录：麦序必须为非负整数` })
+        if (!isNonNegInt(r.qm)) return reply.code(400).send({ error: `第${i + 1}条记录：全麦必须为非负整数` })
+        if (!isNonNegInt(r.zcDays)) return reply.code(400).send({ error: `第${i + 1}条记录：主持天数必须为非负整数` })
+      }
+
+      // 解析 branchId 并校验权限
+      const resolved = resolveBranchId(currentUser, body.branchId)
+      if (!resolved.ok) {
+        return reply.code(403).send({ error: resolved.error })
+      }
+      const branchId = resolved.branchId
+      if (branchId === null) {
+        return reply.code(400).send({ error: '请指定分部' })
+      }
+
+      // 校验厅未关闭
+      if (!(await assertBranchOpen(branchId))) {
+        return reply.code(403).send({ error: '该厅已关闭，无法录入数据' })
+      }
+
+      // 获取该厅该 slotIndex 的倍率
+      const slotMultiplier = await prisma.timeSlotMultiplier.findUnique({
+        where: { branchId_slotIndex: { branchId, slotIndex: body.slotIndex! } },
+      })
+      const multiplier = slotMultiplier?.multiplier ?? 1
+
+      // 获取冠名等级（仅按月统计厅）
+      const branch = await prisma.branch.findUnique({
+        where: { id: branchId },
+        select: { statCycle: true },
+      })
+      const namingLevels = branch?.statCycle === StatCycle.MONTH
+        ? await getBranchNamingLevels(branchId)
+        : []
+
+      // 校验人员属于该厅
+      const personnelIds = Array.from(new Set(body.records.map((r) => r.personnelId)))
+      const associations = await prisma.personnelBranch.findMany({
+        where: { branchId, personnelId: { in: personnelIds } },
+        select: { personnelId: true },
+      })
+      const validPersonnelSet = new Set(associations.map((a) => a.personnelId))
+      for (let i = 0; i < body.records.length; i++) {
+        if (!validPersonnelSet.has(body.records[i].personnelId)) {
+          return reply.code(400).send({ error: `第${i + 1}条记录：人员不属于该分部` })
+        }
+      }
+
+      // 事务内批量录入（麦序按倍率换算后累加，同时创建时间段明细）
+      const created = await prismaClient.$transaction(async (tx) => {
+        const results = []
+        for (const r of body.records!) {
+          const convertedMx = Number((r.rawMx * multiplier).toFixed(2))
+          const input: RecordInput = {
+            personnelId: r.personnelId,
+            branchId,
+            sg: r.sg,
+            mx: convertedMx,
+            qm: r.qm,
+            zcDays: r.zcDays,
+          }
+          const slotInfo: SlotInfo = {
+            slotDate,
+            slotIndex: body.slotIndex!,
+            rawMx: r.rawMx,
+            multiplier,
+            convertedMx,
+          }
+          const rec = await upsertRecord(tx, input, currentUser.id, weekStart, namingLevels, null, slotInfo)
+          results.push(rec)
+        }
+        return results
+      })
+
+      return reply.code(201).send(created)
     }
   )
 
@@ -880,7 +1053,12 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
       const updates: { field: 'sg' | 'mx' | 'qm' | 'zcDays'; value: number }[] = []
       for (const field of ['sg', 'mx', 'qm', 'zcDays'] as const) {
         if (body[field] !== undefined) {
-          if (!isNonNegInt(body[field])) {
+          // mx 为 Float（支持倍率换算后的小数），其他字段为非负整数
+          if (field === 'mx') {
+            if (!isNonNegDecimal2(body[field])) {
+              return reply.code(400).send({ error: 'mx 必须为非负数（最多两位小数）' })
+            }
+          } else if (!isNonNegInt(body[field])) {
             return reply.code(400).send({ error: `${field} 必须为非负整数` })
           }
           // 仅当值与原值不同时才记为更新（值未变化不参与保存判定）

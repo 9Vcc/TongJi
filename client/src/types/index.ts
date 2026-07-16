@@ -182,7 +182,24 @@ export interface RewardRule {
   stackRankAndMaixu: boolean
   zcEnabled: boolean
   zcDayReward: number
+  mxSlotEnabled: boolean
   branch?: { id: number; name: string }
+}
+
+// 时间段倍率配置
+export interface TimeSlotMultiplier {
+  slotIndex: number
+  slotLabel: string
+  multiplier: number
+}
+
+// 时间段录入记录项
+export interface SlotRecordItem {
+  personnelId: number
+  sg: number
+  rawMx: number
+  qm: number
+  zcDays: number
 }
 
 // 通知
@@ -379,6 +396,7 @@ export interface UpdateRewardRuleInput {
   stackRankAndMaixu?: boolean
   zcEnabled?: boolean
   zcDayReward?: number
+  mxSlotEnabled?: boolean
 }
 
 // 录入历史记录日志项（创建/修改/删除统一结构）

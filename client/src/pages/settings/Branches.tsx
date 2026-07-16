@@ -14,12 +14,14 @@ import {
   CheckSquare,
   Square,
   X,
+  Clock,
 } from 'lucide-react'
 import {
   branchesApi,
   branchGroupsApi,
   rewardRulesApi,
   namingLevelsApi,
+  timeSlotMultipliersApi,
   getErrorMessage,
 } from '../../api'
 import { useAuth } from '../../hooks/useAuth'
@@ -35,6 +37,14 @@ import type {
   UpdateRewardRuleInput,
   NamingLevel,
 } from '../../types'
+
+// 时间段数量（0-2、2-4、...、22-24，共12个）
+const SLOT_COUNT = 12
+// 生成时间段标签：'0-2'、'2-4'、...、'22-24'
+const SLOT_LABELS = Array.from(
+  { length: SLOT_COUNT },
+  (_, i) => `${i * 2}-${i * 2 + 2}`,
+)
 
 // 奖励规则表单结构
 type RuleForm = {
@@ -169,6 +179,8 @@ export default function BranchesPage() {
   // 奖励规则弹窗
   const [ruleModalOpen, setRuleModalOpen] = useState(false)
   const [ruleBranch, setRuleBranch] = useState<Branch | null>(null)
+  // 合厅组合并管理：ruleGroup 有值时保存批量应用到所有成员厅
+  const [ruleGroup, setRuleGroup] = useState<BranchGroup | null>(null)
   const [ruleForm, setRuleForm] = useState<RuleForm>(defaultRuleForm)
   const [ruleLoading, setRuleLoading] = useState(false)
   const [ruleSaving, setRuleSaving] = useState(false)
@@ -176,6 +188,8 @@ export default function BranchesPage() {
   // 冠名等级弹窗
   const [namingModalOpen, setNamingModalOpen] = useState(false)
   const [namingBranch, setNamingBranch] = useState<Branch | null>(null)
+  // 合厅组合并管理：namingGroup 有值时保存批量应用到所有成员厅
+  const [namingGroup, setNamingGroup] = useState<BranchGroup | null>(null)
   const [namingLevels, setNamingLevels] = useState<NamingLevel[]>([])
   const [namingLoading, setNamingLoading] = useState(false)
   // 新增/编辑表单：editingId 为 null 表示新增模式
@@ -186,6 +200,20 @@ export default function BranchesPage() {
     reward: 0,
   })
   const [namingSubmitting, setNamingSubmitting] = useState(false)
+
+  // 时间段倍率弹窗
+  const [slotModalOpen, setSlotModalOpen] = useState(false)
+  const [slotBranch, setSlotBranch] = useState<Branch | null>(null)
+  // 合厅组模式：批量设置所有成员厅的倍率
+  const [slotGroup, setSlotGroup] = useState<BranchGroup | null>(null)
+  // 12 个时间段的倍率数组（索引对齐 slotIndex）
+  const [slotMultipliers, setSlotMultipliers] = useState<number[]>(
+    Array(SLOT_COUNT).fill(1),
+  )
+  // 时间段倍率功能开关（存储在 RewardRule.mxSlotEnabled）
+  const [slotEnabled, setSlotEnabled] = useState(false)
+  const [slotLoading, setSlotLoading] = useState(false)
+  const [slotSaving, setSlotSaving] = useState(false)
 
   // ============ 合厅组管理状态 ============
   const [branchGroups, setBranchGroups] = useState<BranchGroup[]>([])
@@ -351,9 +379,10 @@ export default function BranchesPage() {
     }
   }
 
-  // 打开奖励规则弹窗
+  // 打开奖励规则弹窗（单厅）
   const openRuleModal = async (branch: Branch) => {
     setRuleBranch(branch)
+    setRuleGroup(null)
     setRuleForm(defaultRuleForm)
     setRuleModalOpen(true)
     setRuleLoading(true)
@@ -387,13 +416,65 @@ export default function BranchesPage() {
     }
   }
 
+  // 打开奖励规则弹窗（合厅组）：以首个成员厅配置为初始值，保存时批量应用
+  const openRuleModalForGroup = async (group: BranchGroup) => {
+    const memberBranches = group.branches.filter((b) => !b.closed)
+    if (memberBranches.length === 0) {
+      toast.error('该合厅组没有可用的成员厅')
+      return
+    }
+    setRuleBranch(null)
+    setRuleGroup(group)
+    setRuleForm(defaultRuleForm)
+    setRuleModalOpen(true)
+    setRuleLoading(true)
+    try {
+      const firstBranch = memberBranches[0]
+      const rules = await rewardRulesApi.get(firstBranch.id)
+      const r: RewardRule | undefined = rules[0]
+      if (r) {
+        setRuleForm({
+          sgRatio: r.sgRatio,
+          qmRatio: r.qmRatio,
+          rank1Reward: r.rank1Reward,
+          rank2Reward: r.rank2Reward,
+          rank3Reward: r.rank3Reward,
+          maixuThreshold: r.maixuThreshold,
+          maixuReward: r.maixuReward,
+          maixuMinStandard: r.maixuMinStandard,
+          sgEnabled: r.sgEnabled,
+          qmEnabled: r.qmEnabled,
+          rankEnabled: r.rankEnabled,
+          maixuEnabled: r.maixuEnabled,
+          maixuMinEnabled: r.maixuMinEnabled,
+          stackRankAndMaixu: r.stackRankAndMaixu,
+          zcEnabled: r.zcEnabled,
+          zcDayReward: r.zcDayReward,
+        })
+      }
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setRuleLoading(false)
+    }
+  }
+
   const handleRuleSave = async () => {
-    if (!ruleBranch) return
+    if (!ruleBranch && !ruleGroup) return
     const payload: UpdateRewardRuleInput = { ...ruleForm }
     setRuleSaving(true)
     try {
-      await rewardRulesApi.update(ruleBranch.id, payload)
-      toast.success('奖励规则保存成功')
+      if (ruleGroup) {
+        // 合厅组模式：批量更新所有成员厅
+        const memberBranches = ruleGroup.branches.filter((b) => !b.closed)
+        await Promise.all(
+          memberBranches.map((b) => rewardRulesApi.update(b.id, payload)),
+        )
+        toast.success(`已应用到 ${memberBranches.length} 个成员厅`)
+      } else if (ruleBranch) {
+        await rewardRulesApi.update(ruleBranch.id, payload)
+        toast.success('奖励规则保存成功')
+      }
       setRuleModalOpen(false)
     } catch (err) {
       toast.error(getErrorMessage(err))
@@ -402,9 +483,10 @@ export default function BranchesPage() {
     }
   }
 
-  // 打开冠名等级弹窗
+  // 打开冠名等级弹窗（单厅）
   const openNamingModal = async (branch: Branch) => {
     setNamingBranch(branch)
+    setNamingGroup(null)
     setNamingFormId(null)
     setNamingForm({ name: '', threshold: 0, reward: 0 })
     setNamingLevels([])
@@ -413,6 +495,32 @@ export default function BranchesPage() {
     try {
       const list = await namingLevelsApi.get(branch.id)
       // 按 threshold 降序展示（高等级优先）
+      list.sort((a, b) => b.threshold - a.threshold)
+      setNamingLevels(list)
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setNamingLoading(false)
+    }
+  }
+
+  // 打开冠名等级弹窗（合厅组）：以首个成员厅配置为初始值
+  const openNamingModalForGroup = async (group: BranchGroup) => {
+    const memberBranches = group.branches.filter((b) => !b.closed)
+    if (memberBranches.length === 0) {
+      toast.error('该合厅组没有可用的成员厅')
+      return
+    }
+    setNamingBranch(null)
+    setNamingGroup(group)
+    setNamingFormId(null)
+    setNamingForm({ name: '', threshold: 0, reward: 0 })
+    setNamingLevels([])
+    setNamingModalOpen(true)
+    setNamingLoading(true)
+    try {
+      const firstBranch = memberBranches[0]
+      const list = await namingLevelsApi.get(firstBranch.id)
       list.sort((a, b) => b.threshold - a.threshold)
       setNamingLevels(list)
     } catch (err) {
@@ -440,7 +548,7 @@ export default function BranchesPage() {
 
   // 提交新增/编辑
   const handleNamingSubmit = async () => {
-    if (!namingBranch) return
+    if (!namingBranch && !namingGroup) return
     if (!namingForm.name.trim()) {
       toast.error('请输入等级名称')
       return
@@ -454,27 +562,73 @@ export default function BranchesPage() {
     }
     setNamingSubmitting(true)
     try {
-      if (namingFormId) {
-        await namingLevelsApi.update(namingFormId, {
-          name: namingForm.name.trim(),
-          threshold: namingForm.threshold,
-          reward: namingForm.reward,
-        })
-        toast.success('等级更新成功')
-      } else {
-        await namingLevelsApi.create({
-          branchId: namingBranch.id,
-          name: namingForm.name.trim(),
-          threshold: namingForm.threshold,
-          reward: namingForm.reward,
-        })
-        toast.success('等级创建成功')
+      if (namingGroup) {
+        // 合厅组模式：按名称匹配，批量更新或创建到所有成员厅
+        const memberBranches = namingGroup.branches.filter((b) => !b.closed)
+        // 收集所有成员厅的等级列表
+        const allLists = await Promise.all(
+          memberBranches.map((b) => namingLevelsApi.get(b.id)),
+        )
+        if (namingFormId) {
+          // 编辑：按名称在所有成员厅中找对应等级并更新
+          const originalLevel = namingLevels.find((l) => l.id === namingFormId)
+          const matchName = originalLevel?.name ?? namingForm.name.trim()
+          await Promise.all(
+            memberBranches.map(async (_, idx) => {
+              const matched = allLists[idx].find((l) => l.name === matchName)
+              if (matched) {
+                await namingLevelsApi.update(matched.id, {
+                  name: namingForm.name.trim(),
+                  threshold: namingForm.threshold,
+                  reward: namingForm.reward,
+                })
+              }
+            }),
+          )
+          toast.success(`已同步到 ${memberBranches.length} 个成员厅`)
+        } else {
+          // 新增：为所有成员厅创建
+          await Promise.all(
+            memberBranches.map((b) =>
+              namingLevelsApi.create({
+                branchId: b.id,
+                name: namingForm.name.trim(),
+                threshold: namingForm.threshold,
+                reward: namingForm.reward,
+              }),
+            ),
+          )
+          toast.success(`已创建到 ${memberBranches.length} 个成员厅`)
+        }
+      } else if (namingBranch) {
+        // 单厅模式
+        if (namingFormId) {
+          await namingLevelsApi.update(namingFormId, {
+            name: namingForm.name.trim(),
+            threshold: namingForm.threshold,
+            reward: namingForm.reward,
+          })
+          toast.success('等级更新成功')
+        } else {
+          await namingLevelsApi.create({
+            branchId: namingBranch.id,
+            name: namingForm.name.trim(),
+            threshold: namingForm.threshold,
+            reward: namingForm.reward,
+          })
+          toast.success('等级创建成功')
+        }
       }
       resetNamingForm()
-      // 重新拉取列表
-      const list = await namingLevelsApi.get(namingBranch.id)
-      list.sort((a, b) => b.threshold - a.threshold)
-      setNamingLevels(list)
+      // 重新拉取列表（合厅组取首个成员厅）
+      const targetBranchId = namingGroup
+        ? namingGroup.branches.filter((b) => !b.closed)[0]?.id
+        : namingBranch?.id
+      if (targetBranchId) {
+        const list = await namingLevelsApi.get(targetBranchId)
+        list.sort((a, b) => b.threshold - a.threshold)
+        setNamingLevels(list)
+      }
     } catch (err) {
       toast.error(getErrorMessage(err))
     } finally {
@@ -484,18 +638,148 @@ export default function BranchesPage() {
 
   // 删除等级
   const handleDeleteNaming = async (level: NamingLevel) => {
-    if (!namingBranch) return
+    if (!namingBranch && !namingGroup) return
     if (!window.confirm(`确认删除冠名等级「${level.name}」？`)) return
     try {
-      await namingLevelsApi.remove(level.id)
-      toast.success('删除成功')
+      if (namingGroup) {
+        // 合厅组模式：按名称匹配，批量删除所有成员厅的对应等级
+        const memberBranches = namingGroup.branches.filter((b) => !b.closed)
+        const allLists = await Promise.all(
+          memberBranches.map((b) => namingLevelsApi.get(b.id)),
+        )
+        await Promise.all(
+          memberBranches.map(async (_, idx) => {
+            const matched = allLists[idx].find((l) => l.name === level.name)
+            if (matched) {
+              await namingLevelsApi.remove(matched.id)
+            }
+          }),
+        )
+        toast.success(`已从 ${memberBranches.length} 个成员厅删除`)
+      } else {
+        await namingLevelsApi.remove(level.id)
+        toast.success('删除成功')
+      }
       // 若删除的项正在编辑，重置表单
       if (namingFormId === level.id) resetNamingForm()
-      const list = await namingLevelsApi.get(namingBranch.id)
-      list.sort((a, b) => b.threshold - a.threshold)
-      setNamingLevels(list)
+      // 重新拉取列表
+      const targetBranchId = namingGroup
+        ? namingGroup.branches.filter((b) => !b.closed)[0]?.id
+        : namingBranch?.id
+      if (targetBranchId) {
+        const list = await namingLevelsApi.get(targetBranchId)
+        list.sort((a, b) => b.threshold - a.threshold)
+        setNamingLevels(list)
+      }
     } catch (err) {
       toast.error(getErrorMessage(err))
+    }
+  }
+
+  // 打开时间段倍率弹窗（单厅）：并行加载奖励规则（mxSlotEnabled）和12个时间段倍率
+  const openSlotModal = async (branch: Branch) => {
+    setSlotBranch(branch)
+    setSlotGroup(null)
+    setSlotMultipliers(Array(SLOT_COUNT).fill(1))
+    setSlotEnabled(false)
+    setSlotModalOpen(true)
+    setSlotLoading(true)
+    try {
+      const [rules, multipliers] = await Promise.all([
+        rewardRulesApi.get(branch.id),
+        timeSlotMultipliersApi.get(branch.id),
+      ])
+      const r = rules[0]
+      if (r) setSlotEnabled(r.mxSlotEnabled)
+      // 填充12个倍率，缺失的默认为1
+      const arr = Array(SLOT_COUNT).fill(1)
+      for (const m of multipliers) {
+        if (m.slotIndex >= 0 && m.slotIndex < SLOT_COUNT) {
+          arr[m.slotIndex] = m.multiplier
+        }
+      }
+      setSlotMultipliers(arr)
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setSlotLoading(false)
+    }
+  }
+
+  // 打开时间段倍率弹窗（合厅组）：以第一个成员厅的配置为初始值，保存时批量应用到所有成员厅
+  const openSlotModalForGroup = async (group: BranchGroup) => {
+    const memberBranches = group.branches.filter((b) => !b.closed)
+    if (memberBranches.length === 0) {
+      toast.error('该合厅组没有可用的成员厅')
+      return
+    }
+    setSlotBranch(null)
+    setSlotGroup(group)
+    setSlotMultipliers(Array(SLOT_COUNT).fill(1))
+    setSlotEnabled(false)
+    setSlotModalOpen(true)
+    setSlotLoading(true)
+    try {
+      // 以第一个成员厅的配置作为初始值
+      const firstBranch = memberBranches[0]
+      const [rules, multipliers] = await Promise.all([
+        rewardRulesApi.get(firstBranch.id),
+        timeSlotMultipliersApi.get(firstBranch.id),
+      ])
+      const r = rules[0]
+      if (r) setSlotEnabled(r.mxSlotEnabled)
+      const arr = Array(SLOT_COUNT).fill(1)
+      for (const m of multipliers) {
+        if (m.slotIndex >= 0 && m.slotIndex < SLOT_COUNT) {
+          arr[m.slotIndex] = m.multiplier
+        }
+      }
+      setSlotMultipliers(arr)
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setSlotLoading(false)
+    }
+  }
+
+  // 保存时间段倍率：单厅更新一个，合厅组批量更新所有成员厅
+  const handleSlotSave = async () => {
+    if (!slotBranch && !slotGroup) return
+    setSlotSaving(true)
+    try {
+      if (slotGroup) {
+        // 合厅组模式：批量更新所有成员厅的倍率和开关
+        const memberBranches = slotGroup.branches.filter((b) => !b.closed)
+        const multiplierPayload = slotMultipliers.map((multiplier, slotIndex) => ({
+          slotIndex,
+          multiplier,
+        }))
+        await Promise.all(
+          memberBranches.flatMap((b) => [
+            rewardRulesApi.update(b.id, { mxSlotEnabled: slotEnabled }),
+            timeSlotMultipliersApi.update(b.id, multiplierPayload),
+          ]),
+        )
+        toast.success(`已应用到 ${memberBranches.length} 个成员厅`)
+      } else if (slotBranch) {
+        // 单厅模式
+        await Promise.all([
+          rewardRulesApi.update(slotBranch.id, { mxSlotEnabled: slotEnabled }),
+          timeSlotMultipliersApi.update(
+            slotBranch.id,
+            slotMultipliers.map((multiplier, slotIndex) => ({
+              slotIndex,
+              multiplier,
+            })),
+          ),
+        ])
+        toast.success('时间段倍率保存成功')
+      }
+      setSlotModalOpen(false)
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setSlotSaving(false)
     }
   }
 
@@ -776,6 +1060,27 @@ export default function BranchesPage() {
                       </button>
                       <div className="flex items-center gap-1 shrink-0">
                         <button
+                          onClick={() => openRuleModalForGroup(group)}
+                          className="p-1.5 text-textSecondary hover:text-primary hover:bg-primary/10 rounded transition-colors duration-200 cursor-pointer"
+                          title="奖励规则（合并管理）"
+                        >
+                          <Gift size={15} />
+                        </button>
+                        <button
+                          onClick={() => openSlotModalForGroup(group)}
+                          className="p-1.5 text-textSecondary hover:text-primary hover:bg-primary/10 rounded transition-colors duration-200 cursor-pointer"
+                          title="时间段倍率（合并管理）"
+                        >
+                          <Clock size={15} />
+                        </button>
+                        <button
+                          onClick={() => openNamingModalForGroup(group)}
+                          className="p-1.5 text-textSecondary hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded transition-colors duration-200 cursor-pointer"
+                          title="冠名等级（合并管理）"
+                        >
+                          <Crown size={15} />
+                        </button>
+                        <button
                           onClick={() => openRenameGroupModal(group)}
                           className="p-1.5 text-textSecondary hover:text-primary hover:bg-primary/10 rounded transition-colors duration-200 cursor-pointer"
                           title="重命名合厅组"
@@ -1012,6 +1317,13 @@ export default function BranchesPage() {
                           >
                             <Gift size={16} />
                           </button>
+                          <button
+                            onClick={() => openSlotModal(b)}
+                            className="p-1.5 text-textSecondary hover:text-primary hover:bg-primary/10 rounded transition-colors duration-200 cursor-pointer"
+                            title="时间段倍率"
+                          >
+                            <Clock size={16} />
+                          </button>
                           {b.statCycle === 'MONTH' && (
                             <button
                               onClick={() => openNamingModal(b)}
@@ -1135,7 +1447,11 @@ export default function BranchesPage() {
       {/* 奖励规则弹窗 */}
       <Modal
         open={ruleModalOpen}
-        title={`奖励规则 - ${ruleBranch?.name ?? ''}`}
+        title={
+          ruleGroup
+            ? `奖励规则 - ${ruleGroup.name}（合并管理）`
+            : `奖励规则 - ${ruleBranch?.name ?? ''}`
+        }
         onClose={() => setRuleModalOpen(false)}
         footer={
           <>
@@ -1323,7 +1639,11 @@ export default function BranchesPage() {
       {/* 冠名等级弹窗 */}
       <Modal
         open={namingModalOpen}
-        title={`冠名等级 - ${namingBranch?.name ?? ''}`}
+        title={
+          namingGroup
+            ? `冠名等级 - ${namingGroup.name}（合并管理）`
+            : `冠名等级 - ${namingBranch?.name ?? ''}`
+        }
         onClose={() => setNamingModalOpen(false)}
         width="max-w-2xl"
       >
@@ -1490,6 +1810,93 @@ export default function BranchesPage() {
             </div>
           </div>
         </div>
+      </Modal>
+
+      {/* 时间段倍率弹窗 */}
+      <Modal
+        open={slotModalOpen}
+        title={
+          slotGroup
+            ? `时间段倍率 - ${slotGroup.name}（合并管理）`
+            : `时间段倍率 - ${slotBranch?.name ?? ''}`
+        }
+        onClose={() => setSlotModalOpen(false)}
+        width="max-w-2xl"
+        footer={
+          <>
+            <button
+              onClick={() => setSlotModalOpen(false)}
+              className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleSlotSave}
+              disabled={slotSaving || slotLoading}
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-custom-sm text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+            >
+              {slotSaving ? <Spinner className="h-4 w-4" /> : <Clock size={16} />}
+              {slotSaving ? '保存中...' : '保存倍率'}
+            </button>
+          </>
+        }
+      >
+        {slotLoading ? (
+          <div className="space-y-4">
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </div>
+        ) : (
+          <div className="space-y-5">
+            <p className="text-xs text-textMuted leading-relaxed">
+              {slotGroup
+                ? `合厅组合并管理：保存时将批量应用到该合厅组的所有成员厅。解散合厅组后各厅保留当前设置。`
+                : `开启后，添加数据时可按「日期 + 时间段」录入麦序，系统按各时间段倍率自动换算。`}
+              一天共 12 个时间段（0-2、2-4、...、22-24），每个时间段可独立设置倍率。
+              录入示例：0-2 和 2-4 倍率均为 1.5，分别录 1 麦序 → 实际计入 (1×1.5 + 1×1.5) = 3 麦序。
+            </p>
+
+            {/* 时间段倍率功能开关 */}
+            <ToggleRow
+              label="时间段倍率"
+              desc="开启后添加数据弹窗使用日期+时间段录入，并按倍率自动换算麦序"
+              checked={slotEnabled}
+              onChange={setSlotEnabled}
+            />
+
+            {/* 12 个时间段倍率输入 */}
+            <div
+              className={`grid grid-cols-2 sm:grid-cols-3 gap-3 transition-opacity duration-200 ${
+                slotEnabled ? '' : 'opacity-40 pointer-events-none'
+              }`}
+            >
+              {SLOT_LABELS.map((label, idx) => (
+                <div key={idx}>
+                  <label className="block text-xs text-textSecondary mb-1">
+                    {label} 时段
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={slotMultipliers[idx] ? slotMultipliers[idx] : ''}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setSlotMultipliers((prev) => {
+                        const next = [...prev]
+                        next[idx] = v === '' ? 0 : Number(v)
+                        return next
+                      })
+                    }}
+                    disabled={!slotEnabled}
+                    placeholder="1"
+                    className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200 disabled:cursor-not-allowed"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* 删除厅确认弹窗（需输入登录密码） */}

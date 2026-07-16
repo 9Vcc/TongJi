@@ -22,6 +22,7 @@ interface RewardRuleInput {
   stackRankAndMaixu?: boolean
   zcEnabled?: boolean
   zcDayReward?: number
+  mxSlotEnabled?: boolean
 }
 
 function isBool(v: unknown): boolean {
@@ -114,6 +115,7 @@ export default async function rewardRuleRoutes(fastify: FastifyInstance) {
         'maixuMinEnabled',
         'stackRankAndMaixu',
         'zcEnabled',
+        'mxSlotEnabled',
       ]
 
       const data: Record<string, number | boolean> = {}

@@ -1,11 +1,26 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Save } from "lucide-react";
-import { dataRecordsApi, getErrorMessage } from "../../api";
+import {
+  dataRecordsApi,
+  timeSlotMultipliersApi,
+  getErrorMessage,
+} from "../../api";
 import { useToast } from "../../hooks/useToast";
 import Modal from "../../components/Modal";
 import { Spinner } from "../../components/Skeleton";
+import GroupedSelect from "../../components/GroupedSelect";
+import DatePicker from "../../components/DatePicker";
+import { formatDate } from "../../utils";
 import type { DisplayRow } from "./types";
 import { rowKey } from "./types";
+
+// 时间段数量（0-2、2-4、...、22-24，共12个）
+const SLOT_COUNT = 12;
+// 生成时间段标签：'0-2'、'2-4'、...、'22-24'
+const SLOT_LABELS = Array.from(
+  { length: SLOT_COUNT },
+  (_, i) => `${i * 2}-${i * 2 + 2}`,
+);
 
 interface BatchAddModalProps {
   open: boolean;
@@ -18,10 +33,16 @@ interface BatchAddModalProps {
   sgInputEnabled: boolean;
   qmInputEnabled: boolean;
   zcInputEnabled: boolean;
+  // 时间段倍率功能开关（单厅或合厅模式均可能为 true）
+  mxSlotEnabled: boolean;
+  // 当前生效厅 ID（用于查询时间段倍率，单厅模式）
+  effectiveBranchId?: number;
+  // 合厅组成员厅 ID 列表（用于查询时间段倍率，合厅模式）
+  effectiveBranchIds?: number[];
   isHuizhang: boolean;
   isGroupMode: boolean;
   hasTarget: boolean;
-  // 共用备注（与批量编辑/删除共享）
+  // 共用备注（与批量编辑/删除共享；时间段模式下不使用）
   batchRemark: string;
   onBatchRemarkChange: (v: string) => void;
   onSaved: () => void | Promise<void>;
@@ -39,6 +60,9 @@ export default function BatchAddModal({
   sgInputEnabled,
   qmInputEnabled,
   zcInputEnabled,
+  mxSlotEnabled,
+  effectiveBranchId,
+  effectiveBranchIds,
   isHuizhang,
   isGroupMode,
   hasTarget,
@@ -53,6 +77,14 @@ export default function BatchAddModal({
   >({});
   const [batchAddSubmitting, setBatchAddSubmitting] = useState(false);
 
+  // 时间段模式专用状态
+  const [slotDate, setSlotDate] = useState<string>(formatDate(new Date()));
+  const [slotIndex, setSlotIndex] = useState<number>(0);
+  // 当前厅各时间段的倍率（打开弹窗时加载，缺失默认 1）
+  const [slotMultipliers, setSlotMultipliers] = useState<number[]>(
+    Array(SLOT_COUNT).fill(1),
+  );
+
   // 打开弹窗时初始化：仅列出勾选的行，输入框为空（累加值）
   useEffect(() => {
     if (!open) return;
@@ -65,8 +97,40 @@ export default function BatchAddModal({
       }
     });
     setBatchAddForms(forms);
+    // 时间段模式：重置日期为今天，时间段为 0
+    if (mxSlotEnabled) {
+      setSlotDate(formatDate(new Date()));
+      setSlotIndex(0);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // 时间段模式：打开弹窗时加载时间段倍率
+  // 单厅模式取当前厅；合厅模式取首个成员厅（合并管理后所有厅倍率一致）
+  useEffect(() => {
+    if (!open || !mxSlotEnabled) return;
+    const targetBranchId = isGroupMode
+      ? effectiveBranchIds?.[0]
+      : effectiveBranchId;
+    if (targetBranchId === undefined) return;
+    timeSlotMultipliersApi
+      .get(targetBranchId)
+      .then((multipliers) => {
+        const arr = Array(SLOT_COUNT).fill(1);
+        for (const m of multipliers) {
+          if (m.slotIndex >= 0 && m.slotIndex < SLOT_COUNT) {
+            arr[m.slotIndex] = m.multiplier;
+          }
+        }
+        setSlotMultipliers(arr);
+      })
+      .catch(() => {
+        // 倍率加载失败保持默认 1
+      });
+  }, [open, mxSlotEnabled, effectiveBranchId, isGroupMode, effectiveBranchIds]);
+
+  // 当前选中时间段的倍率
+  const currentMultiplier = slotMultipliers[slotIndex] ?? 1;
 
   // 批量添加：更新某行某字段
   const handleBatchAddFieldChange = (
@@ -89,9 +153,14 @@ export default function BatchAddModal({
       toast.error(isHuizhang ? "请选择厅" : "当前账户未关联厅");
       return;
     }
-    // 备注必填
-    if (!batchRemark.trim()) {
+    // 非时间段模式：备注必填
+    if (!mxSlotEnabled && !batchRemark.trim()) {
       toast.error("请填写备注");
+      return;
+    }
+    // 时间段模式：日期和时间段必填（日期默认今天，必填校验）
+    if (mxSlotEnabled && !slotDate) {
+      toast.error("请选择日期");
       return;
     }
     const entries = Object.entries(batchAddForms);
@@ -149,25 +218,81 @@ export default function BatchAddModal({
     let successCount = 0;
     let failCount = 0;
     try {
-      // 统一使用 create（增量语义）：后端 upsertRecord 会自动累加并触发冠名转换
-      for (const item of parsed) {
-        try {
-          await dataRecordsApi.create({
-            personnelId: item.personnelId,
-            branchId: item.branchId,
-            sg: item.sg,
-            mx: item.mx,
-            qm: item.qm,
-            zcDays: item.zcDays,
-            // 合厅组模式：按各厅 statCycle 归一化 weekStart
-            weekStart: isGroupMode
-              ? getRecordWeekStart(item.branchId)
-              : recordWeekStart,
-            remark: batchRemark.trim() || undefined,
-          });
-          successCount++;
-        } catch {
-          failCount++;
+      if (mxSlotEnabled) {
+        // 时间段模式：调用 createSlot 接口
+        // 单厅模式：所有记录一次提交；合厅模式：按 branchId 分组逐厅提交
+        if (isGroupMode) {
+          // 按 branchId 分组
+          const groupMap = new Map<number, typeof parsed>();
+          for (const p of parsed) {
+            const arr = groupMap.get(p.branchId) ?? []
+            arr.push(p)
+            groupMap.set(p.branchId, arr)
+          }
+          // 逐厅调用 createSlot
+          for (const [branchId, items] of groupMap) {
+            try {
+              await dataRecordsApi.createSlot({
+                branchId,
+                weekStart: getRecordWeekStart(branchId),
+                slotDate,
+                slotIndex,
+                records: items.map((p) => ({
+                  personnelId: p.personnelId,
+                  sg: p.sg,
+                  rawMx: p.mx,
+                  qm: p.qm,
+                  zcDays: p.zcDays,
+                })),
+              });
+              successCount += items.length;
+            } catch {
+              failCount += items.length;
+            }
+          }
+        } else {
+          // 单厅模式
+          const targetBranchId = parsed[0].branchId;
+          try {
+            await dataRecordsApi.createSlot({
+              branchId: targetBranchId,
+              weekStart: recordWeekStart,
+              slotDate,
+              slotIndex,
+              records: parsed.map((p) => ({
+                personnelId: p.personnelId,
+                sg: p.sg,
+                rawMx: p.mx,
+                qm: p.qm,
+                zcDays: p.zcDays,
+              })),
+            });
+            successCount = parsed.length;
+          } catch {
+            failCount = parsed.length;
+          }
+        }
+      } else {
+        // 普通模式：统一使用 create（增量语义）：后端 upsertRecord 会自动累加并触发冠名转换
+        for (const item of parsed) {
+          try {
+            await dataRecordsApi.create({
+              personnelId: item.personnelId,
+              branchId: item.branchId,
+              sg: item.sg,
+              mx: item.mx,
+              qm: item.qm,
+              zcDays: item.zcDays,
+              // 合厅组模式：按各厅 statCycle 归一化 weekStart
+              weekStart: isGroupMode
+                ? getRecordWeekStart(item.branchId)
+                : recordWeekStart,
+              remark: batchRemark.trim() || undefined,
+            });
+            successCount++;
+          } catch {
+            failCount++;
+          }
         }
       }
       if (failCount === 0) {
@@ -177,7 +302,9 @@ export default function BatchAddModal({
       }
       onClose();
       onClearSelection();
-      onBatchRemarkChange("");
+      if (!mxSlotEnabled) {
+        onBatchRemarkChange("");
+      }
       await onSaved();
     } catch (err) {
       toast.error(getErrorMessage(err));
@@ -185,6 +312,12 @@ export default function BatchAddModal({
       setBatchAddSubmitting(false);
     }
   };
+
+  // 麦序列头显示文本（时间段模式追加倍率提示）
+  const mxColumnHeader = useMemo(() => {
+    if (!mxSlotEnabled) return "麦序";
+    return `麦序 × ${currentMultiplier}`;
+  }, [mxSlotEnabled, currentMultiplier]);
 
   return (
     <Modal
@@ -216,26 +349,64 @@ export default function BatchAddModal({
     >
       <div className="space-y-3">
         <p className="text-xs text-textMuted">
-          输入的数值会累加到已录入的数据上（原值 +
-          输入值）。未录入的行将以此数值创建新记录。留空视为
-          0（不累加）。同一人员在多个厅的数据互不影响。
+          {mxSlotEnabled
+            ? `选择日期和时间段后输入数值，系统按该时间段倍率自动换算麦序（当前倍率 × ${currentMultiplier}）。其他数值（收光/全麦/主持天数）不参与倍率换算，直接累加到原值。`
+            : "输入的数值会累加到已录入的数据上（原值 + 输入值）。未录入的行将以此数值创建新记录。留空视为 0（不累加）。同一人员在多个厅的数据互不影响。"}
         </p>
-        {/* 批量添加备注（共用） */}
-        <div>
-          <label className="block text-xs text-textSecondary mb-1">
-            备注
-            <span className="text-danger ml-0.5">*</span>
-            <span className="ml-1 text-[10px] text-textMuted">（共用，覆盖原有备注）</span>
-          </label>
-          <input
-            type="text"
-            maxLength={100}
-            value={batchRemark}
-            onChange={(e) => onBatchRemarkChange(e.target.value)}
-            placeholder="必填，最多 100 字"
-            className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
-          />
-        </div>
+
+        {/* 顶部输入区域：时间段模式显示日期+时间段选择，普通模式显示备注 */}
+        {mxSlotEnabled ? (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-textSecondary mb-1">
+                日期
+                <span className="text-danger ml-0.5">*</span>
+              </label>
+              <DatePicker
+                value={slotDate}
+                onChange={setSlotDate}
+                fullWidth
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-textSecondary mb-1">
+                时间段
+                <span className="text-danger ml-0.5">*</span>
+                <span className="ml-1 text-[10px] text-textMuted">
+                  （倍率 × {currentMultiplier}）
+                </span>
+              </label>
+              <GroupedSelect
+                value={String(slotIndex)}
+                onChange={(val) => setSlotIndex(Number(val))}
+                fullWidth
+                options={SLOT_LABELS.map((label, idx) => ({
+                  value: String(idx),
+                  label: `${label} 时段（× ${slotMultipliers[idx] ?? 1}）`,
+                }))}
+              />
+            </div>
+          </div>
+        ) : (
+          <div>
+            <label className="block text-xs text-textSecondary mb-1">
+              备注
+              <span className="text-danger ml-0.5">*</span>
+              <span className="ml-1 text-[10px] text-textMuted">
+                （共用，覆盖原有备注）
+              </span>
+            </label>
+            <input
+              type="text"
+              maxLength={100}
+              value={batchRemark}
+              onChange={(e) => onBatchRemarkChange(e.target.value)}
+              placeholder="必填，最多 100 字"
+              className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
+            />
+          </div>
+        )}
+
         <div className="max-h-[60vh] overflow-auto scrollbar-thin border border-border rounded-custom-sm">
           <table className="w-full text-sm">
             <thead className="bg-surface border-b border-border sticky top-0 z-10">
@@ -247,7 +418,7 @@ export default function BatchAddModal({
                   收光
                 </th>
                 <th className="px-3 py-2.5 font-medium text-center w-24">
-                  麦序
+                  {mxColumnHeader}
                 </th>
                 {qmInputEnabled && (
                   <th className="px-3 py-2.5 font-medium text-center w-24">
@@ -268,6 +439,12 @@ export default function BatchAddModal({
                 )
                 .map((r) => {
                   const k = rowKey(r.branchId, r.personnelId);
+                  const rawMx = batchAddForms[k]?.mx ?? "";
+                  const rawMxNum = rawMx === "" ? 0 : Number(rawMx);
+                  const convertedMx =
+                    mxSlotEnabled && rawMx !== ""
+                      ? Number((rawMxNum * currentMultiplier).toFixed(2))
+                      : null;
                   return (
                     <tr
                       key={k}
@@ -310,6 +487,11 @@ export default function BatchAddModal({
                           placeholder="0"
                           className="w-full px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono text-center focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
                         />
+                        {mxSlotEnabled && convertedMx !== null && (
+                          <div className="text-[10px] text-primary mt-0.5 font-mono">
+                            = {convertedMx}
+                          </div>
+                        )}
                       </td>
                       {qmInputEnabled && (
                         <td className="px-3 py-2 text-center align-middle">

@@ -37,6 +37,11 @@ export function useDataEntryData({
   const [records, setRecords] = useState<DataRecord[]>([]);
   // 最近一次操作（录入/修改/删除）的备注：从后端 latest-remark 接口获取
   const [latestRemark, setLatestRemark] = useState<string | null>(null);
+  // 最近一次时间段录入的日期和时间段索引：从后端 latest-slot 接口获取
+  const [latestSlot, setLatestSlot] = useState<{
+    slotDate: string | null;
+    slotIndex: number | null;
+  }>({ slotDate: null, slotIndex: null });
   const [personnel, setPersonnel] = useState<Personnel[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [branchGroups, setBranchGroups] = useState<BranchGroup[]>([]);
@@ -153,6 +158,13 @@ export function useDataEntryData({
     ? Array.from(groupRewardRules.values()).some((r) => r.zcEnabled)
     : rewardRule
       ? rewardRule.zcEnabled
+      : false;
+  // 时间段倍率功能：单厅模式取当前厅配置；合厅组模式取任一成员厅配置
+  // （合厅组下所有成员厅设置合并管理，倍率配置保持一致）
+  const mxSlotEnabled = isGroupMode
+    ? Array.from(groupRewardRules.values()).some((r) => r.mxSlotEnabled)
+    : rewardRule
+      ? rewardRule.mxSlotEnabled
       : false;
 
   // 当前厅的冠名等级（仅按月统计厅有配置时加载）
@@ -283,12 +295,14 @@ export function useDataEntryData({
         loadIdRef.current++;
         setRecords([]);
         setLatestRemark(null);
+        setLatestSlot({ slotDate: null, slotIndex: null });
         setLoading(false);
         return;
       }
       const loadId = ++loadIdRef.current;
       setRecords([]);
       setLatestRemark(null);
+      setLatestSlot({ slotDate: null, slotIndex: null });
       setLoading(true);
       try {
         // 按周期分组：周统计厅用 weekStart（周一），月统计厅用 monthStart（月初1日）
@@ -321,7 +335,24 @@ export function useDataEntryData({
         // 合并所有查询结果
         const merged = results.flat();
         setRecords(merged);
-        // 合厅组模式不查 latestRemark（多厅场景无意义）
+        // 合厅组模式：查询所有授权厅中最近的一条备注（不传 branchId，后端按角色过滤）
+        try {
+          const remarkRes = await dataQueryApi.getLatestRemark();
+          if (loadId === loadIdRef.current) {
+            setLatestRemark(remarkRes.remark);
+          }
+        } catch {
+          // 备注查询失败不影响主流程
+        }
+        // 合厅组模式：查询所有授权厅中最近一次时间段录入（不传 branchId，后端按角色过滤）
+        try {
+          const slotRes = await dataQueryApi.getLatestSlot();
+          if (loadId === loadIdRef.current) {
+            setLatestSlot(slotRes);
+          }
+        } catch {
+          // 时间段查询失败不影响主流程
+        }
       } catch (err) {
         if (loadId !== loadIdRef.current) return;
         toast.error(getErrorMessage(err));
@@ -338,12 +369,14 @@ export function useDataEntryData({
       loadIdRef.current++;
       setRecords([]);
       setLatestRemark(null);
+      setLatestSlot({ slotDate: null, slotIndex: null });
       setLoading(false);
       return;
     }
     const loadId = ++loadIdRef.current;
     setRecords([]);
     setLatestRemark(null);
+    setLatestSlot({ slotDate: null, slotIndex: null });
     setLoading(true);
     try {
       if (isMonthCycle) {
@@ -372,6 +405,15 @@ export function useDataEntryData({
         }
       } catch {
         // 备注查询失败不影响主流程
+      }
+      // 查询最近一次时间段录入信息（UI 层按 mxSlotEnabled 控制显示）
+      try {
+        const slotRes = await dataQueryApi.getLatestSlot(effectiveBranchId);
+        if (loadId === loadIdRef.current) {
+          setLatestSlot(slotRes);
+        }
+      } catch {
+        // 时间段查询失败不影响主流程
       }
     } catch (err) {
       if (loadId !== loadIdRef.current) return;
@@ -528,6 +570,7 @@ export function useDataEntryData({
   return {
     records,
     latestRemark,
+    latestSlot,
     personnel,
     branches,
     branchGroups,
@@ -554,6 +597,7 @@ export function useDataEntryData({
     sgInputEnabled,
     qmInputEnabled,
     zcInputEnabled,
+    mxSlotEnabled,
     namingLevels,
     editNamingsEnabled,
     loadData,

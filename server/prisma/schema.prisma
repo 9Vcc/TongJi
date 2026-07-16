@@ -66,6 +66,7 @@ model Account {
   modifiedHistories  DataHistory[] @relation("DataHistoryModifier")
   loginRecords       LoginRecord[] @relation("AccountLoginRecords")
   deductions        Deduction[]   @relation("DeductionCreatedBy")
+  mxTimeSlotRecords  MxTimeSlotRecord[] @relation("MxTimeSlotRecordCreator")
   accountBranches    AccountBranch[]
   accountGroups      AccountGroup[]
 
@@ -126,6 +127,7 @@ model Branch {
   namingLevels      NamingLevel[]
   notifications     Notification[]
   deductions        Deduction[]
+  timeSlotMultipliers TimeSlotMultiplier[]
   // 所属合厅组（参与合厅时关联）
   group             BranchGroup? @relation(fields: [groupId], references: [id])
 
@@ -200,7 +202,7 @@ model DataRecord {
   branchId    Int
   weekStart   DateTime
   sg          Int      @default(0)
-  mx          Int      @default(0)
+  mx          Float    @default(0)
   qm          Int      @default(0)
   zcDays      Int      @default(0)
   createdBy   Int
@@ -213,6 +215,7 @@ model DataRecord {
   creator   Account       @relation("DataRecordCreatedBy", fields: [createdBy], references: [id])
   histories DataHistory[]
   namings   DataRecordNaming[]
+  mxTimeSlotRecords MxTimeSlotRecord[]
 
   // 单字段索引
   @@index([personnelId])
@@ -289,6 +292,8 @@ model RewardRule {
   // 主持天数福利：启用后按录入的主持天数 × 每日福利计入基础福利
   zcEnabled   Boolean  @default(false)
   zcDayReward Int      @default(0)
+  // 时间段倍率功能开关：启用后添加数据时用日期+时间段选择替代备注，麦序按时间段倍率换算
+  mxSlotEnabled Boolean @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -346,4 +351,46 @@ model Deduction {
   @@unique([branchId, personnelId, periodStart])
   @@index([branchId, periodStart])
   @@index([personnelId])
+}
+
+// ============ 时间段倍率表（每厅独立配置）============
+// 12个时间段（0-2, 2-4, ..., 22-24），每个时间段可设置麦序倍率
+// 启用 mxSlotEnabled 后，添加数据时麦序 = 原始麦序 × 时间段倍率
+
+model TimeSlotMultiplier {
+  id         Int    @id @default(autoincrement())
+  branchId   Int
+  slotIndex  Int    // 时间段索引 0-11（0=0-2点, 1=2-4点, ..., 11=22-24点）
+  multiplier Float  @default(1) // 麦序倍率
+
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, slotIndex])
+  @@index([branchId])
+}
+
+// ============ 时间段录入明细表 ============
+// 每次通过"添加数据"弹窗录入的时间段明细记录
+// 关联 DataRecord，存储日期、时间段、原始麦序、倍率快照、换算后麦序及收光/全麦/主持
+
+model MxTimeSlotRecord {
+  id          Int      @id @default(autoincrement())
+  recordId    Int      // 关联 DataRecord
+  slotDate    DateTime // 录入日期（如7月16日 00:00:00）
+  slotIndex   Int      // 时间段索引 0-11
+  rawMx       Int      @default(0) // 原始麦序值（用户输入）
+  multiplier  Float    @default(1) // 录入时的倍率快照
+  convertedMx Float    @default(0) // 换算后麦序 = rawMx × multiplier
+  sg          Int      @default(0) // 收光（不参与倍率）
+  qm          Int      @default(0) // 全麦（不参与倍率）
+  zcDays      Int      @default(0) // 主持天数（不参与倍率）
+  createdBy   Int
+  createdAt   DateTime @default(now())
+
+  record  DataRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  creator Account    @relation("MxTimeSlotRecordCreator", fields: [createdBy], references: [id])
+
+  @@index([recordId])
+  @@index([slotDate])
+  @@index([recordId, slotDate, slotIndex])
 }

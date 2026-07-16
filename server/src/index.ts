@@ -25,6 +25,7 @@ import dataHistoryRoutes from './routes/data-history';
 import loginRecordRoutes from './routes/login-records';
 import namingLevelRoutes from './routes/naming-levels';
 import deductionRoutes from './routes/deductions';
+import timeSlotMultiplierRoutes from './routes/time-slot-multipliers';
 import publicRoutes from './routes/public';
 
 const isDev = process.env.NODE_ENV !== 'production';
@@ -170,6 +171,9 @@ fastify.register(namingLevelRoutes);
 
 // 福利扣减路由（会长+超管可编辑）
 fastify.register(deductionRoutes);
+
+// 时间段倍率管理路由
+fastify.register(timeSlotMultiplierRoutes);
 
 // 公开排名路由（无需登录，所有人可查看）
 fastify.register(publicRoutes);
