@@ -181,7 +181,7 @@ export default async function exportRoutes(fastify: FastifyInstance) {
         }
         row['排名奖金'] = r.rankBonus
         row['麦序奖励'] = r.maixuBonus
-        // 动态添加冠名列：每等级一列，列名固定为"冠名·等级名"
+        // 动态添加冠名列：每等级一列，列名直接用等级名
         // 合并导出时同名等级（不同 levelId）通过累加到同一列名避免覆盖丢数据
         if (hasNaming) {
           const namingMap = new Map<number, number>()
@@ -189,7 +189,7 @@ export default async function exportRoutes(fastify: FastifyInstance) {
             namingMap.set(n.levelId, n.count)
           }
           for (const [levelId, levelName] of namingLevels) {
-            const colName = `冠名·${levelName}`
+            const colName = levelName
             const val = namingMap.get(levelId) ?? 0
             // 累加：处理多厅同名等级（不同 levelId）映射到同一列名的情况
             row[colName] = (row[colName] as number | undefined ?? 0) + val
@@ -300,9 +300,9 @@ export default async function exportRoutes(fastify: FastifyInstance) {
       fields.push({ label: '排名奖金', value: 'rankBonus' })
       fields.push({ label: '麦序奖励', value: 'maixuBonus' })
       if (hasNaming) {
-        // 列名固定为"冠名·等级名"，同名等级合并为一列
+        // 列名直接用等级名，同名等级合并为一列
         for (const levelName of uniqueLevelNames) {
-          fields.push({ label: `冠名·${levelName}`, value: `naming_${levelName}` })
+          fields.push({ label: levelName, value: `naming_${levelName}` })
         }
         fields.push({ label: '冠名福利', value: 'namingWelfare' })
       }
