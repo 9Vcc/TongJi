@@ -60,9 +60,18 @@ async function computeRankingForUser(
   branchIds?: number[]
 ) {
   // 合厅组合并导出：按指定的多个厅 ID 查询并合并
+  // 各厅按各自 statCycle 查询，避免混合周期合厅组用统一 cycle 导致部分厅数据丢失
   if (branchIds && branchIds.length > 0) {
+    const branchInfos = await prisma.branch.findMany({
+      where: { id: { in: branchIds } },
+      select: { id: true, statCycle: true },
+    })
+    const branchCycleMap = new Map(branchInfos.map((b) => [b.id, b.statCycle]))
     const results = await Promise.all(
-      branchIds.map((id) => computeRanking(refDate, id, cycle))
+      branchIds.map((id) => {
+        const bc = branchCycleMap.get(id) ?? cycle
+        return computeRanking(refDate, id, bc)
+      })
     )
     return results.flat()
   }
