@@ -226,6 +226,10 @@ export interface RankingItem {
   zcDays: number
   baseWelfare: number
   zcWelfare: number
+  // 排名奖金（仅前3名）
+  rankBonus: number
+  // 麦序达标奖励
+  maixuBonus: number
   rankReward: number
   totalWelfare: number
   // 冠名福利总额

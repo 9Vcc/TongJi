@@ -5,6 +5,7 @@ import { getWeekStart } from '../utils/week'
 import { computeRanking, resolveQueryBranchId } from '../utils/welfare'
 import prisma from '../lib/prisma'
 import * as xlsx from 'xlsx'
+import { toDecimal2 } from '../utils/validation'
 
 // json2csv 无 TypeScript 类型定义
 const Json2CSVParser = require('json2csv').Parser
@@ -14,6 +15,27 @@ function formatDate(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
+}
+
+/**
+ * 生成导出文件名中的日期段（中文格式）
+ * - MONTH: "2026年6月排名"
+ * - WEEK: "2026年6月第X周排名"（X 为该周在该月的第几周，以周一日期为准）
+ */
+function formatExportDate(refDate: Date, cycle: StatCycle): string {
+  const y = refDate.getFullYear()
+  const m = refDate.getMonth() + 1
+  if (cycle === StatCycle.MONTH) {
+    return `${y}年${m}月排名`
+  }
+  // 按周：计算该周在该月的第几周（以周一所在日期为准）
+  const firstDay = new Date(refDate.getFullYear(), refDate.getMonth(), 1)
+  const firstDayWeek = firstDay.getDay() || 7 // 1=周一...7=周日
+  // 该月第一个周一的日期
+  const firstMondayDate = firstDayWeek === 1 ? 1 : 9 - firstDayWeek
+  // 当前周一是该月第几周
+  const weekOfMonth = Math.floor((refDate.getDate() - firstMondayDate) / 7) + 1
+  return `${y}年${m}月第${weekOfMonth}周排名`
 }
 
 /**
@@ -147,7 +169,8 @@ export default async function exportRoutes(fastify: FastifyInstance) {
         if (zcEnabled) {
           row['主持福利'] = r.zcWelfare
         }
-        row['排名奖励'] = r.rankReward
+        row['排名奖金'] = r.rankBonus
+        row['麦序奖励'] = r.maixuBonus
         // 动态添加冠名列：每等级一列，值为该人员该等级的 count
         if (hasNaming) {
           const namingMap = new Map<number, number>()
@@ -160,12 +183,12 @@ export default async function exportRoutes(fastify: FastifyInstance) {
           row['冠名福利'] = r.namingWelfare
         }
         row['扣减'] = r.deduction
-        row['总福利'] = r.totalWelfare
+        // 总福利与页面显示一致：不含排名奖金（排名奖金仅作为排名激励信息列展示）
+        row['总福利'] = toDecimal2(r.totalWelfare - r.rankBonus)
         return row
       })
 
       const sheetName = cycle === StatCycle.MONTH ? '月排名' : '周排名'
-      const prefix = cycle === StatCycle.MONTH ? '月排名' : '周排名'
       const worksheet = xlsx.utils.json_to_sheet(data)
       const workbook = xlsx.utils.book_new()
       xlsx.utils.book_append_sheet(workbook, worksheet, sheetName)
@@ -174,7 +197,7 @@ export default async function exportRoutes(fastify: FastifyInstance) {
         bookType: 'xlsx',
       })
 
-      const filename = `${branchName}_${prefix}_${formatDate(refDate)}.xlsx`
+      const filename = `${branchName}_${formatExportDate(refDate, cycle)}.xlsx`
       reply.header(
         'Content-Type',
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -250,7 +273,8 @@ export default async function exportRoutes(fastify: FastifyInstance) {
       if (zcEnabled) {
         fields.push({ label: '主持福利', value: 'zcWelfare' })
       }
-      fields.push({ label: '排名奖励', value: 'rankReward' })
+      fields.push({ label: '排名奖金', value: 'rankBonus' })
+      fields.push({ label: '麦序奖励', value: 'maixuBonus' })
       if (hasNaming) {
         for (const [, levelName] of namingLevels) {
           fields.push({ label: `冠名·${levelName}`, value: `naming_${levelName}` })
@@ -279,7 +303,8 @@ export default async function exportRoutes(fastify: FastifyInstance) {
         if (zcEnabled) {
           row['zcWelfare'] = r.zcWelfare
         }
-        row['rankReward'] = r.rankReward
+        row['rankBonus'] = r.rankBonus
+        row['maixuBonus'] = r.maixuBonus
         if (hasNaming) {
           const namingMap = new Map<number, number>()
           for (const n of r.namings ?? []) {
@@ -291,7 +316,8 @@ export default async function exportRoutes(fastify: FastifyInstance) {
           row['namingWelfare'] = r.namingWelfare
         }
         row['deduction'] = r.deduction
-        row['totalWelfare'] = r.totalWelfare
+        // 总福利与页面显示一致：不含排名奖金
+        row['totalWelfare'] = toDecimal2(r.totalWelfare - r.rankBonus)
         return row
       })
 
@@ -300,8 +326,7 @@ export default async function exportRoutes(fastify: FastifyInstance) {
 
       // 添加 BOM 以便 Excel 正确识别 UTF-8 编码
       const bom = '\uFEFF'
-      const prefix = cycle === StatCycle.MONTH ? '月排名' : '周排名'
-      const filename = `${branchName}_${prefix}_${formatDate(refDate)}.csv`
+      const filename = `${branchName}_${formatExportDate(refDate, cycle)}.csv`
       reply.header('Content-Type', 'text/csv; charset=utf-8')
       reply.header(
         'Content-Disposition',

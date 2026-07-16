@@ -112,6 +112,26 @@ export function getMonthRangeText(date: Date | string): string {
 }
 
 /**
+ * 生成导出文件名中的日期段（中文格式）
+ * - MONTH: "2026年6月排名"
+ * - WEEK: "2026年6月第X周排名"（X 为该周在该月的第几周，以周一日期为准）
+ */
+export function formatExportDate(refDate: Date | string, cycle: 'WEEK' | 'MONTH'): string {
+  const d = typeof refDate === 'string' ? new Date(refDate) : refDate
+  const y = d.getFullYear()
+  const m = d.getMonth() + 1
+  if (cycle === 'MONTH') {
+    return `${y}年${m}月排名`
+  }
+  // 按周：计算该周在该月的第几周（以周一所在日期为准）
+  const firstDay = new Date(d.getFullYear(), d.getMonth(), 1)
+  const firstDayWeek = firstDay.getDay() || 7 // 1=周一...7=周日
+  const firstMondayDate = firstDayWeek === 1 ? 1 : 9 - firstDayWeek
+  const weekOfMonth = Math.floor((d.getDate() - firstMondayDate) / 7) + 1
+  return `${y}年${m}月第${weekOfMonth}周排名`
+}
+
+/**
  * 角色显示文本
  */
 export function getRoleText(role: string): string {

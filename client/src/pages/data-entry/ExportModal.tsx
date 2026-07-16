@@ -16,6 +16,7 @@ import {
   getWeekRangeText,
   getMonthRangeText,
   getMonthStart,
+  formatExportDate,
 } from "../../utils";
 import type { Branch, StatCycle } from "../../types";
 
@@ -204,8 +205,8 @@ export default function ExportModal({
       a.href = url;
       const branchName =
         branches.find((b) => b.id === effectiveBranchId)?.name ?? "全部厅";
-      const prefix = exportCycle === "MONTH" ? "月排名" : "周排名";
-      a.download = `${branchName}_${prefix}_${dateParam}.${type === "excel" ? "xlsx" : "csv"}`;
+      const dateLabel = formatExportDate(dateParam, exportCycle);
+      a.download = `${branchName}_${dateLabel}.${type === "excel" ? "xlsx" : "csv"}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -246,9 +247,12 @@ export default function ExportModal({
       results.forEach((result, idx) => {
         const branch = groupBranches[idx];
         if (result.status === "fulfilled") {
-          const prefix = branch.statCycle === "MONTH" ? "月排名" : "周排名";
+          const branchDateLabel = formatExportDate(
+            getBranchExportDate(branch),
+            branch.statCycle,
+          );
           const safeName = sanitizeFileName(branch.name);
-          zip.file(`${safeName}_${prefix}_${dateStr}.${fileExt}`, result.value);
+          zip.file(`${safeName}_${branchDateLabel}.${fileExt}`, result.value);
           successCount++;
         } else {
           failedBranches.push(branch.name);
@@ -265,7 +269,8 @@ export default function ExportModal({
       const a = document.createElement("a");
       a.href = url;
       const safeGroupName = sanitizeFileName(groupName ?? "合厅组");
-      a.download = `${safeGroupName}_导出_${dateStr}.zip`;
+      const zipDateLabel = formatExportDate(dateStr, branchCycle);
+      a.download = `${safeGroupName}_${zipDateLabel}.zip`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -304,9 +309,9 @@ export default function ExportModal({
       const a = document.createElement("a");
       a.href = url;
       const safeGroupName = sanitizeFileName(groupName ?? "合厅组");
-      const prefix = branchCycle === "MONTH" ? "月排名" : "周排名";
+      const dateLabel = formatExportDate(dateStr, branchCycle);
       const fileExt = type === "excel" ? "xlsx" : "csv";
-      a.download = `${safeGroupName}_${prefix}_${dateStr}.${fileExt}`;
+      a.download = `${safeGroupName}_${dateLabel}.${fileExt}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -495,8 +500,8 @@ export default function ExportModal({
         <p className="text-xs text-textMuted">
           {isGroupMode
             ? groupExportMode === "merged"
-              ? `将所有成员厅数据合并到单个文件导出（文件名：${groupName ?? "合厅组"}_${branchCycle === "MONTH" ? "月排名" : "周排名"}_${exportDate}）。`
-              : `将对每个成员厅分别导出，打包为 zip 下载（文件名：${groupName ?? "合厅组"}_导出_${exportDate}.zip）。`
+              ? `将所有成员厅数据合并到单个文件导出（文件名：${groupName ?? "合厅组"}_${formatExportDate(exportDate, branchCycle)}）。`
+              : `将对每个成员厅分别导出，打包为 zip 下载（文件名：${groupName ?? "合厅组"}_${formatExportDate(exportDate, branchCycle)}.zip）。`
             : "导出当前所选厅在该周期内的排名与福利数据。会长未选择厅时无法导出。"}
         </p>
       </div>

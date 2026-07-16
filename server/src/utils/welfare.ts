@@ -21,6 +21,11 @@ export interface RankingItem {
   zcDays: number
   baseWelfare: number
   zcWelfare: number
+  // 排名奖金（仅前3名，受 rankEnabled 控制）
+  rankBonus: number
+  // 麦序达标奖励（受 maixuEnabled 控制）
+  maixuBonus: number
+  // 排名奖励合计 = rankBonus + maixuBonus（考虑叠加开关后）
   rankReward: number
   namingWelfare: number
   deduction: number
@@ -94,6 +99,24 @@ export function computeZcWelfare(
 }
 
 /**
+ * 计算排名奖金（仅前3名，受 rankEnabled 控制）
+ */
+export function computeRankBonus(rank: number, rule: RewardRuleLike): number {
+  if (!rule.rankEnabled) return 0
+  if (rank === 1) return rule.rank1Reward
+  if (rank === 2) return rule.rank2Reward
+  if (rank === 3) return rule.rank3Reward
+  return 0
+}
+
+/**
+ * 计算麦序达标奖励（受 maixuEnabled 控制，与 rankEnabled 无关）
+ */
+export function computeMaixuBonus(mx: number, rule: RewardRuleLike): number {
+  return rule.maixuEnabled && mx >= rule.maixuThreshold ? rule.maixuReward : 0
+}
+
+/**
  * 计算排名奖励（排名奖金 + 麦序达标奖励）
  * - 麦序达标奖励：所有麦序达标（maixuEnabled && mx >= maixuThreshold）者均可获得 maixuReward，
  *   仅受 maixuEnabled 控制，与 rankEnabled 无关
@@ -108,16 +131,8 @@ export function computeRankReward(
   mx: number,
   rule: RewardRuleLike
 ): number {
-  // 麦序达标奖励：仅受 maixuEnabled 控制，与 rankEnabled 无关
-  const maixuBonus =
-    rule.maixuEnabled && mx >= rule.maixuThreshold ? rule.maixuReward : 0
-  // 排名奖金：仅前3名，受 rankEnabled 控制
-  let rankBonus = 0
-  if (rule.rankEnabled) {
-    if (rank === 1) rankBonus = rule.rank1Reward
-    else if (rank === 2) rankBonus = rule.rank2Reward
-    else if (rank === 3) rankBonus = rule.rank3Reward
-  }
+  const rankBonus = computeRankBonus(rank, rule)
+  const maixuBonus = computeMaixuBonus(mx, rule)
   // 叠加开关：前3名（rankBonus > 0）且关闭叠加时，不重复发放 maixuBonus
   if (rankBonus > 0 && !rule.stackRankAndMaixu) {
     return rankBonus
@@ -306,9 +321,14 @@ export async function computeRanking(
       const zcWelfare = maixuDisqualified
         ? 0
         : computeZcWelfare(p.zcDays, rule)
-      const rankReward = maixuDisqualified
-        ? 0
-        : computeRankReward(rank, p.mx, rule)
+      // 排名奖金与麦序达标奖励分别计算（受 maixuDisqualified 门控）
+      const rankBonus = maixuDisqualified ? 0 : computeRankBonus(rank, rule)
+      let maixuBonus = maixuDisqualified ? 0 : computeMaixuBonus(p.mx, rule)
+      // 叠加开关：前3名（rankBonus > 0）且关闭叠加时，不重复发放 maixuBonus
+      if (rankBonus > 0 && !rule.stackRankAndMaixu) {
+        maixuBonus = 0
+      }
+      const rankReward = rankBonus + maixuBonus
 
       // 冠名福利：各等级冠名数 × 对应等级福利
       // 麦序最低标准未达标：无任何福利（含冠名福利）
@@ -344,6 +364,8 @@ export async function computeRanking(
         zcDays: p.zcDays,
         baseWelfare,
         zcWelfare,
+        rankBonus,
+        maixuBonus,
         rankReward,
         namingWelfare: toDecimal2(namingWelfare),
         deduction: deductionMap.get(`${branchId}:${p.personnelId}`) ?? 0,
