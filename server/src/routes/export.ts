@@ -148,15 +148,18 @@ export default async function exportRoutes(fastify: FastifyInstance) {
         : ranking[0]?.branchName ?? '全部厅'
 
       // 收集所有出现过的冠名等级（保持顺序，按 levelId 升序）
-      const namingLevels = new Map<number, string>()
+      // 记录 levelId → { levelName, branchName }，合并导出时用厅名区分同名等级
+      const namingLevels = new Map<number, { levelName: string; branchName: string }>()
       for (const r of ranking) {
         for (const n of r.namings ?? []) {
           if (!namingLevels.has(n.levelId)) {
-            namingLevels.set(n.levelId, n.levelName)
+            namingLevels.set(n.levelId, { levelName: n.levelName, branchName: r.branchName })
           }
         }
       }
       const hasNaming = namingLevels.size > 0
+      // 多厅合并导出时，冠名列名加厅名前缀避免同名等级冲突
+      const isMultiBranch = new Set(ranking.map((r) => r.branchId)).size > 1
 
       const data = ranking.map((r) => {
         const row: Record<string, string | number> = {
@@ -186,8 +189,11 @@ export default async function exportRoutes(fastify: FastifyInstance) {
           for (const n of r.namings ?? []) {
             namingMap.set(n.levelId, n.count)
           }
-          for (const [levelId, levelName] of namingLevels) {
-            row[`冠名·${levelName}`] = namingMap.get(levelId) ?? 0
+          for (const [levelId, info] of namingLevels) {
+            const colName = isMultiBranch
+              ? `冠名·${info.branchName}·${info.levelName}`
+              : `冠名·${info.levelName}`
+            row[colName] = namingMap.get(levelId) ?? 0
           }
           row['冠名福利'] = r.namingWelfare
         }
@@ -253,15 +259,18 @@ export default async function exportRoutes(fastify: FastifyInstance) {
         : ranking[0]?.branchName ?? '全部厅'
 
       // 收集所有出现过的冠名等级
-      const namingLevels = new Map<number, string>()
+      // 记录 levelId → { levelName, branchName }，合并导出时用厅名区分同名等级
+      const namingLevels = new Map<number, { levelName: string; branchName: string }>()
       for (const r of ranking) {
         for (const n of r.namings ?? []) {
           if (!namingLevels.has(n.levelId)) {
-            namingLevels.set(n.levelId, n.levelName)
+            namingLevels.set(n.levelId, { levelName: n.levelName, branchName: r.branchName })
           }
         }
       }
       const hasNaming = namingLevels.size > 0
+      // 多厅合并导出时，冠名列名加厅名前缀避免同名等级冲突
+      const isMultiBranch = new Set(ranking.map((r) => r.branchId)).size > 1
 
       // 构建 CSV 字段：基础列 + 动态冠名列 + 冠名福利 + 扣减 + 总福利
       // 未开启全麦转换的厅不包含全麦列
@@ -285,15 +294,19 @@ export default async function exportRoutes(fastify: FastifyInstance) {
       fields.push({ label: '排名奖金', value: 'rankBonus' })
       fields.push({ label: '麦序奖励', value: 'maixuBonus' })
       if (hasNaming) {
-        for (const [, levelName] of namingLevels) {
-          fields.push({ label: `冠名·${levelName}`, value: `naming_${levelName}` })
+        for (const [levelId, info] of namingLevels) {
+          const label = isMultiBranch
+            ? `冠名·${info.branchName}·${info.levelName}`
+            : `冠名·${info.levelName}`
+          // 用 levelId 作为字段名保证唯一，避免同名等级冲突
+          fields.push({ label, value: `naming_${levelId}` })
         }
         fields.push({ label: '冠名福利', value: 'namingWelfare' })
       }
       fields.push({ label: '扣减', value: 'deduction' })
       fields.push({ label: '总福利', value: 'totalWelfare' })
 
-      // 将 ranking 展平为 CSV 用的行数据：动态冠名等级映射为 naming_<levelName> 字段
+      // 将 ranking 展平为 CSV 用的行数据：动态冠名等级映射为 naming_<levelId> 字段
       const flatRanking = ranking.map((r) => {
         const row: Record<string, string | number> = {
           rank: r.rank,
@@ -319,8 +332,8 @@ export default async function exportRoutes(fastify: FastifyInstance) {
           for (const n of r.namings ?? []) {
             namingMap.set(n.levelId, n.count)
           }
-          for (const [levelId, levelName] of namingLevels) {
-            row[`naming_${levelName}`] = namingMap.get(levelId) ?? 0
+          for (const [levelId] of namingLevels) {
+            row[`naming_${levelId}`] = namingMap.get(levelId) ?? 0
           }
           row['namingWelfare'] = r.namingWelfare
         }
