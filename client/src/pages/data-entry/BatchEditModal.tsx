@@ -282,7 +282,13 @@ export default function BatchEditModal({
                     </span>
                   </div>
                   <div
-                    className={`grid gap-2 ${zcInputEnabled ? "grid-cols-4" : "grid-cols-3"}`}
+                    className={`grid gap-2 ${
+                      qmInputEnabled && zcInputEnabled
+                        ? "grid-cols-4"
+                        : qmInputEnabled || zcInputEnabled
+                          ? "grid-cols-3"
+                          : "grid-cols-2"
+                    }`}
                   >
                     <div>
                       <label className="block text-[10px] text-textSecondary mb-0.5">
@@ -322,28 +328,24 @@ export default function BatchEditModal({
                         className="w-full px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
                       />
                     </div>
-                    <div>
-                      <label className="block text-[10px] text-textSecondary mb-0.5">
-                        全麦
-                        {!qmInputEnabled && (
-                          <span className="text-textMuted">（已关闭）</span>
-                        )}
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        step={1}
-                        value={
-                          qmInputEnabled ? (batchForms[k]?.qm ?? "") : ""
-                        }
-                        onChange={(e) =>
-                          handleBatchFieldChange(k, "qm", e.target.value)
-                        }
-                        placeholder={qmInputEnabled ? "0" : "已关闭"}
-                        disabled={!qmInputEnabled}
-                        className="w-full px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                      />
-                    </div>
+                    {qmInputEnabled && (
+                      <div>
+                        <label className="block text-[10px] text-textSecondary mb-0.5">
+                          全麦
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={batchForms[k]?.qm ?? ""}
+                          onChange={(e) =>
+                            handleBatchFieldChange(k, "qm", e.target.value)
+                          }
+                          placeholder="0"
+                          className="w-full px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
+                        />
+                      </div>
+                    )}
                     {zcInputEnabled && (
                       <div>
                         <label className="block text-[10px] text-textSecondary mb-0.5">

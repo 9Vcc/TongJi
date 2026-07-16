@@ -314,8 +314,10 @@ export default function EditRecordModal({
             emptyText="无匹配人员"
           />
         </div>
-        {/* 收光 / 麦序 / 全麦 */}
-        <div className="grid grid-cols-3 gap-3">
+        {/* 收光 / 麦序 / 全麦（全麦转换关闭时隐藏录入框） */}
+        <div
+          className={`grid gap-3 ${effQmEnabled ? "grid-cols-3" : "grid-cols-2"}`}
+        >
           <div>
             <label className="block text-xs text-textSecondary mb-1">
               收光
@@ -354,28 +356,24 @@ export default function EditRecordModal({
               className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
             />
           </div>
-          <div>
-            <label className="block text-xs text-textSecondary mb-1">
-              全麦
-              {!effQmEnabled && (
-                <span className="ml-1 text-[10px] text-textMuted">
-                  （已关闭）
-                </span>
-              )}
-            </label>
-            <input
-              type="number"
-              min={0}
-              step={1}
-              value={effQmEnabled ? editForm.qm : ""}
-              onChange={(e) =>
-                setEditForm({ ...editForm, qm: e.target.value })
-              }
-              placeholder={effQmEnabled ? "0" : "已关闭"}
-              disabled={!effQmEnabled}
-              className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-            />
-          </div>
+          {effQmEnabled && (
+            <div>
+              <label className="block text-xs text-textSecondary mb-1">
+                全麦
+              </label>
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={editForm.qm}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, qm: e.target.value })
+                }
+                placeholder="0"
+                className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
+              />
+            </div>
+          )}
         </div>
 
         {/* 主持天数：仅厅管理页开启主持福利时显示 */}

@@ -138,9 +138,17 @@ export function useDataEntryData({
     Map<number, NamingLevel[]>
   >(new Map());
 
-  // 合厅组模式：所有厅都显示收光/全麦列（取并集）
+  // 合厅组模式：所有厅都显示收光列（取并集）
   const sgInputEnabled = isGroupMode ? true : rewardRule ? rewardRule.sgEnabled : true;
-  const qmInputEnabled = isGroupMode ? true : rewardRule ? rewardRule.qmEnabled : true;
+  // 合厅组模式：任一成员厅开启全麦转换即显示全麦列；全部关闭则隐藏（无规则的厅默认开启，与单厅一致）
+  const qmInputEnabled = isGroupMode
+    ? effectiveBranchIds.some((bid) => {
+        const rule = groupRewardRules.get(bid);
+        return rule ? rule.qmEnabled : true;
+      })
+    : rewardRule
+      ? rewardRule.qmEnabled
+      : true;
   const zcInputEnabled = isGroupMode
     ? Array.from(groupRewardRules.values()).some((r) => r.zcEnabled)
     : rewardRule

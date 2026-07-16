@@ -239,13 +239,25 @@ export default function BatchAddModal({
         <div className="max-h-[60vh] overflow-auto scrollbar-thin border border-border rounded-custom-sm">
           <table className="w-full text-sm">
             <thead className="bg-surface border-b border-border sticky top-0 z-10">
-              <tr className="text-left text-textSecondary">
-                <th className="px-3 py-2 font-medium">人员</th>
-                <th className="px-3 py-2 font-medium text-center">收光</th>
-                <th className="px-3 py-2 font-medium text-center">麦序</th>
-                <th className="px-3 py-2 font-medium text-center">全麦</th>
+              <tr className="text-textSecondary">
+                <th className="px-4 py-2.5 font-medium text-left whitespace-nowrap min-w-[120px]">
+                  人员
+                </th>
+                <th className="px-3 py-2.5 font-medium text-center w-24">
+                  收光
+                </th>
+                <th className="px-3 py-2.5 font-medium text-center w-24">
+                  麦序
+                </th>
+                {qmInputEnabled && (
+                  <th className="px-3 py-2.5 font-medium text-center w-24">
+                    全麦
+                  </th>
+                )}
                 {zcInputEnabled && (
-                  <th className="px-3 py-2 font-medium text-center">主持天数</th>
+                  <th className="px-3 py-2.5 font-medium text-center w-28">
+                    主持天数
+                  </th>
                 )}
               </tr>
             </thead>
@@ -259,18 +271,18 @@ export default function BatchAddModal({
                   return (
                     <tr
                       key={k}
-                      className={`border-b border-border last:border-0 ${
+                      className={`border-b border-border last:border-0 transition-colors duration-150 ${
                         !r.isRecorded
                           ? "bg-amber-50/50 dark:bg-amber-900/10"
-                          : ""
+                          : "hover:bg-surface"
                       }`}
                     >
-                      <td className="px-3 py-2 text-textPrimary align-middle">
+                      <td className="px-4 py-2 text-textPrimary align-middle whitespace-nowrap">
                         <span className="font-medium">
                           {r.personnelName}
                         </span>
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-3 py-2 text-center align-middle">
                         <input
                           type="number"
                           min={0}
@@ -283,10 +295,10 @@ export default function BatchAddModal({
                           }
                           placeholder={sgInputEnabled ? "0" : "已关闭"}
                           disabled={!sgInputEnabled}
-                          className="w-20 px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono text-center focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="w-full px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono text-center focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                       </td>
-                      <td className="px-2 py-2">
+                      <td className="px-3 py-2 text-center align-middle">
                         <input
                           type="number"
                           min={0}
@@ -296,27 +308,26 @@ export default function BatchAddModal({
                             handleBatchAddFieldChange(k, "mx", e.target.value)
                           }
                           placeholder="0"
-                          className="w-20 px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono text-center focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
+                          className="w-full px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono text-center focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
                         />
                       </td>
-                      <td className="px-2 py-2">
-                        <input
-                          type="number"
-                          min={0}
-                          step={1}
-                          value={
-                            qmInputEnabled ? (batchAddForms[k]?.qm ?? "") : ""
-                          }
-                          onChange={(e) =>
-                            handleBatchAddFieldChange(k, "qm", e.target.value)
-                          }
-                          placeholder={qmInputEnabled ? "0" : "已关闭"}
-                          disabled={!qmInputEnabled}
-                          className="w-20 px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono text-center focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-                        />
-                      </td>
+                      {qmInputEnabled && (
+                        <td className="px-3 py-2 text-center align-middle">
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={batchAddForms[k]?.qm ?? ""}
+                            onChange={(e) =>
+                              handleBatchAddFieldChange(k, "qm", e.target.value)
+                            }
+                            placeholder="0"
+                            className="w-full px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono text-center focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
+                          />
+                        </td>
+                      )}
                       {zcInputEnabled && (
-                        <td className="px-2 py-2">
+                        <td className="px-3 py-2 text-center align-middle">
                           <input
                             type="number"
                             min={0}
@@ -326,7 +337,7 @@ export default function BatchAddModal({
                               handleBatchAddFieldChange(k, "zcDays", e.target.value)
                             }
                             placeholder="0"
-                            className="w-20 px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono text-center focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
+                            className="w-full px-2 py-1.5 border border-border rounded text-sm bg-card text-textPrimary font-mono text-center focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
                           />
                         </td>
                       )}
