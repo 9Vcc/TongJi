@@ -273,12 +273,16 @@ export default function Dashboard() {
     const weekParam = formatDate(weekStart);
     setLoading(true);
     const groupId = isGroupMode ? selectedGroupId : undefined;
+    // 合厅组模式：加载所有厅的规则（用于判断 qmEnabled/zcEnabled）
+    // 单厅模式：仅加载该厅规则
+    const rulesPromise = isGroupMode
+      ? rewardRulesApi.get()
+      : rewardRulesApi.get(branchId!);
     Promise.all([
       dashboardApi.getSummary(weekParam, branchId, currentCycle, undefined, groupId),
       dashboardApi.getCompare(weekParam, branchId, currentCycle, undefined, groupId),
       dashboardApi.getTop3(weekParam, branchId, currentCycle, undefined, groupId),
-      // 合厅组模式不加载单厅规则（qmEnabled 默认 true 显示全麦）
-      isGroupMode ? Promise.resolve([]) : rewardRulesApi.get(branchId!),
+      rulesPromise,
     ])
       .then(([s, c, t, rs]) => {
         setSummary(s);
@@ -293,13 +297,22 @@ export default function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekStart, branchId, currentCycle, isGroupMode, selectedGroupId]);
 
-  // 全麦是否计入福利：合厅组模式默认显示全麦；单厅模式仅当该厅规则关闭全麦转换时为 false
+  // 全麦是否计入福利：任一厅开启即显示
+  // - 合厅组模式：成员厅中任一厅开启全麦即显示全麦数据
+  // - 单厅模式：仅当该厅规则关闭全麦转换时为 false
   const qmEnabled = useMemo(() => {
-    if (isGroupMode) return true;
-    if (!branchId) return true;
-    const rule = rules.find((r) => r.branchId === branchId);
-    return rule ? rule.qmEnabled : true;
-  }, [rules, branchId, isGroupMode]);
+    if (!isGroupMode) {
+      if (!branchId) return true;
+      const rule = rules.find((r) => r.branchId === branchId);
+      return rule ? rule.qmEnabled : true;
+    }
+    if (!selectedGroup) return true;
+    const groupBranchIds = selectedGroup.branches
+      .filter((b) => !b.closed)
+      .map((b) => b.id);
+    const groupRules = rules.filter((r) => groupBranchIds.includes(r.branchId));
+    return groupRules.length > 0 ? groupRules.some((r) => r.qmEnabled) : true;
+  }, [rules, branchId, isGroupMode, selectedGroup]);
 
   // 加载本期数据汇总卡片专用排名数据（跟随页面顶部全局 branchId 切换）
   useEffect(() => {
