@@ -57,23 +57,55 @@ export default function ExportModal({
     formatDate(getWeekStart()),
   );
   const [exporting, setExporting] = useState<"excel" | "csv" | null>(null);
+  // 合厅组导出模式：分开导出（zip）或合并导出（单文件）
+  const [groupExportMode, setGroupExportMode] = useState<"separate" | "merged">(
+    "separate",
+  );
 
   // 打开弹窗：加载历史周次列表，默认选中当前周/月
   // 导出周期固定跟随当前厅的 statCycle，按周厅只能导出按周，按月厅只能导出按月
   useEffect(() => {
     if (!open) return;
-    // 合厅组模式：不依赖单厅 weekStart 列表，直接使用当前周期初始化默认日期
+    // 合厅组模式：查询所有成员厅的历史周次，合并去重
     if (isGroupMode) {
       setExportCycle(branchCycle);
-      if (branchCycle === "MONTH") {
-        const d = new Date();
-        d.setDate(1);
-        setExportDate(formatDate(d));
-      } else {
-        setExportDate(formatDate(getWeekStart()));
-      }
-      setExportWeeks([]);
-      return;
+      let cancelled = false;
+      (async () => {
+        try {
+          const allBranchIds = groupBranches?.map((b) => b.id) ?? [];
+          const list =
+            allBranchIds.length > 0
+              ? await dataQueryApi.getWeeks(undefined, allBranchIds)
+              : [];
+          if (cancelled) return;
+          const set = new Set<string>();
+          list.forEach((w) => set.add(formatDate(new Date(w))));
+          set.add(formatDate(getWeekStart()));
+          const sorted = Array.from(set).sort().reverse();
+          setExportWeeks(sorted);
+          if (branchCycle === "MONTH") {
+            const d = new Date();
+            d.setDate(1);
+            setExportDate(formatDate(d));
+          } else {
+            setExportDate(formatDate(getWeekStart()));
+          }
+        } catch {
+          if (cancelled) return;
+          // 查询失败时回退到当前周/月
+          setExportWeeks([]);
+          if (branchCycle === "MONTH") {
+            const d = new Date();
+            d.setDate(1);
+            setExportDate(formatDate(d));
+          } else {
+            setExportDate(formatDate(getWeekStart()));
+          }
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
     }
     if (!effectiveBranchId) {
       toast.error(isHuizhang ? "请先选择厅" : "当前账户未关联厅");
@@ -253,10 +285,48 @@ export default function ExportModal({
     }
   };
 
+  // 合厅组合并导出：所有成员厅数据合并到单个文件
+  // 使用 branchIds 参数让后端查询所有成员厅数据并合并排名
+  const handleMergedExport = async (type: "excel" | "csv") => {
+    if (!groupBranches || groupBranches.length === 0) {
+      toast.error("合厅组没有可导出的成员厅");
+      return;
+    }
+    setExporting(type);
+    try {
+      const dateStr = exportDate;
+      const allBranchIds = groupBranches.map((b) => b.id);
+      const blob =
+        type === "excel"
+          ? await exportApi.exportExcel(dateStr, undefined, branchCycle, allBranchIds)
+          : await exportApi.exportCSV(dateStr, undefined, branchCycle, allBranchIds);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const safeGroupName = sanitizeFileName(groupName ?? "合厅组");
+      const prefix = branchCycle === "MONTH" ? "月排名" : "周排名";
+      const fileExt = type === "excel" ? "xlsx" : "csv";
+      a.download = `${safeGroupName}_${prefix}_${dateStr}.${fileExt}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      toast.success("合并导出成功");
+    } catch (err) {
+      toast.error(getErrorMessage(err));
+    } finally {
+      setExporting(null);
+    }
+  };
+
   // 导出入口：根据是否合厅组模式分发
   const handleExport = async (type: "excel" | "csv") => {
     if (isGroupMode) {
-      await handleGroupExport(type);
+      if (groupExportMode === "merged") {
+        await handleMergedExport(type);
+      } else {
+        await handleGroupExport(type);
+      }
     } else {
       await handleSingleExport(type);
     }
@@ -288,7 +358,9 @@ export default function ExportModal({
             {exporting === "excel"
               ? "导出中..."
               : isGroupMode
-                ? "导出 Excel (Zip)"
+                ? groupExportMode === "merged"
+                  ? "导出 Excel"
+                  : "导出 Excel (Zip)"
                 : "导出 Excel"}
           </button>
           <button
@@ -304,7 +376,9 @@ export default function ExportModal({
             {exporting === "csv"
               ? "导出中..."
               : isGroupMode
-                ? "导出 CSV (Zip)"
+                ? groupExportMode === "merged"
+                  ? "导出 CSV"
+                  : "导出 CSV (Zip)"
                 : "导出 CSV"}
           </button>
         </>
@@ -327,32 +401,45 @@ export default function ExportModal({
           </div>
         </div>
 
-        {/* 日期选择 */}
+        {/* 合厅组模式：导出方式切换 */}
+        {isGroupMode && (
+          <div>
+            <label className="block text-xs text-textSecondary mb-2">
+              导出方式
+            </label>
+            <div className="inline-flex rounded-custom-sm border border-border overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setGroupExportMode("separate")}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors duration-200 cursor-pointer ${
+                  groupExportMode === "separate"
+                    ? "bg-primary text-white"
+                    : "bg-card text-textSecondary hover:text-textPrimary"
+                }`}
+              >
+                分开导出（Zip）
+              </button>
+              <button
+                type="button"
+                onClick={() => setGroupExportMode("merged")}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors duration-200 cursor-pointer ${
+                  groupExportMode === "merged"
+                    ? "bg-primary text-white"
+                    : "bg-card text-textSecondary hover:text-textPrimary"
+                }`}
+              >
+                合并导出（单文件）
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 日期选择：统一使用下拉列表 */}
         <div>
           <label className="block text-xs text-textSecondary mb-2">
             {exportCycle === "MONTH" ? "选择月份" : "选择周次"}
           </label>
-          {isGroupMode ? (
-            // 合厅组模式：使用原生日期输入，避免依赖单厅的历史周次列表
-            <input
-              type={exportCycle === "MONTH" ? "month" : "date"}
-              value={
-                exportCycle === "MONTH" ? exportDate.slice(0, 7) : exportDate
-              }
-              onChange={(e) => {
-                const val = e.target.value;
-                if (exportCycle === "MONTH") {
-                  // 月份输入：转换为月初日期
-                  const [y, m] = val.split("-").map(Number);
-                  setExportDate(formatDate(new Date(y, m - 1, 1)));
-                } else {
-                  // 周输入：归一到周一
-                  setExportDate(formatDate(getWeekStart(new Date(val))));
-                }
-              }}
-              className="w-full px-3 py-2 border border-border rounded-custom-sm bg-card text-sm text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200 cursor-pointer"
-            />
-          ) : exportCycle === "MONTH" ? (
+          {exportCycle === "MONTH" ? (
             <GroupedSelect
               value={exportDate}
               onChange={(val) => setExportDate(val)}
@@ -407,7 +494,9 @@ export default function ExportModal({
 
         <p className="text-xs text-textMuted">
           {isGroupMode
-            ? `将对每个成员厅分别导出，打包为 zip 下载（文件名：${groupName ?? "合厅组"}_导出_${exportDate}.zip）。`
+            ? groupExportMode === "merged"
+              ? `将所有成员厅数据合并到单个文件导出（文件名：${groupName ?? "合厅组"}_${branchCycle === "MONTH" ? "月排名" : "周排名"}_${exportDate}）。`
+              : `将对每个成员厅分别导出，打包为 zip 下载（文件名：${groupName ?? "合厅组"}_导出_${exportDate}.zip）。`
             : "导出当前所选厅在该周期内的排名与福利数据。会长未选择厅时无法导出。"}
         </p>
       </div>

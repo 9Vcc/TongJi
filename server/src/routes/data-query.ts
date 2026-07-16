@@ -152,14 +152,18 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
 
       const result = records.map((r) => {
         const rule = ruleMap.get(r.branchId)
-        // 冠名福利
+        // 麦序最低标准门控：启用且未达标则无任何福利（含冠名福利）
+        const maixuDisqualified = !!(rule && rule.maixuMinEnabled && r.mx < rule.maixuMinStandard)
+        // 冠名明细（始终展示，未达标时仅不计福利）
         const namings = r.namings.map((n) => ({
           levelId: n.levelId,
           levelName: n.level.name,
           count: n.count,
           reward: Number(n.level.reward),
         }))
-        const namingWelfare = namings.reduce((s, n) => s + n.count * n.reward, 0)
+        const namingWelfare = maixuDisqualified
+          ? 0
+          : namings.reduce((s, n) => s + n.count * n.reward, 0)
         const baseWelfare = rule
           ? calcWelfare(r.sg, r.mx, r.qm, r.zcDays, rule)
           : r.sg * 3 + r.qm * 3

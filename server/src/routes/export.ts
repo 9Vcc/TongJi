@@ -28,13 +28,22 @@ function resolveCycleParam(cycleParam: string | undefined): StatCycle {
  * - 指定单厅：直接调用 computeRanking
  * - 全部厅：会长查所有厅（branchFilter=undefined），超管仅查授权厅（分别查询后合并）
  *   修复超管未指定 branchId 时 computeRanking 查所有厅的越权漏洞
+ * - 指定多厅（branchIds）：分别查询后合并（用于合厅组合并导出）
  */
 async function computeRankingForUser(
   refDate: Date,
   branchFilter: number | undefined,
   cycle: StatCycle,
-  currentUser: { role: Role; branchId: number | null; branchIds: number[] }
+  currentUser: { role: Role; branchId: number | null; branchIds: number[] },
+  branchIds?: number[]
 ) {
+  // 合厅组合并导出：按指定的多个厅 ID 查询并合并
+  if (branchIds && branchIds.length > 0) {
+    const results = await Promise.all(
+      branchIds.map((id) => computeRanking(refDate, id, cycle))
+    )
+    return results.flat()
+  }
   if (branchFilter) {
     return computeRanking(refDate, branchFilter, cycle)
   }
@@ -52,6 +61,27 @@ async function computeRankingForUser(
   return results.flat()
 }
 
+/**
+ * 解析 branchIds 查询参数（逗号分隔），并做权限过滤
+ */
+function parseBranchIdsParam(
+  param: string | undefined,
+  currentUser: { role: Role; branchId: number | null; branchIds: number[] }
+): number[] | undefined {
+  if (!param) return undefined
+  const ids = param
+    .split(',')
+    .map((s) => Number(s.trim()))
+    .filter((n) => !Number.isNaN(n) && n > 0)
+  if (ids.length === 0) return undefined
+  // 权限过滤：超管仅保留授权厅，管理仅保留本厅，会长不限
+  if (currentUser.role === Role.HUIZHANG) return ids
+  if (currentUser.role === Role.CHAOGUAN) {
+    return ids.filter((id) => canAccessBranch(currentUser, id))
+  }
+  return ids.filter((id) => id === currentUser.branchId)
+}
+
 export default async function exportRoutes(fastify: FastifyInstance) {
   // GET /api/export/excel - 导出Excel（支持按周/按月，仅超管及以上可访问）
   // 有冠名数据的厅：导出包含冠名列（按等级动态生成）和冠名福利列
@@ -60,27 +90,31 @@ export default async function exportRoutes(fastify: FastifyInstance) {
     { preHandler: [authenticate, requireRole(Role.CHAOGUAN)] },
     async (request, reply) => {
       const currentUser = request.user
-      const { weekStart: weekStartParam, branchId: branchIdParam, cycle: cycleParam } =
-        request.query as { weekStart?: string; branchId?: string; cycle?: string }
+      const { weekStart: weekStartParam, branchId: branchIdParam, cycle: cycleParam, branchIds: branchIdsParam } =
+        request.query as { weekStart?: string; branchId?: string; cycle?: string; branchIds?: string }
 
       const cycle = resolveCycleParam(cycleParam)
       const refDate = weekStartParam ? new Date(weekStartParam) : new Date()
 
       const branchFilter = resolveQueryBranchId(currentUser, branchIdParam)
-      const ranking = await computeRankingForUser(refDate, branchFilter, cycle, currentUser)
+      const branchIds = parseBranchIdsParam(branchIdsParam, currentUser)
+      const ranking = await computeRankingForUser(refDate, branchFilter, cycle, currentUser, branchIds)
 
-      // 查询该厅奖励规则，判断全麦转换是否开启
-      // 未开启全麦转换的厅：导出列表不包含全麦列
-      const rewardRule = branchFilter
-        ? await prisma.rewardRule.findFirst({
-            where: { branchId: branchFilter },
+      // 查询相关厅的奖励规则（合并导出时可能涉及多个厅）
+      // qmEnabled/zcEnabled：任一厅开启即显示对应列（避免数据丢失）
+      const involvedBranchIds = branchIds ?? (branchFilter ? [branchFilter] : [])
+      const rewardRules = involvedBranchIds.length > 0
+        ? await prisma.rewardRule.findMany({
+            where: { branchId: { in: involvedBranchIds } },
             include: { branch: { select: { name: true } } },
           })
-        : null
-      const qmEnabled = rewardRule?.qmEnabled ?? true
-      const zcEnabled = rewardRule?.zcEnabled ?? false
+        : []
+      const qmEnabled = rewardRules.length > 0 ? rewardRules.some((r) => r.qmEnabled) : true
+      const zcEnabled = rewardRules.length > 0 ? rewardRules.some((r) => r.zcEnabled) : false
       // 厅名用于导出文件名
-      const branchName = rewardRule?.branch?.name ?? ranking[0]?.branchName ?? '全部厅'
+      const branchName = rewardRules.length === 1
+        ? rewardRules[0].branch?.name ?? ranking[0]?.branchName ?? '全部厅'
+        : ranking[0]?.branchName ?? '全部厅'
 
       // 收集所有出现过的冠名等级（保持顺序，按 levelId 升序）
       const namingLevels = new Map<number, string>()
@@ -160,27 +194,31 @@ export default async function exportRoutes(fastify: FastifyInstance) {
     { preHandler: [authenticate, requireRole(Role.CHAOGUAN)] },
     async (request, reply) => {
       const currentUser = request.user
-      const { weekStart: weekStartParam, branchId: branchIdParam, cycle: cycleParam } =
-        request.query as { weekStart?: string; branchId?: string; cycle?: string }
+      const { weekStart: weekStartParam, branchId: branchIdParam, cycle: cycleParam, branchIds: branchIdsParam } =
+        request.query as { weekStart?: string; branchId?: string; cycle?: string; branchIds?: string }
 
       const cycle = resolveCycleParam(cycleParam)
       const refDate = weekStartParam ? new Date(weekStartParam) : new Date()
 
       const branchFilter = resolveQueryBranchId(currentUser, branchIdParam)
-      const ranking = await computeRankingForUser(refDate, branchFilter, cycle, currentUser)
+      const branchIds = parseBranchIdsParam(branchIdsParam, currentUser)
+      const ranking = await computeRankingForUser(refDate, branchFilter, cycle, currentUser, branchIds)
 
-      // 查询该厅奖励规则，判断全麦转换是否开启
-      // 未开启全麦转换的厅：导出列表不包含全麦列
-      const rewardRule = branchFilter
-        ? await prisma.rewardRule.findFirst({
-            where: { branchId: branchFilter },
+      // 查询相关厅的奖励规则（合并导出时可能涉及多个厅）
+      // qmEnabled/zcEnabled：任一厅开启即显示对应列（避免数据丢失）
+      const involvedBranchIds = branchIds ?? (branchFilter ? [branchFilter] : [])
+      const rewardRules = involvedBranchIds.length > 0
+        ? await prisma.rewardRule.findMany({
+            where: { branchId: { in: involvedBranchIds } },
             include: { branch: { select: { name: true } } },
           })
-        : null
-      const qmEnabled = rewardRule?.qmEnabled ?? true
-      const zcEnabled = rewardRule?.zcEnabled ?? false
+        : []
+      const qmEnabled = rewardRules.length > 0 ? rewardRules.some((r) => r.qmEnabled) : true
+      const zcEnabled = rewardRules.length > 0 ? rewardRules.some((r) => r.zcEnabled) : false
       // 厅名用于导出文件名
-      const branchName = rewardRule?.branch?.name ?? ranking[0]?.branchName ?? '全部厅'
+      const branchName = rewardRules.length === 1
+        ? rewardRules[0].branch?.name ?? ranking[0]?.branchName ?? '全部厅'
+        : ranking[0]?.branchName ?? '全部厅'
 
       // 收集所有出现过的冠名等级
       const namingLevels = new Map<number, string>()

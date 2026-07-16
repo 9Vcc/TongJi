@@ -442,15 +442,35 @@ export const dashboardApi = {
 
 // ============ 导出 ============
 export const exportApi = {
-  exportExcel(weekStart?: string, branchId?: number, cycle?: 'WEEK' | 'MONTH') {
+  exportExcel(
+    weekStart?: string,
+    branchId?: number,
+    cycle?: 'WEEK' | 'MONTH',
+    branchIds?: number[],
+  ) {
     return request.get<unknown, Blob>('/export/excel', {
-      params: { weekStart, branchId, cycle },
+      params: {
+        weekStart,
+        branchId,
+        cycle,
+        branchIds: branchIds ? branchIds.join(',') : undefined,
+      },
       responseType: 'blob',
     })
   },
-  exportCSV(weekStart?: string, branchId?: number, cycle?: 'WEEK' | 'MONTH') {
+  exportCSV(
+    weekStart?: string,
+    branchId?: number,
+    cycle?: 'WEEK' | 'MONTH',
+    branchIds?: number[],
+  ) {
     return request.get<unknown, Blob>('/export/csv', {
-      params: { weekStart, branchId, cycle },
+      params: {
+        weekStart,
+        branchId,
+        cycle,
+        branchIds: branchIds ? branchIds.join(',') : undefined,
+      },
       responseType: 'blob',
     })
   },

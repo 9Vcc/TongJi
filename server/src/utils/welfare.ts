@@ -311,14 +311,25 @@ export async function computeRanking(
         : computeRankReward(rank, p.mx, rule)
 
       // 冠名福利：各等级冠名数 × 对应等级福利
+      // 麦序最低标准未达标：无任何福利（含冠名福利）
       const namings: { levelId: number; levelName: string; count: number; reward: number }[] = []
       let namingWelfare = 0
-      for (const [levelId, count] of p.namings) {
-        if (count <= 0) continue
-        const info = levelInfoMap.get(levelId)
-        if (!info) continue
-        namings.push({ levelId, levelName: info.name, count, reward: info.reward })
-        namingWelfare += count * info.reward
+      if (!maixuDisqualified) {
+        for (const [levelId, count] of p.namings) {
+          if (count <= 0) continue
+          const info = levelInfoMap.get(levelId)
+          if (!info) continue
+          namings.push({ levelId, levelName: info.name, count, reward: info.reward })
+          namingWelfare += count * info.reward
+        }
+      } else {
+        // 未达标：仍展示冠名明细（count > 0 的），但不计福利
+        for (const [levelId, count] of p.namings) {
+          if (count <= 0) continue
+          const info = levelInfoMap.get(levelId)
+          if (!info) continue
+          namings.push({ levelId, levelName: info.name, count, reward: info.reward })
+        }
       }
 
       result.push({

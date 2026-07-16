@@ -13,7 +13,6 @@ const Login = lazy(() => import('./pages/Login'))
 // 后台主体
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const DataEntry = lazy(() => import('./pages/DataEntry'))
-const Ranking = lazy(() => import('./pages/Ranking'))
 const Personnel = lazy(() => import('./pages/Personnel'))
 const Settings = lazy(() => import('./pages/Settings'))
 
@@ -92,7 +91,6 @@ function AppRoutes() {
         <Route element={<ProtectedLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/data" element={<DataEntry />} />
-          <Route path="/ranking" element={<Ranking />} />
           <Route path="/personnel" element={<Personnel />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/settings/accounts" element={<AccountsPage />} />

@@ -11,7 +11,8 @@ import { useToast } from '../../hooks/useToast'
 import { Skeleton } from '../../components/Skeleton'
 import SubPageHeader from '../../components/SubPageHeader'
 import SearchableSelect from '../../components/SearchableSelect'
-import { formatDateTime, getRoleText } from '../../utils'
+import DatePicker from '../../components/DatePicker'
+import { formatDateTime, formatDate, getRoleText } from '../../utils'
 import type { LoginRecord, User } from '../../types'
 
 /**
@@ -165,24 +166,15 @@ export default function LoginRecordsPage() {
             <label className="block text-xs text-textSecondary mb-1">
               登录日期
             </label>
-            <div className="relative">
-              <input
-                type="date"
-                value={filterDate}
-                onChange={(e) => setFilterDate(e.target.value)}
-                className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200 cursor-pointer"
-              />
-              {filterDate && (
-                <button
-                  type="button"
-                  onClick={() => setFilterDate('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-textMuted hover:text-textPrimary transition-colors duration-200"
-                  title="清除日期"
-                >
-                  ×
-                </button>
-              )}
-            </div>
+            <DatePicker
+              value={filterDate}
+              onChange={(val) => setFilterDate(val)}
+              fullWidth
+              allowClear
+              showYear
+              maxDate={formatDate(new Date())}
+              placeholder="选择日期"
+            />
           </div>
         </div>
       </motion.div>

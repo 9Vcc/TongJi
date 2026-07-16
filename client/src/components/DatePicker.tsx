@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Calendar, X } from 'lucide-react'
 
 interface DatePickerProps {
-  /** 完整日期 YYYY-MM-DD */
+  /** 完整日期 YYYY-MM-DD，空字符串表示未选择 */
   value: string
-  /** 选择新日期时触发，回传完整日期 YYYY-MM-DD */
+  /** 选择新日期时触发，回传完整日期 YYYY-MM-DD（allowClear 时可能回传空字符串） */
   onChange: (value: string) => void
   /** 最小可选日期（含），默认不限制 */
   minDate?: string
@@ -17,6 +17,10 @@ interface DatePickerProps {
   buttonClassName?: string
   /** 占位提示文本 */
   placeholder?: string
+  /** 是否允许清空（显示清除按钮），默认 false */
+  allowClear?: boolean
+  /** 是否在按钮中显示年份，默认 false（仅显示 X月X日） */
+  showYear?: boolean
 }
 
 /**
@@ -34,6 +38,8 @@ export default function DatePicker({
   fullWidth = false,
   buttonClassName,
   placeholder = '选择日期',
+  allowClear = false,
+  showYear = false,
 }: DatePickerProps) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -94,10 +100,19 @@ export default function DatePicker({
     return cells
   }, [viewYear, viewMonth])
 
-  // 格式化显示文本：X月X日
+  // 格式化显示文本
   const displayText = parsed
-    ? `${parsed.getMonth() + 1}月${parsed.getDate()}日`
+    ? showYear
+      ? `${parsed.getFullYear()}年${parsed.getMonth() + 1}月${parsed.getDate()}日`
+      : `${parsed.getMonth() + 1}月${parsed.getDate()}日`
     : placeholder
+
+  // 清除日期
+  const handleClear = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    onChange('')
+    setOpen(false)
+  }
 
   const handlePrevMonth = () => {
     if (viewMonth === 0) {
@@ -171,7 +186,15 @@ export default function DatePicker({
         <span className={`flex-1 min-w-0 truncate text-left ${!parsed ? 'text-textMuted' : ''}`}>
           {displayText}
         </span>
-        <Calendar size={14} className="flex-shrink-0 text-textMuted" />
+        {allowClear && parsed ? (
+          <X
+            size={14}
+            className="flex-shrink-0 text-textMuted hover:text-danger transition-colors duration-200"
+            onClick={handleClear}
+          />
+        ) : (
+          <Calendar size={14} className="flex-shrink-0 text-textMuted" />
+        )}
       </button>
 
       <AnimatePresence>

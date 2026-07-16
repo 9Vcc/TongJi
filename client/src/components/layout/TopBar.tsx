@@ -8,7 +8,6 @@ import UserMenu from './UserMenu'
 const pageTitleMap: Record<string, string> = {
   '/dashboard': '数据看板',
   '/data': '数据录入',
-  '/ranking': '排名与福利',
   '/personnel': '人员管理',
   '/settings': '系统设置',
   '/settings/accounts': '账户管理',

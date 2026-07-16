@@ -2,7 +2,6 @@ import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard,
   FileInput,
-  Trophy,
   Users,
   Settings,
   BarChart3,
@@ -17,7 +16,6 @@ interface NavItem {
 const navItems: NavItem[] = [
   { to: '/dashboard', label: '数据看板', icon: LayoutDashboard },
   { to: '/data', label: '数据录入', icon: FileInput },
-  { to: '/ranking', label: '排名与福利', icon: Trophy },
   { to: '/personnel', label: '人员管理', icon: Users },
   { to: '/settings', label: '系统设置', icon: Settings },
 ]
