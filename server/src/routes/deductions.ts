@@ -61,7 +61,8 @@ export default async function deductionRoutes(fastify: FastifyInstance) {
   )
 
   // PUT /api/deductions - upsert 扣减金额（会长+超管+管理）
-  // body: { branchId, personnelId, weekStart, cycle, amount, remark }
+  // body: { branchId, personnelId, weekStart, cycle, amount, remark, mode }
+  // mode: 'accumulate'（默认，累加）| 'set'（覆盖，0=清零删除）
   fastify.put(
     '/api/deductions',
     { preHandler: [authenticate, requireRole(Role.GUANLI)] },
@@ -74,6 +75,7 @@ export default async function deductionRoutes(fastify: FastifyInstance) {
         cycle?: 'WEEK' | 'MONTH'
         amount?: number
         remark?: string
+        mode?: 'accumulate' | 'set'
       }
 
       if (
@@ -91,6 +93,7 @@ export default async function deductionRoutes(fastify: FastifyInstance) {
       if (remark && remark.length > 100) {
         return reply.code(400).send({ error: '备注不能超过100字' })
       }
+      const mode = body.mode === 'set' ? 'set' : 'accumulate'
 
       // 权限校验：超管只能操作授权厅；管理只能操作本厅
       if (currentUser.role === Role.CHAOGUAN) {
@@ -122,6 +125,35 @@ export default async function deductionRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: '人员不属于该分部' })
       }
 
+      // 查询现有扣减
+      const existing = await prisma.deduction.findUnique({
+        where: {
+          branchId_personnelId_periodStart: {
+            branchId: body.branchId,
+            personnelId: body.personnelId,
+            periodStart,
+          },
+        },
+      })
+
+      // 计算新金额
+      let newAmount: number
+      if (mode === 'set') {
+        // 覆盖模式：直接使用输入值
+        newAmount = body.amount
+      } else {
+        // 累加模式：在现有金额基础上累加
+        newAmount = (existing?.amount ?? 0) + body.amount
+      }
+
+      // 新金额为 0：删除扣减记录（清零）
+      if (newAmount === 0) {
+        if (existing) {
+          await prisma.deduction.delete({ where: { id: existing.id } })
+        }
+        return reply.send({ id: 0, amount: 0, remark, cleared: true })
+      }
+
       const result = await prisma.deduction.upsert({
         where: {
           branchId_personnelId_periodStart: {
@@ -131,14 +163,14 @@ export default async function deductionRoutes(fastify: FastifyInstance) {
           },
         },
         update: {
-          amount: body.amount,
+          amount: newAmount,
           remark,
         },
         create: {
           branchId: body.branchId,
           personnelId: body.personnelId,
           periodStart,
-          amount: body.amount,
+          amount: newAmount,
           remark,
           createdBy: currentUser.id,
         },

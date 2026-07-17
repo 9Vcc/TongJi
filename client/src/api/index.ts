@@ -569,6 +569,7 @@ export const deductionsApi = {
     cycle: 'WEEK' | 'MONTH'
     amount: number
     remark?: string
+    mode?: 'accumulate' | 'set'
   }) {
     return request.put<unknown, Deduction>('/deductions', data)
   },
