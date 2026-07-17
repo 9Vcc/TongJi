@@ -10,8 +10,6 @@ export type RecordForm = {
   zcDays: string;
   // 冠名数量：levelId -> count（字符串便于输入控制）
   namings: Record<string, string>;
-  // 福利扣减金额（字符串便于输入控制）
-  deduction: string;
   // 操作备注（覆盖式存储到 DataRecord.remark）
   remark: string;
 };
@@ -23,7 +21,6 @@ export const emptyForm: RecordForm = {
   qm: "",
   zcDays: "",
   namings: {},
-  deduction: "",
   remark: "",
 };
 
@@ -38,7 +35,6 @@ export type EditableRecord = {
   qm: number;
   zcDays?: number;
   namings?: NamingItem[];
-  deduction?: number;
 };
 
 // 表格行数据：已录入的记录 + 未录入的人员占位行

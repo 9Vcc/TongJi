@@ -11,6 +11,7 @@ import {
   X,
   Layers,
   AlertTriangle,
+  MinusCircle,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../hooks/useToast";
@@ -27,6 +28,7 @@ import DeleteConfirmModal from "./data-entry/DeleteConfirmModal";
 import BatchEditModal from "./data-entry/BatchEditModal";
 import BatchAddModal from "./data-entry/BatchAddModal";
 import BatchDeleteModal from "./data-entry/BatchDeleteModal";
+import DeductionModal from "./data-entry/DeductionModal";
 import ExportModal from "./data-entry/ExportModal";
 import DataTable from "./data-entry/DataTable";
 import GroupedSelect from "../components/GroupedSelect";
@@ -134,6 +136,7 @@ export default function DataEntry() {
   const [batchEditOpen, setBatchEditOpen] = useState(false);
   const [batchAddOpen, setBatchAddOpen] = useState(false);
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+  const [deductionOpen, setDeductionOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
 
   // 批量编辑/添加/删除的共用备注（多个弹窗共享，由父组件管理）
@@ -480,6 +483,19 @@ export default function DataEntry() {
     setBatchAddOpen(true);
   };
 
+  // 打开扣减弹窗（会长/超管/管理可编辑扣减）
+  const handleOpenDeduction = () => {
+    if (!hasTarget) {
+      toast.error(isHuizhang ? "请选择厅" : "当前账户未关联厅");
+      return;
+    }
+    if (selectedKeys.size === 0) {
+      toast.error("请先勾选要设置扣减的人员");
+      return;
+    }
+    setDeductionOpen(true);
+  };
+
   return (
     <div className="space-y-5">
       {/* 顶部工具栏 */}
@@ -619,6 +635,15 @@ export default function DataEntry() {
             >
               <UserPlus size={16} />
               添加（{selectedKeys.size}）
+            </button>
+          )}
+          {selectedKeys.size > 0 && canEditDeduction && (
+            <button
+              onClick={handleOpenDeduction}
+              className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-custom-sm bg-card text-sm text-textPrimary hover:border-primary hover:text-textPrimary transition-colors duration-200 cursor-pointer"
+            >
+              <MinusCircle size={16} />
+              扣减（{selectedKeys.size}）
             </button>
           )}
           {selectedKeys.size > 0 && canDelete && (
@@ -785,8 +810,6 @@ export default function DataEntry() {
         open={editingRecord !== null}
         onClose={() => setEditingRecord(null)}
         record={editingRecord}
-        effectiveBranchId={effectiveBranchId}
-        weekStart={weekStart}
         branchCycle={branchCycle}
         namingLevels={namingLevels}
         personnelOptions={personnelOptions}
@@ -795,9 +818,7 @@ export default function DataEntry() {
         qmInputEnabled={qmInputEnabled}
         zcInputEnabled={zcInputEnabled}
         editNamingsEnabled={editNamingsEnabled}
-        canEditDeduction={canEditDeduction}
         isGroupMode={isGroupMode}
-        getRecordWeekStart={getRecordWeekStart}
         getBranchCycle={getBranchCycle}
         getNamingLevels={getNamingLevels}
         getRewardRule={getRewardRule}
@@ -855,6 +876,19 @@ export default function DataEntry() {
         selectedKeys={selectedKeys}
         batchRemark={batchRemark}
         onBatchRemarkChange={setBatchRemark}
+        onSaved={loadData}
+        onClearSelection={() => setSelectedKeys(new Set())}
+      />
+      <DeductionModal
+        open={deductionOpen}
+        onClose={() => setDeductionOpen(false)}
+        allRows={allRows}
+        selectedKeys={selectedKeys}
+        weekStart={weekStart}
+        branchCycle={branchCycle}
+        isGroupMode={isGroupMode}
+        getRecordWeekStart={getRecordWeekStart}
+        getBranchCycle={getBranchCycle}
         onSaved={loadData}
         onClearSelection={() => setSelectedKeys(new Set())}
       />

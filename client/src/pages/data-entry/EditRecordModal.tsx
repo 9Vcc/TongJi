@@ -1,14 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   dataRecordsApi,
-  deductionsApi,
   getErrorMessage,
 } from "../../api";
 import { useToast } from "../../hooks/useToast";
 import Modal from "../../components/Modal";
 import SearchableSelect from "../../components/SearchableSelect";
 import { Spinner } from "../../components/Skeleton";
-import { formatDate } from "../../utils";
 import type {
   DataRecord,
   NamingLevel,
@@ -23,8 +21,6 @@ interface EditRecordModalProps {
   // 当打开时传入的记录
   record: EditableRecord | null;
   // 上下文
-  effectiveBranchId: number | undefined;
-  weekStart: Date;
   branchCycle: StatCycle;
   namingLevels: NamingLevel[];
   personnelOptions: { value: string; label: string }[];
@@ -35,11 +31,8 @@ interface EditRecordModalProps {
   qmInputEnabled: boolean;
   zcInputEnabled: boolean;
   editNamingsEnabled: boolean;
-  // 是否可编辑扣减
-  canEditDeduction: boolean;
   // 合厅组模式：按各厅 statCycle 计算 weekStart 和冠名等级
   isGroupMode: boolean;
-  getRecordWeekStart: (branchId?: number) => string;
   getBranchCycle: (branchId?: number) => StatCycle;
   getNamingLevels: (branchId?: number) => NamingLevel[];
   getRewardRule: (branchId?: number) => RewardRule | null;
@@ -51,8 +44,6 @@ export default function EditRecordModal({
   open,
   onClose,
   record,
-  effectiveBranchId,
-  weekStart,
   branchCycle,
   namingLevels,
   personnelOptions,
@@ -61,9 +52,7 @@ export default function EditRecordModal({
   qmInputEnabled,
   zcInputEnabled,
   editNamingsEnabled,
-  canEditDeduction,
   isGroupMode,
-  getRecordWeekStart,
   getBranchCycle,
   getNamingLevels,
   getRewardRule,
@@ -137,7 +126,6 @@ export default function EditRecordModal({
       qm: record.qm ? String(record.qm) : "",
       zcDays: String(record.zcDays ?? 0),
       namings: namingMap,
-      deduction: record.deduction ? String(record.deduction) : "",
       // 备注不预填历史值，每次编辑都需要重新填写
       remark: "",
     });
@@ -173,14 +161,6 @@ export default function EditRecordModal({
       return;
     }
 
-    // 扣减金额校验（会长+超管+管理可编辑）
-    const deductionRaw = editForm.deduction.trim();
-    const deduction = deductionRaw === "" ? 0 : Number(deductionRaw);
-    if (canEditDeduction && (!Number.isInteger(deduction) || deduction < 0)) {
-      toast.error("扣减金额必须为非负整数");
-      return;
-    }
-
     // 校验并构造冠名数量数组（仅按月统计厅启用）
     let namings: { levelId: number; count: number }[] | undefined;
     if (effEditNamings) {
@@ -211,58 +191,10 @@ export default function EditRecordModal({
       // 备注始终传递（覆盖式存储：空字符串会清空备注）
       payload.remark = editForm.remark.trim();
       const original = records.find((r) => r.id === editingId);
-      const targetPersonnelId =
-        original && original.personnelId !== Number(editForm.personnelId)
-          ? Number(editForm.personnelId)
-          : original?.personnelId;
       if (original && original.personnelId !== Number(editForm.personnelId)) {
         payload.personnelId = Number(editForm.personnelId);
       }
       await dataRecordsApi.update(editingId, payload);
-
-      // 保存扣减（仅会长+超管，且必须有厅和人员）
-      // 扣减周期必须基于厅的统计周期（branchCycle），而非用户视图周期（isMonthCycle），
-      // 否则与 data-query.ts 查询时的周期匹配不一致，会导致扣减保存了但查不到
-      // 扣减为 0 时删除记录（实现"可增删"语义），正值时 upsert
-      // 合厅组模式：按记录所属厅计算 weekStart 和 cycle
-      const deduBranchId = isGroupMode
-        ? record.branchId ?? effectiveBranchId
-        : effectiveBranchId;
-      if (canEditDeduction && deduBranchId && targetPersonnelId) {
-        const cycleParam: "WEEK" | "MONTH" =
-          effectiveBranchCycle === "MONTH" ? "MONTH" : "WEEK";
-        // 合厅组模式使用 getRecordWeekStart 按各厅 statCycle 归一化
-        const weekParam = isGroupMode
-          ? getRecordWeekStart(record.branchId)
-          : formatDate(
-              effectiveBranchCycle === "MONTH"
-                ? new Date(weekStart.getFullYear(), weekStart.getMonth(), 1)
-                : weekStart,
-            );
-        try {
-          if (deduction === 0) {
-            // 扣减为 0：删除该周期扣减记录（清零）
-            await deductionsApi.remove({
-              branchId: deduBranchId,
-              personnelId: targetPersonnelId,
-              weekStart: weekParam,
-              cycle: cycleParam,
-            });
-          } else {
-            // 正值：upsert 覆盖旧值（可增可减）
-            await deductionsApi.upsert({
-              branchId: deduBranchId,
-              personnelId: targetPersonnelId,
-              weekStart: weekParam,
-              cycle: cycleParam,
-              amount: deduction,
-            });
-          }
-        } catch (err) {
-          // 扣减保存失败不阻塞主流程，仅提示
-          toast.error("数据已更新，但扣减保存失败：" + getErrorMessage(err));
-        }
-      }
 
       toast.success("修改成功");
       onClose();
@@ -439,30 +371,6 @@ export default function EditRecordModal({
             <p className="mt-1.5 text-[11px] text-textMuted">
               提示：编辑冠名数量为覆盖模式，将直接保存为该记录当前的冠名总数。
             </p>
-          </div>
-        )}
-
-        {/* 福利扣减：会长+超管+管理可编辑 */}
-        {canEditDeduction && (
-          <div>
-            <label className="block text-xs text-textSecondary mb-1">
-              福利扣减
-              <span className="ml-1 text-[10px] text-textMuted">
-                （{effectiveBranchCycle === "MONTH" ? "按月" : "按周"}扣减，最终福利 =
-                福利 - 扣减）
-              </span>
-            </label>
-            <input
-              type="number"
-              min={0}
-              step={1}
-              value={editForm.deduction}
-              onChange={(e) =>
-                setEditForm({ ...editForm, deduction: e.target.value })
-              }
-              placeholder="0"
-              className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
-            />
           </div>
         )}
 
