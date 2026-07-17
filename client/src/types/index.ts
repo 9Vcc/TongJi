@@ -123,6 +123,7 @@ export interface Deduction {
   personnelId: number
   periodStart: string
   amount: number
+  remark: string | null
   createdBy: number
   createdAt: string
   updatedAt: string

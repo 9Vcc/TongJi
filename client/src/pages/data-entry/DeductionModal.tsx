@@ -40,9 +40,11 @@ export default function DeductionModal({
   const toast = useToast();
   // 每行的扣减金额输入：key -> 字符串（空表示清零）
   const [forms, setForms] = useState<Record<string, string>>({});
+  // 共用备注（必填，覆盖式存储到扣减记录）
+  const [remark, setRemark] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // 打开弹窗时初始化：预填当前扣减值
+  // 打开弹窗时初始化：预填当前扣减值，重置备注
   useEffect(() => {
     if (!open) return;
     const next: Record<string, string> = {};
@@ -54,6 +56,7 @@ export default function DeductionModal({
       }
     });
     setForms(next);
+    setRemark("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -65,6 +68,11 @@ export default function DeductionModal({
     const entries = Object.entries(forms);
     if (entries.length === 0) {
       toast.error("无数据可保存");
+      return;
+    }
+    // 备注必填
+    if (!remark.trim()) {
+      toast.error("请填写备注");
       return;
     }
     // 解析并校验
@@ -129,6 +137,7 @@ export default function DeductionModal({
               weekStart: item.weekStartParam,
               cycle: item.cycle,
               amount: item.amount,
+              remark: remark.trim(),
             });
           }
           successCount++;
@@ -187,6 +196,26 @@ export default function DeductionModal({
           {`输入扣减金额会覆盖原值（${cycleText}扣减，最终福利 = 福利 -
           扣减）。留空或填 0 表示清零（删除扣减记录）。`}
         </p>
+
+        <div>
+          <label className="block text-xs text-textSecondary mb-1">
+            备注 <span className="text-danger">*</span>
+          </label>
+          <input
+            type="text"
+            value={remark}
+            onChange={(e) => setRemark(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !submitting) {
+                e.preventDefault();
+                handleSubmit();
+              }
+            }}
+            maxLength={100}
+            placeholder="必填"
+            className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
+          />
+        </div>
 
         <div className="max-h-[60vh] overflow-auto scrollbar-thin border border-border rounded-custom-sm">
           <table className="w-full text-sm">

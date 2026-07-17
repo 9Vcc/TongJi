@@ -61,7 +61,7 @@ export default async function deductionRoutes(fastify: FastifyInstance) {
   )
 
   // PUT /api/deductions - upsert 扣减金额（会长+超管+管理）
-  // body: { branchId, personnelId, weekStart, cycle, amount }
+  // body: { branchId, personnelId, weekStart, cycle, amount, remark }
   fastify.put(
     '/api/deductions',
     { preHandler: [authenticate, requireRole(Role.GUANLI)] },
@@ -73,6 +73,7 @@ export default async function deductionRoutes(fastify: FastifyInstance) {
         weekStart?: string
         cycle?: 'WEEK' | 'MONTH'
         amount?: number
+        remark?: string
       }
 
       if (
@@ -84,6 +85,11 @@ export default async function deductionRoutes(fastify: FastifyInstance) {
       }
       if (!isNonNegInt(body.amount)) {
         return reply.code(400).send({ error: '扣减金额必须为非负整数' })
+      }
+      // 规范化备注：trim、限100字、空字符串归 null
+      const remark = body.remark?.trim() || null
+      if (remark && remark.length > 100) {
+        return reply.code(400).send({ error: '备注不能超过100字' })
       }
 
       // 权限校验：超管只能操作授权厅；管理只能操作本厅
@@ -126,12 +132,14 @@ export default async function deductionRoutes(fastify: FastifyInstance) {
         },
         update: {
           amount: body.amount,
+          remark,
         },
         create: {
           branchId: body.branchId,
           personnelId: body.personnelId,
           periodStart,
           amount: body.amount,
+          remark,
           createdBy: currentUser.id,
         },
       })

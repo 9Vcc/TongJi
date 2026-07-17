@@ -568,6 +568,7 @@ export const deductionsApi = {
     weekStart: string
     cycle: 'WEEK' | 'MONTH'
     amount: number
+    remark?: string
   }) {
     return request.put<unknown, Deduction>('/deductions', data)
   },

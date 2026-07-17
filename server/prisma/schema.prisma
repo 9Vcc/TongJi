@@ -341,6 +341,7 @@ model Deduction {
   personnelId Int
   periodStart DateTime
   amount      Int      @default(0)
+  remark      String?  // 扣减备注（覆盖式存储，限100字）
   createdBy   Int
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
