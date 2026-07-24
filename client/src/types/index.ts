@@ -112,8 +112,25 @@ export interface DataRecord {
   namings?: NamingItem[]
   // 最近一次录入/修改的备注（覆盖式存储）
   remark?: string | null
+  // 无福利标记：true 表示该周期被标记，福利清零（扣减仍生效）
+  noWelfare?: boolean
+  // 无福利标记备注
+  noWelfareRemark?: string | null
   // 最后更新时间（用于按最近修改排序）
   updatedAt?: string
+}
+
+// 无福利标记记录
+export interface NoWelfareMark {
+  id: number
+  branchId: number
+  personnelId: number
+  periodStart: string
+  remark: string | null
+  createdBy: number
+  createdAt: string
+  updatedAt: string
+  personnel?: { id: number; name: string }
 }
 
 // 福利扣减记录
@@ -286,6 +303,10 @@ export interface RankingItem {
   namingWelfare: number
   // 福利扣减
   deduction: number
+  // 无福利标记：true 表示该周期被标记，福利清零（扣减仍生效）
+  noWelfare?: boolean
+  // 无福利标记备注
+  noWelfareRemark?: string | null
   // 冠名明细
   namings: NamingItem[]
 }

@@ -110,11 +110,11 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
         orderBy: [{ branchId: 'asc' }, { personnelId: 'asc' }],
       })
 
-      // 获取相关分部的奖励规则、统计周期、扣减（周/月，三者互不依赖，并行查询）
+      // 获取相关分部的奖励规则、统计周期、扣减、无福利标记（互不依赖，并行查询）
       const branchIds = [...new Set(records.map((r) => r.branchId))]
       // 查询扣减：周统计厅按 weekStart 匹配，月统计厅按 weekStart 所在月的1号匹配
       const monthStart = new Date(weekStart.getFullYear(), weekStart.getMonth(), 1)
-      const [rules, branches, weekDeductions, monthDeductions] = await Promise.all([
+      const [rules, branches, weekDeductions, monthDeductions, weekNoWelfareMarks, monthNoWelfareMarks] = await Promise.all([
         prisma.rewardRule.findMany({
           where: { branchId: { in: branchIds } },
         }),
@@ -129,6 +129,20 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
           },
         }),
         prisma.deduction.findMany({
+          where: {
+            periodStart: monthStart,
+            ...branchWhere,
+          },
+        }),
+        // 无福利标记：周统计厅按 weekStart 匹配
+        prisma.noWelfareMark.findMany({
+          where: {
+            periodStart: weekStart,
+            ...branchWhere,
+          },
+        }),
+        // 无福利标记：月统计厅按 monthStart 匹配
+        prisma.noWelfareMark.findMany({
           where: {
             periodStart: monthStart,
             ...branchWhere,
@@ -149,24 +163,42 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
           deductionMap.set(`${d.branchId}:${d.personnelId}`, d.amount)
         }
       }
+      // 按 (branchId, personnelId) 索引无福利标记
+      const noWelfareMap = new Map<string, { marked: boolean; remark: string | null }>()
+      for (const m of weekNoWelfareMarks) {
+        if (branchCycleMap.get(m.branchId) === StatCycle.WEEK) {
+          noWelfareMap.set(`${m.branchId}:${m.personnelId}`, { marked: true, remark: m.remark })
+        }
+      }
+      for (const m of monthNoWelfareMarks) {
+        if (branchCycleMap.get(m.branchId) === StatCycle.MONTH) {
+          noWelfareMap.set(`${m.branchId}:${m.personnelId}`, { marked: true, remark: m.remark })
+        }
+      }
 
       const result = records.map((r) => {
         const rule = ruleMap.get(r.branchId)
         // 麦序最低标准门控：启用且未达标则无任何福利（含冠名福利）
         const maixuDisqualified = !!(rule && rule.maixuMinEnabled && r.mx < rule.maixuMinStandard)
-        // 冠名明细（始终展示，未达标时仅不计福利）
+        // 无福利标记：标记后福利清零（扣减仍生效，最终福利 = max(0, 0 - deduction) = 0）
+        const noWelfareEntry = noWelfareMap.get(`${r.branchId}:${r.personnelId}`)
+        const noWelfare = !!noWelfareEntry?.marked
+        const noWelfareRemark = noWelfareEntry?.remark ?? null
+        // 冠名明细（始终展示，未达标/无福利时仅不计福利）
         const namings = r.namings.map((n) => ({
           levelId: n.levelId,
           levelName: n.level.name,
           count: n.count,
           reward: Number(n.level.reward),
         }))
-        const namingWelfare = maixuDisqualified
+        const namingWelfare = (maixuDisqualified || noWelfare)
           ? 0
           : namings.reduce((s, n) => s + n.count * n.reward, 0)
-        const baseWelfare = rule
-          ? calcWelfare(r.sg, r.mx, r.qm, r.zcDays, rule)
-          : r.sg * 3 + r.qm * 3
+        const baseWelfare = (maixuDisqualified || noWelfare)
+          ? 0
+          : (rule
+            ? calcWelfare(r.sg, r.mx, r.qm, r.zcDays, rule)
+            : r.sg * 3 + r.qm * 3)
         const welfare = toDecimal2(baseWelfare + namingWelfare)
         const deduction = deductionMap.get(`${r.branchId}:${r.personnelId}`) ?? 0
         return {
@@ -183,6 +215,8 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
           welfare,
           deduction,
           finalWelfare: toDecimal2(welfare - deduction),
+          noWelfare,
+          noWelfareRemark,
           namings,
           remark: r.remark,
           updatedAt: r.updatedAt,
@@ -397,8 +431,8 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
       }
 
       // 构建 branchId 过滤值：
-      // - 会长查全部厅：accessibleIds === null，branchIdValue = undefined（OR 中使用 [{}] 无条件匹配）
-      // - 超管/管理：必须使用授权厅列表过滤，禁止空对象 {} 作为匹配条件（防越权）
+      // - 会长查全部厅：accessibleIds === null，branchIdValue = undefined（不加分支过滤）
+      // - 超管/管理：必须使用授权厅列表过滤
       const accessibleIds = getAccessibleBranchIds(currentUser)
       const branchIdValue: number | { in: number[] } | undefined =
         branchFilter ?? (accessibleIds === null ? undefined : { in: accessibleIds })
@@ -406,27 +440,50 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
       // 查询该厅最近一条有备注的操作记录
       // record 存在时按 branchId 过滤（录入/修改）
       // record 为 null 时为删除操作，通过 modifier.branchId 限定本厅范围
-      const latest = await prisma.dataHistory.findFirst({
-        where: {
-          remark: { not: null },
-          OR: [
-            ...(branchIdValue !== undefined
-              ? [{ record: { branchId: branchIdValue } }]
-              : [{}]),
-            // 删除操作：record 已被删除，通过操作者限定本厅范围
-            ...(branchIdValue !== undefined
-              ? [{ recordId: null, modifier: { branchId: branchIdValue } }]
-              : [{ recordId: null }]),
-          ],
-        },
-        orderBy: { modifyTime: 'desc' },
-        select: { remark: true },
-      })
-
-      if (!latest || !latest.remark) {
-        return reply.send({ remark: null })
+      // 注意：避免在 OR 中使用空对象 {}（Prisma 7.x 可能不正确处理），改为条件构建 where
+      let latest: { remark: string | null } | null = null
+      try {
+        latest = await prisma.dataHistory.findFirst({
+          where: branchIdValue !== undefined
+            ? {
+                remark: { not: null },
+                OR: [
+                  { record: { branchId: branchIdValue } },
+                  { recordId: null, modifier: { branchId: branchIdValue } },
+                ],
+              }
+            : {
+                remark: { not: null },
+              },
+          orderBy: { modifyTime: 'desc' },
+          select: { remark: true },
+        })
+      } catch (err) {
+        request.log.error(err, '查询最近备注失败（DataHistory）')
       }
-      return reply.send({ remark: latest.remark })
+
+      if (latest && latest.remark) {
+        return reply.send({ remark: latest.remark })
+      }
+
+      // Fallback：DataHistory 没有备注时，从 DataRecord.remark 获取（覆盖式存储的最近备注）
+      try {
+        const latestRecord = await prisma.dataRecord.findFirst({
+          where: {
+            remark: { not: null },
+            ...(branchIdValue !== undefined ? { branchId: branchIdValue } : {}),
+          },
+          orderBy: { updatedAt: 'desc' },
+          select: { remark: true },
+        })
+        if (latestRecord && latestRecord.remark) {
+          return reply.send({ remark: latestRecord.remark })
+        }
+      } catch (err) {
+        request.log.error(err, '查询最近备注 fallback 失败（DataRecord）')
+      }
+
+      return reply.send({ remark: null })
     }
   )
 

@@ -12,6 +12,7 @@ import {
   Layers,
   AlertTriangle,
   MinusCircle,
+  Ban,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { useToast } from "../hooks/useToast";
@@ -29,6 +30,7 @@ import BatchEditModal from "./data-entry/BatchEditModal";
 import BatchAddModal from "./data-entry/BatchAddModal";
 import BatchDeleteModal from "./data-entry/BatchDeleteModal";
 import DeductionModal from "./data-entry/DeductionModal";
+import NoWelfareModal from "./data-entry/NoWelfareModal";
 import ExportModal from "./data-entry/ExportModal";
 import DataTable from "./data-entry/DataTable";
 import GroupedSelect from "../components/GroupedSelect";
@@ -53,6 +55,8 @@ export default function DataEntry() {
   const canDelete = isHuizhang || isChaoguan;
   const canEditDeduction =
     isHuizhang || user?.role === "CHAOGUAN" || user?.role === "GUANLI";
+  // 无福利标记：会长+超管可操作
+  const canMarkNoWelfare = isHuizhang || isChaoguan;
 
   // 数据加载与厅配置逻辑抽取到 hook
   const {
@@ -137,6 +141,7 @@ export default function DataEntry() {
   const [batchAddOpen, setBatchAddOpen] = useState(false);
   const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
   const [deductionOpen, setDeductionOpen] = useState(false);
+  const [noWelfareOpen, setNoWelfareOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
 
   // 批量编辑/添加/删除的共用备注（多个弹窗共享，由父组件管理）
@@ -307,6 +312,8 @@ export default function DataEntry() {
               finalWelfare: rec.finalWelfare,
               createdAt: rec.createdAt,
               isRecorded: true,
+              noWelfare: rec.noWelfare,
+              noWelfareRemark: rec.noWelfareRemark,
               namings: rec.namings,
             });
           } else {
@@ -391,6 +398,8 @@ export default function DataEntry() {
         finalWelfare: r.finalWelfare,
         createdAt: r.createdAt,
         isRecorded: true,
+        noWelfare: r.noWelfare,
+        noWelfareRemark: r.noWelfareRemark,
         namings: r.namings,
       })),
       ...unrecorded.map((p) => ({
@@ -494,6 +503,19 @@ export default function DataEntry() {
       return;
     }
     setDeductionOpen(true);
+  };
+
+  // 打开无福利标记弹窗（会长/超管可编辑）
+  const handleOpenNoWelfare = () => {
+    if (!hasTarget) {
+      toast.error(isHuizhang ? "请选择厅" : "当前账户未关联厅");
+      return;
+    }
+    if (selectedKeys.size === 0) {
+      toast.error("请先勾选要标记的人员");
+      return;
+    }
+    setNoWelfareOpen(true);
   };
 
   return (
@@ -644,6 +666,16 @@ export default function DataEntry() {
             >
               <MinusCircle size={16} />
               扣减（{selectedKeys.size}）
+            </button>
+          )}
+          {selectedKeys.size > 0 && canMarkNoWelfare && (
+            <button
+              onClick={handleOpenNoWelfare}
+              className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-custom-sm bg-card text-sm text-textPrimary hover:border-danger hover:text-danger transition-colors duration-200 cursor-pointer"
+              title="标记无福利后人员本期所有福利清零，扣减仍生效"
+            >
+              <Ban size={16} />
+              无福利（{selectedKeys.size}）
             </button>
           )}
           {selectedKeys.size > 0 && canDelete && (
@@ -882,6 +914,19 @@ export default function DataEntry() {
       <DeductionModal
         open={deductionOpen}
         onClose={() => setDeductionOpen(false)}
+        allRows={allRows}
+        selectedKeys={selectedKeys}
+        weekStart={weekStart}
+        branchCycle={branchCycle}
+        isGroupMode={isGroupMode}
+        getRecordWeekStart={getRecordWeekStart}
+        getBranchCycle={getBranchCycle}
+        onSaved={loadData}
+        onClearSelection={() => setSelectedKeys(new Set())}
+      />
+      <NoWelfareModal
+        open={noWelfareOpen}
+        onClose={() => setNoWelfareOpen(false)}
         allRows={allRows}
         selectedKeys={selectedKeys}
         weekStart={weekStart}

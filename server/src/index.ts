@@ -27,6 +27,7 @@ import namingLevelRoutes from './routes/naming-levels';
 import deductionRoutes from './routes/deductions';
 import timeSlotMultiplierRoutes from './routes/time-slot-multipliers';
 import fineRoutes from './routes/fines';
+import noWelfareMarkRoutes from './routes/no-welfare-marks';
 import publicRoutes from './routes/public';
 
 const isDev = process.env.NODE_ENV !== 'production';
@@ -178,6 +179,9 @@ fastify.register(timeSlotMultiplierRoutes);
 
 // 罚款记录路由（仅会长可访问）
 fastify.register(fineRoutes);
+
+// 无福利标记路由（会长+超管可编辑）
+fastify.register(noWelfareMarkRoutes);
 
 // 公开排名路由（无需登录，所有人可查看）
 fastify.register(publicRoutes);

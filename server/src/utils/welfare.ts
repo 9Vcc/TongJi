@@ -30,6 +30,10 @@ export interface RankingItem {
   namingWelfare: number
   deduction: number
   totalWelfare: number
+  // 无福利标记：true 表示该周期被标记，福利清零（扣减仍生效）
+  noWelfare: boolean
+  // 无福利标记备注
+  noWelfareRemark: string | null
   namings: { levelId: number; levelName: string; count: number; reward: number }[]
 }
 
@@ -225,9 +229,9 @@ export async function computeRanking(
 
   if (records.length === 0) return []
 
-  // 获取相关分部的奖励规则、冠名等级、扣减（三者互不依赖，并行查询）
+  // 获取相关分部的奖励规则、冠名等级、扣减、无福利标记（四者互不依赖，并行查询）
   const branchIds = [...new Set(records.map((r) => r.branchId))]
-  const [rules, namingLevels, deductions] = await Promise.all([
+  const [rules, namingLevels, deductions, noWelfareMarks] = await Promise.all([
     prisma.rewardRule.findMany({
       where: { branchId: { in: branchIds } },
     }),
@@ -241,6 +245,13 @@ export async function computeRanking(
         ...(branchFilter ? { branchId: branchFilter } : {}),
       },
     }),
+    // 查询无福利标记：按 cycle 决定 periodStart（与扣减一致）
+    prisma.noWelfareMark.findMany({
+      where: {
+        periodStart,
+        ...(branchFilter ? { branchId: branchFilter } : {}),
+      },
+    }),
   ])
   const ruleMap = new Map(rules.map((r) => [r.branchId, r]))
   const levelInfoMap = new Map(namingLevels.map((l) => [l.id, { name: l.name, reward: Number(l.reward) }]))
@@ -248,6 +259,11 @@ export async function computeRanking(
   const deductionMap = new Map<string, number>()
   for (const d of deductions) {
     deductionMap.set(`${d.branchId}:${d.personnelId}`, d.amount)
+  }
+  // 按 (branchId, personnelId) 索引无福利标记及其备注
+  const noWelfareMap = new Map<string, { marked: boolean; remark: string | null }>()
+  for (const m of noWelfareMarks) {
+    noWelfareMap.set(`${m.branchId}:${m.personnelId}`, { marked: true, remark: m.remark })
   }
 
   // 月模式：按 (branchId, personnelId) 聚合求和
@@ -319,15 +335,19 @@ export async function computeRanking(
       // 麦序最低标准门控：启用且麦序未达标则不计任何福利
       const maixuDisqualified =
         rule.maixuMinEnabled && p.mx < rule.maixuMinStandard
-      const baseWelfare = maixuDisqualified
+      // 无福利标记：标记后福利清零（扣减仍生效，最终福利 = max(0, 0 - deduction) = 0）
+      const noWelfareEntry = noWelfareMap.get(`${branchId}:${p.personnelId}`)
+      const noWelfare = !!noWelfareEntry?.marked
+      const noWelfareRemark = noWelfareEntry?.remark ?? null
+      const baseWelfare = (maixuDisqualified || noWelfare)
         ? 0
         : computeBaseWelfare(p.sg, p.qm, rule)
-      const zcWelfare = maixuDisqualified
+      const zcWelfare = (maixuDisqualified || noWelfare)
         ? 0
         : computeZcWelfare(p.zcDays, rule)
-      // 排名奖金与麦序达标奖励分别计算（受 maixuDisqualified 门控）
-      const rankBonus = maixuDisqualified ? 0 : computeRankBonus(rank, rule)
-      let maixuBonus = maixuDisqualified ? 0 : computeMaixuBonus(p.mx, rule)
+      // 排名奖金与麦序达标奖励分别计算（受 maixuDisqualified / noWelfare 门控）
+      const rankBonus = (maixuDisqualified || noWelfare) ? 0 : computeRankBonus(rank, rule)
+      let maixuBonus = (maixuDisqualified || noWelfare) ? 0 : computeMaixuBonus(p.mx, rule)
       // 叠加开关：前3名（rankBonus > 0）且关闭叠加时，不重复发放 maixuBonus
       if (rankBonus > 0 && !rule.stackRankAndMaixu) {
         maixuBonus = 0
@@ -335,10 +355,10 @@ export async function computeRanking(
       const rankReward = rankBonus + maixuBonus
 
       // 冠名福利：各等级冠名数 × 对应等级福利
-      // 麦序最低标准未达标：无任何福利（含冠名福利）
+      // 麦序最低标准未达标/无福利标记：无任何福利（含冠名福利）
       const namings: { levelId: number; levelName: string; count: number; reward: number }[] = []
       let namingWelfare = 0
-      if (!maixuDisqualified) {
+      if (!maixuDisqualified && !noWelfare) {
         for (const [levelId, count] of p.namings) {
           if (count <= 0) continue
           const info = levelInfoMap.get(levelId)
@@ -347,7 +367,7 @@ export async function computeRanking(
           namingWelfare += count * info.reward
         }
       } else {
-        // 未达标：仍展示冠名明细（count > 0 的），但不计福利
+        // 未达标/无福利：仍展示冠名明细（count > 0 的），但不计福利
         for (const [levelId, count] of p.namings) {
           if (count <= 0) continue
           const info = levelInfoMap.get(levelId)
@@ -374,6 +394,8 @@ export async function computeRanking(
         namingWelfare: toDecimal2(namingWelfare),
         deduction: deductionMap.get(`${branchId}:${p.personnelId}`) ?? 0,
         totalWelfare: Math.max(0, toDecimal2(baseWelfare + zcWelfare + rankReward + namingWelfare - (deductionMap.get(`${branchId}:${p.personnelId}`) ?? 0))),
+        noWelfare,
+        noWelfareRemark,
         namings,
       })
     })

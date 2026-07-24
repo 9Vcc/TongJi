@@ -152,12 +152,12 @@ export default function EditRecordModal({
     const zcDays = effZcEnabled ? Number(editForm.zcDays) : 0;
     if (
       (effSgEnabled && (!Number.isInteger(sg) || sg < 0)) ||
-      !Number.isInteger(mx) ||
+      Number.isNaN(mx) ||
       mx < 0 ||
       (effQmEnabled && (!Number.isInteger(qm) || qm < 0)) ||
       (effZcEnabled && (!Number.isInteger(zcDays) || zcDays < 0))
     ) {
-      toast.error("收光/麦序/全麦/主持天数必须为非负整数");
+      toast.error("收光/全麦/主持天数必须为非负整数，麦序必须为非负数");
       return;
     }
 

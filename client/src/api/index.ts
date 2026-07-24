@@ -25,6 +25,7 @@ import type {
   LoginRecord,
   NamingLevel,
   Deduction,
+  NoWelfareMark,
   TimeSlotMultiplier,
   SlotRecordItem,
   FinePersonnel,
@@ -265,6 +266,7 @@ export const dataRecordsApi = {
     slotDate: string
     slotIndex: number
     records: SlotRecordItem[]
+    remark?: string
   }) {
     return request.post<unknown, DataRecord[]>('/data-records/slot', data)
   },
@@ -669,6 +671,41 @@ export const finesApi = {
         month: params.month,
       },
       responseType: 'blob',
+    })
+  },
+}
+
+// ============ 无福利标记 ============
+export const noWelfareMarksApi = {
+  // 查询指定周期+厅的无福利标记列表
+  list(params: {
+    weekStart: string
+    branchId?: number
+    cycle: 'WEEK' | 'MONTH'
+  }) {
+    return request.get<unknown, NoWelfareMark[]>('/no-welfare-marks', {
+      params,
+    })
+  },
+  // 设置/更新无福利标记（会长+超管）
+  mark(data: {
+    branchId: number
+    personnelId: number
+    weekStart: string
+    cycle: 'WEEK' | 'MONTH'
+    remark?: string
+  }) {
+    return request.put<unknown, NoWelfareMark>('/no-welfare-marks', data)
+  },
+  // 取消无福利标记（会长+超管）
+  unmark(data: {
+    branchId: number
+    personnelId: number
+    weekStart: string
+    cycle: 'WEEK' | 'MONTH'
+  }) {
+    return request.delete<unknown, { message: string }>('/no-welfare-marks', {
+      data,
     })
   },
 }

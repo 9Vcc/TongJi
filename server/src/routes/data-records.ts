@@ -598,6 +598,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         slotDate?: string
         slotIndex?: number
         records?: { personnelId: number; sg: number; rawMx: number; qm: number; zcDays: number }[]
+        remark?: string
       }
 
       // 解析 weekStart
@@ -606,6 +607,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: parsedWeekStart.error })
       }
       const weekStart = parsedWeekStart && parsedWeekStart.ok ? parsedWeekStart.date : getWeekStart()
+      const remark = normalizeRemark(body.remark)
 
       // 解析 slotDate
       const parsedSlotDate = parseWeekStart(body.slotDate)
@@ -630,7 +632,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
           return reply.code(400).send({ error: `第${i + 1}条记录：人员ID不能为空` })
         }
         if (!isNonNegInt(r.sg)) return reply.code(400).send({ error: `第${i + 1}条记录：收光必须为非负整数` })
-        if (!isNonNegInt(r.rawMx)) return reply.code(400).send({ error: `第${i + 1}条记录：麦序必须为非负整数` })
+        if (!isNonNegDecimal2(r.rawMx)) return reply.code(400).send({ error: `第${i + 1}条记录：麦序必须为非负数（最多两位小数）` })
         if (!isNonNegInt(r.qm)) return reply.code(400).send({ error: `第${i + 1}条记录：全麦必须为非负整数` })
         if (!isNonNegInt(r.zcDays)) return reply.code(400).send({ error: `第${i + 1}条记录：主持天数必须为非负整数` })
       }
@@ -698,7 +700,7 @@ export default async function dataRecordRoutes(fastify: FastifyInstance) {
             multiplier,
             convertedMx,
           }
-          const rec = await upsertRecord(tx, input, currentUser.id, weekStart, namingLevels, null, slotInfo)
+          const rec = await upsertRecord(tx, input, currentUser.id, weekStart, namingLevels, remark, slotInfo)
           results.push(rec)
         }
         return results

@@ -341,8 +341,8 @@ export function useDataEntryData({
           if (loadId === loadIdRef.current) {
             setLatestRemark(remarkRes.remark);
           }
-        } catch {
-          // 备注查询失败不影响主流程
+        } catch (err) {
+          console.error('[loadData] 查询最近备注失败:', err)
         }
         // 合厅组模式：查询所有授权厅中最近一次时间段录入（不传 branchId，后端按角色过滤）
         try {
@@ -403,8 +403,8 @@ export function useDataEntryData({
         if (loadId === loadIdRef.current) {
           setLatestRemark(remarkRes.remark);
         }
-      } catch {
-        // 备注查询失败不影响主流程
+      } catch (err) {
+        console.error('[loadData] 查询最近备注失败:', err)
       }
       // 查询最近一次时间段录入信息（UI 层按 mxSlotEnabled 控制显示）
       try {

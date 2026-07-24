@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, Trash2, Ban } from "lucide-react";
 import { TableSkeleton } from "../../components/Skeleton";
 import { formatNamings } from "../../utils";
 import type { StatCycle } from "../../types";
@@ -155,6 +155,20 @@ export default function DataTable({
                             {isGroupMode && r.branchName && (
                               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-primary/10 text-primary">
                                 {r.branchName}
+                              </span>
+                            )}
+                            {/* 无福利标记徽标 */}
+                            {r.noWelfare && (
+                              <span
+                                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] bg-danger/10 text-danger"
+                                title={
+                                  r.noWelfareRemark
+                                    ? `无福利标记：${r.noWelfareRemark}`
+                                    : "无福利标记：本期所有福利清零"
+                                }
+                              >
+                                <Ban size={10} />
+                                无福利
                               </span>
                             )}
                             {/* 合并同名模式：聚合标识 */}

@@ -68,6 +68,7 @@ model Account {
   deductions        Deduction[]   @relation("DeductionCreatedBy")
   mxTimeSlotRecords  MxTimeSlotRecord[] @relation("MxTimeSlotRecordCreator")
   fines              Fine[]         @relation("FineCreatedBy")
+  noWelfareMarks     NoWelfareMark[] @relation("NoWelfareMarkCreator")
   accountBranches    AccountBranch[]
   accountGroups      AccountGroup[]
 
@@ -129,6 +130,7 @@ model Branch {
   notifications     Notification[]
   deductions        Deduction[]
   timeSlotMultipliers TimeSlotMultiplier[]
+  noWelfareMarks    NoWelfareMark[]
   // 所属合厅组（参与合厅时关联）
   group             BranchGroup? @relation(fields: [groupId], references: [id])
 
@@ -178,6 +180,7 @@ model Personnel {
   personnelBranches PersonnelBranch[]
   dataRecords       DataRecord[]
   deductions        Deduction[]
+  noWelfareMarks    NoWelfareMark[]
 }
 
 // ============ 人员-分部关联表 ============
@@ -429,4 +432,27 @@ model Fine {
   @@index([personnelId])
   @@index([fineDate])
   @@index([reasonType])
+}
+
+// ============ 无福利标记表 ============
+// 标记某人员在某周期内福利清零（不管多少麦序/收光/冠名，福利均为0，扣减仍生效）
+// periodStart：周统计厅=该周周一，月统计厅=该月1号（与 Deduction 一致）
+// 标记后 totalWelfare = max(0, 0 - deduction) = 0
+model NoWelfareMark {
+  id          Int      @id @default(autoincrement())
+  branchId    Int
+  personnelId Int
+  periodStart DateTime
+  remark      String?
+  createdBy   Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  branch    Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  personnel Personnel @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  creator   Account   @relation("NoWelfareMarkCreator", fields: [createdBy], references: [id])
+
+  @@unique([branchId, personnelId, periodStart])
+  @@index([branchId, periodStart])
+  @@index([personnelId])
 }
