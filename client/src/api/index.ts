@@ -34,6 +34,8 @@ import type {
   FineSummary,
   FineReasonType,
   HostFlowRecord,
+  ViolationItem,
+  ViolationRecord,
 } from '../types'
 
 const request = axios.create({
@@ -760,6 +762,41 @@ export const hostFlowApi = {
     return request.get<unknown, string[]>('/host-flow-records/months', {
       params: branchId ? { branchId } : undefined,
     })
+  },
+}
+
+// ============ 违规项目配置 ============
+export const violationItemsApi = {
+  list(branchId?: number) {
+    return request.get<unknown, ViolationItem[]>('/violation-items', { params: branchId ? { branchId } : undefined })
+  },
+  create(data: { branchId: number; name: string; deductionAmount?: number; thresholdCount?: number }) {
+    return request.post<unknown, ViolationItem>('/violation-items', data)
+  },
+  update(id: number, data: { name?: string; deductionAmount?: number; thresholdCount?: number }) {
+    return request.put<unknown, ViolationItem>(`/violation-items/${id}`, data)
+  },
+  delete(id: number) {
+    return request.delete<unknown, { message: string }>(`/violation-items/${id}`)
+  },
+}
+
+// ============ 违规记录 ============
+export const violationRecordsApi = {
+  list(params: { branchId?: number; periodStart: string }) {
+    return request.get<unknown, ViolationRecord[]>('/violation-records', { params })
+  },
+  listMonths(branchId?: number) {
+    return request.get<unknown, string[]>('/violation-records/months', { params: branchId ? { branchId } : undefined })
+  },
+  create(data: { branchId: number; personnelId: number; violationItemId: number; violationDate: string; periodStart: string; remark?: string }) {
+    return request.post<unknown, ViolationRecord>('/violation-records', data)
+  },
+  update(id: number, data: { violationItemId?: number; violationDate?: string; periodStart?: string; remark?: string }) {
+    return request.put<unknown, ViolationRecord>(`/violation-records/${id}`, data)
+  },
+  delete(id: number) {
+    return request.delete<unknown, { message: string }>(`/violation-records/${id}`)
   },
 }
 

@@ -110,11 +110,14 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
         orderBy: [{ branchId: 'asc' }, { personnelId: 'asc' }],
       })
 
-      // 获取相关分部的奖励规则、统计周期、扣减、无福利标记（互不依赖，并行查询）
+      // 获取相关分部的奖励规则、统计周期、扣减、无福利标记、违规记录（互不依赖，并行查询）
       const branchIds = [...new Set(records.map((r) => r.branchId))]
       // 查询扣减：周统计厅按 weekStart 匹配，月统计厅按 weekStart 所在月的1号匹配
       const monthStart = new Date(weekStart.getFullYear(), weekStart.getMonth(), 1)
-      const [rules, branches, weekDeductions, monthDeductions, weekNoWelfareMarks, monthNoWelfareMarks] = await Promise.all([
+      // 违规记录 periodStart 存储为 new Date('YYYY-MM-01')（UTC），需用同格式查询
+      const violationMonthStr = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-01`
+      const violationPeriodStart = new Date(violationMonthStr)
+      const [rules, branches, weekDeductions, monthDeductions, weekNoWelfareMarks, monthNoWelfareMarks, violationRecords, violationItems] = await Promise.all([
         prisma.rewardRule.findMany({
           where: { branchId: { in: branchIds } },
         }),
@@ -148,6 +151,19 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
             ...branchWhere,
           },
         }),
+        // 违规记录：按月查询（periodStart 为 UTC 月初1日，与存储格式一致）
+        prisma.violationRecord.findMany({
+          where: {
+            periodStart: violationPeriodStart,
+            ...branchWhere,
+          },
+          include: { item: { select: { id: true, thresholdCount: true } } },
+        }),
+        // 违规项目：按厅查询，用于阈值判断
+        prisma.violationItem.findMany({
+          where: { branchId: { in: branchIds } },
+          select: { id: true, thresholdCount: true },
+        }),
       ])
       const ruleMap = new Map(rules.map((r) => [r.branchId, r]))
       const branchCycleMap = new Map(branches.map((b) => [b.id, b.statCycle]))
@@ -175,15 +191,40 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
           noWelfareMap.set(`${m.branchId}:${m.personnelId}`, { marked: true, remark: m.remark })
         }
       }
+      // 违规项目阈值索引：itemId -> thresholdCount
+      const violationThresholdMap = new Map<number, number>()
+      for (const item of violationItems) {
+        violationThresholdMap.set(item.id, item.thresholdCount)
+      }
+      // 违规记录按 (branchId, personnelId) 分组，统计每项违规次数
+      // 当某项目违规次数 >= thresholdCount 时，标记 violationCleared = true
+      const violationClearedSet = new Set<string>()
+      const violationCountMap = new Map<string, Map<number, number>>()
+      for (const v of violationRecords) {
+        const key = `${v.branchId}:${v.personnelId}`
+        const threshold = violationThresholdMap.get(v.violationItemId) ?? 0
+        if (threshold <= 0) continue
+        const itemMap = violationCountMap.get(key) ?? new Map<number, number>()
+        itemMap.set(v.violationItemId, (itemMap.get(v.violationItemId) ?? 0) + 1)
+        violationCountMap.set(key, itemMap)
+        if (itemMap.get(v.violationItemId)! >= threshold) {
+          violationClearedSet.add(key)
+        }
+      }
 
       const result = records.map((r) => {
         const rule = ruleMap.get(r.branchId)
         // 麦序最低标准门控：启用且未达标则无任何福利（含冠名福利）
         const maixuDisqualified = !!(rule && rule.maixuMinEnabled && r.mx < rule.maixuMinStandard)
-        // 无福利标记：标记后福利清零（扣减仍生效，最终福利 = max(0, 0 - deduction) = 0）
+        // 无福利标记：手动标记 或 违规阈值清空，福利清零
         const noWelfareEntry = noWelfareMap.get(`${r.branchId}:${r.personnelId}`)
-        const noWelfare = !!noWelfareEntry?.marked
-        const noWelfareRemark = noWelfareEntry?.remark ?? null
+        const manualNoWelfare = !!noWelfareEntry?.marked
+        const violationCleared = violationClearedSet.has(`${r.branchId}:${r.personnelId}`)
+        const noWelfare = manualNoWelfare || violationCleared
+        // 备注优先显示手动标记备注；违规阈值清空时显示提示
+        const noWelfareRemark = manualNoWelfare
+          ? (noWelfareEntry?.remark ?? null)
+          : (violationCleared ? '违规达到阈值，福利清零' : null)
         // 冠名明细（始终展示，未达标/无福利时仅不计福利）
         const namings = r.namings.map((n) => ({
           levelId: n.levelId,
@@ -214,7 +255,8 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
           zcDays: r.zcDays,
           welfare,
           deduction,
-          finalWelfare: toDecimal2(welfare - deduction),
+          // 无福利标记或违规阈值清空：总福利清零（扣减仍记录，但最终福利为0）
+          finalWelfare: noWelfare ? 0 : toDecimal2(welfare - deduction),
           noWelfare,
           noWelfareRemark,
           namings,

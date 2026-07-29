@@ -15,6 +15,7 @@ import {
   Square,
   X,
   Clock,
+  AlertTriangle,
 } from 'lucide-react'
 import {
   branchesApi,
@@ -22,6 +23,7 @@ import {
   rewardRulesApi,
   namingLevelsApi,
   timeSlotMultipliersApi,
+  violationItemsApi,
   getErrorMessage,
 } from '../../api'
 import { useAuth } from '../../hooks/useAuth'
@@ -36,6 +38,7 @@ import type {
   RewardRule,
   UpdateRewardRuleInput,
   NamingLevel,
+  ViolationItem,
 } from '../../types'
 
 // 时间段数量（0-2、2-4、...、22-24，共12个）
@@ -220,6 +223,20 @@ export default function BranchesPage() {
   const [slotEnabled, setSlotEnabled] = useState(false)
   const [slotLoading, setSlotLoading] = useState(false)
   const [slotSaving, setSlotSaving] = useState(false)
+
+  // 违规项目配置（独立弹窗）
+  // 与 violationBranch/violationGroup 绑定，保存时按需批量应用到各成员厅
+  const [violationModalOpen, setViolationModalOpen] = useState(false)
+  const [violationBranch, setViolationBranch] = useState<Branch | null>(null)
+  const [violationGroup, setViolationGroup] = useState<BranchGroup | null>(null)
+  const [violationItems, setViolationItems] = useState<ViolationItem[]>([])
+  const [violationFormId, setViolationFormId] = useState<number | null>(null)
+  const [violationForm, setViolationForm] = useState({
+    name: '',
+    thresholdCount: 0,
+  })
+  const [violationSubmitting, setViolationSubmitting] = useState(false)
+  const [violationLoading, setViolationLoading] = useState(false)
 
   // ============ 合厅组管理状态 ============
   const [branchGroups, setBranchGroups] = useState<BranchGroup[]>([])
@@ -490,6 +507,184 @@ export default function BranchesPage() {
       toast.error(getErrorMessage(err))
     } finally {
       setRuleSaving(false)
+    }
+  }
+
+  // ============ 违规项目配置（独立弹窗）============
+  // 打开违规项目弹窗（单厅）
+  const openViolationModal = async (branch: Branch) => {
+    setViolationBranch(branch)
+    setViolationGroup(null)
+    setViolationItems([])
+    setViolationFormId(null)
+    setViolationForm({ name: '', thresholdCount: 0 })
+    setViolationModalOpen(true)
+    setViolationLoading(true)
+    try {
+      const list = await violationItemsApi.list(branch.id)
+      setViolationItems(list)
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setViolationLoading(false)
+    }
+  }
+
+  // 打开违规项目弹窗（合厅组）：以首个成员厅配置为初始值
+  const openViolationModalForGroup = async (group: BranchGroup) => {
+    const memberBranches = group.branches.filter((b) => !b.closed)
+    if (memberBranches.length === 0) {
+      toast.error('该合厅组没有可用的成员厅')
+      return
+    }
+    setViolationBranch(null)
+    setViolationGroup(group)
+    setViolationItems([])
+    setViolationFormId(null)
+    setViolationForm({ name: '', thresholdCount: 0 })
+    setViolationModalOpen(true)
+    setViolationLoading(true)
+    try {
+      const list = await violationItemsApi.list(memberBranches[0].id)
+      setViolationItems(list)
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setViolationLoading(false)
+    }
+  }
+
+  // 重置违规项目表单
+  const resetViolationForm = () => {
+    setViolationFormId(null)
+    setViolationForm({ name: '', thresholdCount: 0 })
+  }
+
+  // 编辑某违规项目：载入到表单
+  const handleEditViolation = (item: ViolationItem) => {
+    setViolationFormId(item.id)
+    setViolationForm({
+      name: item.name,
+      thresholdCount: item.thresholdCount,
+    })
+  }
+
+  // 重新拉取违规项目列表（合厅组取首个成员厅）
+  const reloadViolationItems = async () => {
+    const targetBranchId = violationGroup
+      ? violationGroup.branches.filter((b) => !b.closed)[0]?.id
+      : violationBranch?.id
+    if (!targetBranchId) return
+    const list = await violationItemsApi.list(targetBranchId)
+    setViolationItems(list)
+  }
+
+  // 提交新增/编辑违规项目
+  const handleViolationSubmit = async () => {
+    if (!violationBranch && !violationGroup) return
+    if (!violationForm.name.trim()) {
+      toast.error('请输入违规项目名称')
+      return
+    }
+    if (
+      !Number.isInteger(violationForm.thresholdCount) ||
+      violationForm.thresholdCount < 0
+    ) {
+      toast.error('阈值次数必须为非负整数')
+      return
+    }
+    setViolationSubmitting(true)
+    try {
+      if (violationGroup) {
+        // 合厅组模式：按名称匹配，批量更新或创建到所有成员厅
+        const memberBranches = violationGroup.branches.filter((b) => !b.closed)
+        if (violationFormId) {
+          // 编辑：按名称在所有成员厅中找对应项目并更新
+          const original = violationItems.find((it) => it.id === violationFormId)
+          const matchName = original?.name ?? violationForm.name.trim()
+          const allLists = await Promise.all(
+            memberBranches.map((b) => violationItemsApi.list(b.id)),
+          )
+          await Promise.all(
+            memberBranches.map(async (_, idx) => {
+              const matched = allLists[idx].find((it) => it.name === matchName)
+              if (matched) {
+                await violationItemsApi.update(matched.id, {
+                  name: violationForm.name.trim(),
+                  thresholdCount: violationForm.thresholdCount,
+                })
+              }
+            }),
+          )
+          toast.success(`已同步到 ${memberBranches.length} 个成员厅`)
+        } else {
+          // 新增：为所有成员厅创建
+          await Promise.all(
+            memberBranches.map((b) =>
+              violationItemsApi.create({
+                branchId: b.id,
+                name: violationForm.name.trim(),
+                thresholdCount: violationForm.thresholdCount,
+              }),
+            ),
+          )
+          toast.success(`已创建到 ${memberBranches.length} 个成员厅`)
+        }
+      } else if (violationBranch) {
+        // 单厅模式
+        if (violationFormId) {
+          await violationItemsApi.update(violationFormId, {
+            name: violationForm.name.trim(),
+            thresholdCount: violationForm.thresholdCount,
+          })
+          toast.success('违规项目更新成功')
+        } else {
+          await violationItemsApi.create({
+            branchId: violationBranch.id,
+            name: violationForm.name.trim(),
+            thresholdCount: violationForm.thresholdCount,
+          })
+          toast.success('违规项目创建成功')
+        }
+      }
+      resetViolationForm()
+      await reloadViolationItems()
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    } finally {
+      setViolationSubmitting(false)
+    }
+  }
+
+  // 删除违规项目
+  const handleDeleteViolation = async (item: ViolationItem) => {
+    if (!violationBranch && !violationGroup) return
+    if (!window.confirm(`确认删除违规项目「${item.name}」？`)) return
+    try {
+      if (violationGroup) {
+        // 合厅组模式：按名称匹配，批量删除所有成员厅的对应项目
+        const memberBranches = violationGroup.branches.filter((b) => !b.closed)
+        const allLists = await Promise.all(
+          memberBranches.map((b) => violationItemsApi.list(b.id)),
+        )
+        await Promise.all(
+          memberBranches.map(async (_, idx) => {
+            const matched = allLists[idx].find((it) => it.name === item.name)
+            if (matched) {
+              await violationItemsApi.delete(matched.id)
+            }
+          }),
+        )
+        toast.success(`已从 ${memberBranches.length} 个成员厅删除`)
+      } else {
+        await violationItemsApi.delete(item.id)
+        toast.success('删除成功')
+      }
+      // 若删除的项正在编辑，重置表单
+      if (violationFormId === item.id) resetViolationForm()
+      await reloadViolationItems()
+    } catch (err) {
+      toast.error(getErrorMessage(err))
     }
   }
 
@@ -1077,6 +1272,13 @@ export default function BranchesPage() {
                           <Gift size={15} />
                         </button>
                         <button
+                          onClick={() => openViolationModalForGroup(group)}
+                          className="p-1.5 text-textSecondary hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded transition-colors duration-200 cursor-pointer"
+                          title="违规项目（合并管理）"
+                        >
+                          <AlertTriangle size={15} />
+                        </button>
+                        <button
                           onClick={() => openSlotModalForGroup(group)}
                           className="p-1.5 text-textSecondary hover:text-primary hover:bg-primary/10 rounded transition-colors duration-200 cursor-pointer"
                           title="时间段倍率（合并管理）"
@@ -1326,6 +1528,13 @@ export default function BranchesPage() {
                             title="奖励规则"
                           >
                             <Gift size={16} />
+                          </button>
+                          <button
+                            onClick={() => openViolationModal(b)}
+                            className="p-1.5 text-textSecondary hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded transition-colors duration-200 cursor-pointer"
+                            title="违规项目"
+                          >
+                            <AlertTriangle size={16} />
                           </button>
                           <button
                             onClick={() => openSlotModal(b)}
@@ -1681,6 +1890,167 @@ export default function BranchesPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* 违规项目弹窗 */}
+      <Modal
+        open={violationModalOpen}
+        title={
+          violationGroup
+            ? `违规项目 - ${violationGroup.name}（合并管理）`
+            : `违规项目 - ${violationBranch?.name ?? ''}`
+        }
+        onClose={() => setViolationModalOpen(false)}
+        width="max-w-2xl"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={16} className="text-amber-500" />
+            <p className="text-xs text-textMuted leading-relaxed">
+              配置本厅可用的违规项目。当某人员周期内违规次数达到阈值时，自动清空其该周期福利（阈值设为 0 表示不启用清零）。
+            </p>
+          </div>
+          {violationGroup && (
+            <div className="px-3 py-2 rounded-custom-sm bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-xs text-amber-700 dark:text-amber-400">
+              合厅组模式：操作将批量应用到组内所有成员厅
+            </div>
+          )}
+
+          {/* 违规项目列表 */}
+          <div className="overflow-x-auto border border-border rounded-custom-sm">
+            <table className="w-full text-sm">
+              <thead className="bg-surface border-b border-border">
+                <tr className="text-left text-textSecondary">
+                  <th className="px-3 py-2 font-medium">名称</th>
+                  <th className="px-3 py-2 font-medium">阈值(次)</th>
+                  <th className="px-3 py-2 font-medium text-right">操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {violationLoading ? (
+                  Array.from({ length: 2 }).map((_, i) => (
+                    <tr key={i} className="border-b border-border last:border-0">
+                      {Array.from({ length: 3 }).map((_, j) => (
+                        <td key={j} className="px-3 py-2">
+                          <Skeleton className="h-5 w-full" />
+                        </td>
+                      ))}
+                    </tr>
+                  ))
+                ) : violationItems.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={3}
+                      className="px-3 py-8 text-center text-textMuted"
+                    >
+                      暂无违规项目，请在下方新增
+                    </td>
+                  </tr>
+                ) : (
+                  violationItems.map((item) => (
+                    <tr
+                      key={item.id}
+                      className={`border-b border-border last:border-0 hover:bg-surface transition-colors duration-200 ${
+                        violationFormId === item.id ? 'bg-primary/5' : ''
+                      }`}
+                    >
+                      <td className="px-3 py-2 text-textPrimary font-medium">
+                        <span className="inline-flex items-center gap-1">
+                          <AlertTriangle size={13} className="text-amber-500" />
+                          {item.name}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-textSecondary font-mono">
+                        {item.thresholdCount > 0 ? item.thresholdCount : '不启用'}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => handleEditViolation(item)}
+                            className="p-1.5 text-textSecondary hover:text-primary hover:bg-primary/10 rounded transition-colors duration-200 cursor-pointer"
+                            title="编辑"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteViolation(item)}
+                            className="p-1.5 text-textSecondary hover:text-danger hover:bg-danger/10 rounded transition-colors duration-200 cursor-pointer"
+                            title="删除"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* 新增/编辑表单 */}
+          <div className="border-t border-border pt-3">
+            <div className="flex items-center gap-2 mb-2">
+              <Plus size={14} className="text-primary" />
+              <span className="text-sm font-medium text-textPrimary">
+                {violationFormId ? '编辑违规项目' : '添加违规项目'}
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-textSecondary mb-1">
+                  项目名称
+                </label>
+                <input
+                  type="text"
+                  value={violationForm.name}
+                  onChange={(e) =>
+                    setViolationForm({ ...violationForm, name: e.target.value })
+                  }
+                  placeholder="如：迟到、早退"
+                  className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-textSecondary mb-1">
+                  阈值次数（0=不启用）
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={violationForm.thresholdCount ? violationForm.thresholdCount : ''}
+                  onChange={(e) =>
+                    setViolationForm({
+                      ...violationForm,
+                      thresholdCount: e.target.value === '' ? 0 : Number(e.target.value),
+                    })
+                  }
+                  placeholder="如：3"
+                  className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2 mt-3">
+              <button
+                onClick={handleViolationSubmit}
+                disabled={violationSubmitting}
+                className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-custom-sm text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+              >
+                {violationSubmitting ? <Spinner className="h-4 w-4" /> : <Plus size={16} />}
+                {violationFormId ? '保存修改' : '添加项目'}
+              </button>
+              {violationFormId && (
+                <button
+                  onClick={resetViolationForm}
+                  className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+                >
+                  取消编辑
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       </Modal>
 
       {/* 冠名等级弹窗 */}

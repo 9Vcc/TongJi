@@ -18,6 +18,8 @@ const Settings = lazy(() => import('./pages/Settings'))
 const Fines = lazy(() => import('./pages/Fines'))
 const FineDetails = lazy(() => import('./pages/FineDetails'))
 const HostFlowRecords = lazy(() => import('./pages/HostFlowRecords'))
+const Violations = lazy(() => import('./pages/Violations'))
+const ViolationDetails = lazy(() => import('./pages/ViolationDetails'))
 
 // 设置子页
 const AccountsPage = lazy(() => import('./pages/settings/Accounts'))
@@ -98,6 +100,8 @@ function AppRoutes() {
           <Route path="/fines" element={<Fines />} />
           <Route path="/fines/details" element={<FineDetails />} />
           <Route path="/host-flow" element={<HostFlowRecords />} />
+          <Route path="/violations" element={<Violations />} />
+          <Route path="/violations/details" element={<ViolationDetails />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/settings/accounts" element={<AccountsPage />} />
           <Route path="/settings/branches" element={<BranchesPage />} />

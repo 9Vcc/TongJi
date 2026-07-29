@@ -34,6 +34,10 @@ export interface RankingItem {
   noWelfare: boolean
   // 无福利标记备注
   noWelfareRemark: string | null
+  // 违规扣减金额（每条违规扣减 deductionAmount 的总和）
+  violationDeduction: number
+  // 违规阈值清空：true 表示某项目违规次数达到阈值，福利清零
+  violationCleared: boolean
   namings: { levelId: number; levelName: string; count: number; reward: number }[]
 }
 
@@ -231,7 +235,10 @@ export async function computeRanking(
 
   // 获取相关分部的奖励规则、冠名等级、扣减、无福利标记（四者互不依赖，并行查询）
   const branchIds = [...new Set(records.map((r) => r.branchId))]
-  const [rules, namingLevels, deductions, noWelfareMarks] = await Promise.all([
+  // 违规记录 periodStart 存储为 new Date('YYYY-MM-01')（UTC），需用同格式查询
+  const violationMonthStr = `${periodStart.getFullYear()}-${String(periodStart.getMonth() + 1).padStart(2, '0')}-01`
+  const violationPeriodStart = new Date(violationMonthStr)
+  const [rules, namingLevels, deductions, noWelfareMarks, violationRecords, violationItems] = await Promise.all([
     prisma.rewardRule.findMany({
       where: { branchId: { in: branchIds } },
     }),
@@ -252,6 +259,18 @@ export async function computeRanking(
         ...(branchFilter ? { branchId: branchFilter } : {}),
       },
     }),
+    // 查询违规记录：按月查询（periodStart 为 UTC 月初1日，与存储格式一致）
+    prisma.violationRecord.findMany({
+      where: {
+        periodStart: violationPeriodStart,
+        ...(branchFilter ? { branchId: branchFilter } : {}),
+      },
+      include: { item: true },
+    }),
+    // 查询违规项目：按厅过滤，用于阈值判断
+    prisma.violationItem.findMany({
+      where: { branchId: { in: branchIds } },
+    }),
   ])
   const ruleMap = new Map(rules.map((r) => [r.branchId, r]))
   const levelInfoMap = new Map(namingLevels.map((l) => [l.id, { name: l.name, reward: Number(l.reward) }]))
@@ -264,6 +283,19 @@ export async function computeRanking(
   const noWelfareMap = new Map<string, { marked: boolean; remark: string | null }>()
   for (const m of noWelfareMarks) {
     noWelfareMap.set(`${m.branchId}:${m.personnelId}`, { marked: true, remark: m.remark })
+  }
+  // 违规记录索引：branchId:personnelId -> [{ itemId, deductionAmount }]
+  const violationListMap = new Map<string, { itemId: number; deductionAmount: number }[]>()
+  for (const v of violationRecords) {
+    const key = `${v.branchId}:${v.personnelId}`
+    const arr = violationListMap.get(key) ?? []
+    arr.push({ itemId: v.violationItemId, deductionAmount: v.item.deductionAmount })
+    violationListMap.set(key, arr)
+  }
+  // 违规项目阈值索引：itemId -> thresholdCount
+  const violationThresholdMap = new Map<number, number>()
+  for (const item of violationItems) {
+    violationThresholdMap.set(item.id, item.thresholdCount)
   }
 
   // 月模式：按 (branchId, personnelId) 聚合求和
@@ -376,6 +408,29 @@ export async function computeRanking(
           }
         }
 
+        // 违规扣减：每条违规扣减 deductionAmount；某项目违规次数达到 thresholdCount 时清空福利
+        // noWelfare 已为 true 时不再计算违规扣减（总福利已清零）
+        let violationDeduction = 0
+        let violationCleared = false
+        if (!noWelfare) {
+          const vKey = `${branchId}:${p.personnelId}`
+          const violations = violationListMap.get(vKey) ?? []
+          // 按项目分组统计违规次数
+          const violationCountByItem = new Map<number, number>()
+          for (const v of violations) {
+            violationDeduction += v.deductionAmount
+            violationCountByItem.set(v.itemId, (violationCountByItem.get(v.itemId) ?? 0) + 1)
+          }
+          // 检查是否达到阈值清空福利
+          for (const [itemId, count] of violationCountByItem) {
+            const threshold = violationThresholdMap.get(itemId) ?? 0
+            if (threshold > 0 && count >= threshold) {
+              violationCleared = true
+              break
+            }
+          }
+        }
+
         result.push({
           rank,
           personnelId: p.personnelId,
@@ -393,12 +448,16 @@ export async function computeRanking(
           rankReward,
           namingWelfare: toDecimal2(namingWelfare),
           deduction: deductionMap.get(`${branchId}:${p.personnelId}`) ?? 0,
-          // 无福利标记：总福利清零（各项福利仍正常展示）
+          // 无福利标记或违规阈值清空：总福利清零（各项福利仍正常展示）
           totalWelfare: noWelfare
             ? 0
-            : Math.max(0, toDecimal2(baseWelfare + zcWelfare + rankReward + namingWelfare - (deductionMap.get(`${branchId}:${p.personnelId}`) ?? 0))),
+            : violationCleared
+              ? 0
+              : Math.max(0, toDecimal2(baseWelfare + zcWelfare + rankReward + namingWelfare - (deductionMap.get(`${branchId}:${p.personnelId}`) ?? 0) - violationDeduction)),
           noWelfare,
           noWelfareRemark,
+          violationDeduction,
+          violationCleared,
           namings,
         })
       })

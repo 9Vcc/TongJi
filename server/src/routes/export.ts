@@ -163,6 +163,101 @@ async function getFlowWelfareMap(
   return result
 }
 
+/**
+ * 查询违规扣减福利映射
+ * - 按厅+人员维度聚合违规记录
+ * - 若某违规项目次数达到 thresholdCount（>0），标记为清空福利
+ * - 返回 totalDeduction（违规扣减总额）和 cleared/clearReason（是否清空及原因）
+ */
+async function getViolationMap(
+  refDate: Date,
+  branchIds: number[]
+): Promise<Map<string, { totalDeduction: number; cleared: boolean; clearReason: string }>> {
+  if (branchIds.length === 0) return new Map()
+
+  // 违规记录按月归属，periodStart 为月初1日
+  // 使用 UTC 构造，与前端/后端创建时的 new Date("YYYY-MM-01") 解析方式一致
+  const monthStr = `${refDate.getFullYear()}-${String(refDate.getMonth() + 1).padStart(2, '0')}-01`
+  const monthStart = new Date(monthStr)
+
+  const [violationRecords, violationItems] = await Promise.all([
+    prisma.violationRecord.findMany({
+      where: {
+        periodStart: monthStart,
+        branchId: { in: branchIds },
+      },
+      select: {
+        branchId: true,
+        personnelId: true,
+        violationItemId: true,
+      },
+    }),
+    prisma.violationItem.findMany({
+      where: { branchId: { in: branchIds } },
+      select: {
+        id: true,
+        branchId: true,
+        name: true,
+        deductionAmount: true,
+        thresholdCount: true,
+      },
+    }),
+  ])
+
+  // 按 branchId 分组违规项目
+  const itemMapByBranch = new Map<number, Map<number, { name: string; deductionAmount: number; thresholdCount: number }>>()
+  for (const item of violationItems) {
+    let m = itemMapByBranch.get(item.branchId)
+    if (!m) {
+      m = new Map()
+      itemMapByBranch.set(item.branchId, m)
+    }
+    m.set(item.id, {
+      name: item.name,
+      deductionAmount: item.deductionAmount,
+      thresholdCount: item.thresholdCount,
+    })
+  }
+
+  // 按 branchId:personnelId 聚合违规记录
+  const countMap = new Map<string, Map<number, number>>() // key -> itemId -> count
+  for (const r of violationRecords) {
+    const key = `${r.branchId}:${r.personnelId}`
+    let m = countMap.get(key)
+    if (!m) {
+      m = new Map()
+      countMap.set(key, m)
+    }
+    m.set(r.violationItemId, (m.get(r.violationItemId) ?? 0) + 1)
+  }
+
+  const result = new Map<string, { totalDeduction: number; cleared: boolean; clearReason: string }>()
+  for (const [key, itemCounts] of countMap) {
+    const [branchIdStr] = key.split(':')
+    const branchId = Number(branchIdStr)
+    const itemMap = itemMapByBranch.get(branchId) ?? new Map()
+
+    let totalDeduction = 0
+    let cleared = false
+    let clearReason = ''
+
+    for (const [itemId, count] of itemCounts) {
+      const item = itemMap.get(itemId)
+      if (!item) continue
+      totalDeduction += item.deductionAmount * count
+      // 检查是否达到清空阈值
+      if (!cleared && item.thresholdCount > 0 && count >= item.thresholdCount) {
+        cleared = true
+        clearReason = `违规清空：${item.name}达${count}次`
+      }
+    }
+
+    result.set(key, { totalDeduction, cleared, clearReason })
+  }
+
+  return result
+}
+
 export default async function exportRoutes(fastify: FastifyInstance) {
   // GET /api/export/excel - 导出Excel（支持按周/按月，仅超管及以上可访问）
   // 有冠名数据的厅：导出包含冠名列（按等级动态生成）和冠名福利列
@@ -217,6 +312,10 @@ export default async function exportRoutes(fastify: FastifyInstance) {
       const flowWelfareMap = await getFlowWelfareMap(refDate, flowBranchIds)
       const hasFlow = flowWelfareMap.size > 0
 
+      // 查询违规扣减福利（导出时计入总福利，达到阈值清零）
+      // 违规按月归属，使用 refDate 所在月
+      const violationMap = await getViolationMap(refDate, flowBranchIds)
+
       const data = ranking.map((r) => {
         const row: Record<string, string | number> = {
           排名: r.rank,
@@ -262,13 +361,25 @@ export default async function exportRoutes(fastify: FastifyInstance) {
           row['流水福利'] = flowWelfare
         }
         row['扣减'] = r.deduction
+        // 违规扣减福利
+        const violationEntry = violationMap.get(`${r.branchId}:${r.personnelId}`)
+        const violationDeduction = violationEntry?.totalDeduction ?? 0
+        const violationCleared = violationEntry?.cleared ?? false
         // 总福利与页面显示一致：不含排名奖金（排名奖金仅作为排名激励信息列展示）
-        // 流水福利计入总福利；无福利标记时总福利清零
+        // 流水福利计入总福利；无福利标记时总福利清零；违规达到阈值清零；否则扣减违规金额
         row['总福利'] = r.noWelfare
           ? 0
-          : toDecimal2(r.totalWelfare - r.rankBonus + flowWelfare)
-        // 无福利标记备注：被标记无福利人员显示其备注，否则为空
-        row['备注'] = r.noWelfare && r.noWelfareRemark ? `无福利：${r.noWelfareRemark}` : ''
+          : violationCleared
+            ? 0
+            : toDecimal2(r.totalWelfare - r.rankBonus + flowWelfare - violationDeduction)
+        // 备注生成：无福利标记 > 违规清空原因
+        let remark = ''
+        if (r.noWelfare && r.noWelfareRemark) {
+          remark = `无福利：${r.noWelfareRemark}`
+        } else if (violationCleared) {
+          remark = violationEntry?.clearReason ?? ''
+        }
+        row['备注'] = remark
         return row
       })
 
@@ -279,10 +390,15 @@ export default async function exportRoutes(fastify: FastifyInstance) {
           const flowEntry = flowWelfareMap.get(`${r.branchId}:${r.personnelId}`)
           flowWelfare = flowEntry?.flowWelfare ?? 0
         }
-        // 无福利标记时总福利为 0，不计入总和
+        const violationEntry = violationMap.get(`${r.branchId}:${r.personnelId}`)
+        const violationDeduction = violationEntry?.totalDeduction ?? 0
+        const violationCleared = violationEntry?.cleared ?? false
+        // 无福利标记或违规清空时总福利为 0，不计入总和
         const welfare = r.noWelfare
           ? 0
-          : r.totalWelfare - r.rankBonus + flowWelfare
+          : violationCleared
+            ? 0
+            : r.totalWelfare - r.rankBonus + flowWelfare - violationDeduction
         return sum + welfare
       }, 0)
       const totalRow: Record<string, string | number> = {
@@ -396,6 +512,9 @@ export default async function exportRoutes(fastify: FastifyInstance) {
       const flowWelfareMap = await getFlowWelfareMap(refDate, flowBranchIds)
       const hasFlow = flowWelfareMap.size > 0
 
+      // 查询违规扣减福利（导出时计入总福利，达到阈值清零），与 Excel 导出保持一致
+      const violationMap = await getViolationMap(refDate, flowBranchIds)
+
       // 构建 CSV 字段：基础列 + 动态冠名列 + 冠名福利 + 流水福利 + 扣减 + 总福利
       // 未开启全麦转换的厅不包含全麦列
       const fields: { label: string; value: string }[] = [
@@ -472,13 +591,25 @@ export default async function exportRoutes(fastify: FastifyInstance) {
           flowWelfare = flowEntry?.flowWelfare ?? 0
           row['flowWelfare'] = flowWelfare
         }
+        // 违规扣减福利
+        const violationEntry = violationMap.get(`${r.branchId}:${r.personnelId}`)
+        const violationDeduction = violationEntry?.totalDeduction ?? 0
+        const violationCleared = violationEntry?.cleared ?? false
         // 总福利与页面显示一致：不含排名奖金（排名奖金仅作为排名激励信息列展示）
-        // 流水福利计入总福利；无福利标记时总福利清零
+        // 流水福利计入总福利；无福利标记时总福利清零；违规达到阈值清零；否则扣减违规金额
         row['totalWelfare'] = r.noWelfare
           ? 0
-          : toDecimal2(r.totalWelfare - r.rankBonus + flowWelfare)
-        // 无福利标记备注：被标记无福利人员显示其备注，否则为空
-        row['remark'] = r.noWelfare && r.noWelfareRemark ? `无福利：${r.noWelfareRemark}` : ''
+          : violationCleared
+            ? 0
+            : toDecimal2(r.totalWelfare - r.rankBonus + flowWelfare - violationDeduction)
+        // 备注生成：无福利标记 > 违规清空原因
+        let remark = ''
+        if (r.noWelfare && r.noWelfareRemark) {
+          remark = `无福利：${r.noWelfareRemark}`
+        } else if (violationCleared) {
+          remark = violationEntry?.clearReason ?? ''
+        }
+        row['remark'] = remark
         return row
       })
 
@@ -489,10 +620,15 @@ export default async function exportRoutes(fastify: FastifyInstance) {
           const flowEntry = flowWelfareMap.get(`${r.branchId}:${r.personnelId}`)
           flowWelfare = flowEntry?.flowWelfare ?? 0
         }
-        // 无福利标记时总福利为 0，不计入总和
+        const violationEntry = violationMap.get(`${r.branchId}:${r.personnelId}`)
+        const violationDeduction = violationEntry?.totalDeduction ?? 0
+        const violationCleared = violationEntry?.cleared ?? false
+        // 无福利标记或违规清空时总福利为 0，不计入总和
         const welfare = r.noWelfare
           ? 0
-          : r.totalWelfare - r.rankBonus + flowWelfare
+          : violationCleared
+            ? 0
+            : r.totalWelfare - r.rankBonus + flowWelfare - violationDeduction
         return sum + welfare
       }, 0)
       const totalRow: Record<string, string | number> = {

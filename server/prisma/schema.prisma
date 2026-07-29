@@ -70,6 +70,7 @@ model Account {
   fines              Fine[]         @relation("FineCreatedBy")
   noWelfareMarks     NoWelfareMark[] @relation("NoWelfareMarkCreator")
   hostFlowRecords    HostFlowRecord[] @relation("HostFlowRecordCreator")
+  violationRecords   ViolationRecord[] @relation("ViolationRecordCreator")
   accountBranches    AccountBranch[]
   accountGroups      AccountGroup[]
 
@@ -133,6 +134,8 @@ model Branch {
   timeSlotMultipliers TimeSlotMultiplier[]
   noWelfareMarks    NoWelfareMark[]
   hostFlowRecords   HostFlowRecord[]
+  violationItems    ViolationItem[]
+  violationRecords  ViolationRecord[]
   // 所属合厅组（参与合厅时关联）
   group             BranchGroup? @relation(fields: [groupId], references: [id])
 
@@ -184,6 +187,7 @@ model Personnel {
   deductions        Deduction[]
   noWelfareMarks    NoWelfareMark[]
   hostFlowRecords   HostFlowRecord[]
+  violationRecords  ViolationRecord[]
 }
 
 // ============ 人员-分部关联表 ============
@@ -487,4 +491,51 @@ model HostFlowRecord {
   @@unique([branchId, personnelId, periodStart])
   @@index([branchId, periodStart])
   @@index([personnelId])
+}
+
+// ============ 违规项目配置表（每厅独立配置）============
+// 每厅可配置多个违规项目，每条违规记录关联一个违规项目
+// deductionAmount：每次违规扣减的福利金额
+// thresholdCount：达到此次数时清空该人员福利（0=不启用阈值清空）
+
+model ViolationItem {
+  id              Int      @id @default(autoincrement())
+  branchId        Int
+  name            String   // 违规项目名称，如"迟到"、"早退"
+  deductionAmount Int      @default(0)  // 每次违规扣减的福利金额
+  thresholdCount  Int      @default(0)  // 达到此次数清空福利（0=不启用）
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  branch  Branch            @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  records ViolationRecord[]
+
+  @@unique([branchId, name])
+  @@index([branchId])
+}
+
+// ============ 违规记录表 ============
+// 记录每次违规操作，按厅+人员+周期+项目维度存储
+// violationDate：违规日期；periodStart：归属周期（用于福利计算查询）
+
+model ViolationRecord {
+  id              Int      @id @default(autoincrement())
+  branchId        Int
+  personnelId     Int
+  violationItemId Int
+  violationDate   DateTime // 违规日期
+  periodStart     DateTime // 归属周期起点（按厅 statCycle 计算）
+  remark          String?
+  createdBy       Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  branch    Branch        @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  personnel Personnel     @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  item      ViolationItem @relation(fields: [violationItemId], references: [id], onDelete: Cascade)
+  creator   Account       @relation("ViolationRecordCreator", fields: [createdBy], references: [id])
+
+  @@index([branchId, periodStart])
+  @@index([personnelId])
+  @@index([violationItemId])
 }

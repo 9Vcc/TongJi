@@ -8,6 +8,7 @@ import {
   BarChart3,
   ScrollText,
   Banknote,
+  AlertTriangle,
 } from 'lucide-react'
 import type { Role } from '../../types'
 
@@ -29,6 +30,13 @@ const navItems: NavItem[] = [
     label: '主持流水',
     icon: Banknote,
     roles: ['HUIZHANG', 'CHAOGUAN', 'GUANLI'],
+  },
+  // 违规标记：会长+超管可见
+  {
+    to: '/violations',
+    label: '违规标记',
+    icon: AlertTriangle,
+    roles: ['HUIZHANG', 'CHAOGUAN'],
   },
   { to: '/fines', label: '罚款记录', icon: ScrollText, roles: ['HUIZHANG'] },
   { to: '/settings', label: '系统设置', icon: Settings },

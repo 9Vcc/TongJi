@@ -103,6 +103,33 @@ export interface HostFlowRecord {
   branch?: { id: number; name: string }
 }
 
+// ============ 违规标记 ============
+export interface ViolationItem {
+  id: number
+  branchId: number
+  name: string
+  deductionAmount: number
+  thresholdCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ViolationRecord {
+  id: number
+  branchId: number
+  personnelId: number
+  violationItemId: number
+  violationDate: string
+  periodStart: string
+  remark: string | null
+  createdBy: number
+  createdAt: string
+  updatedAt: string
+  item?: { id: number; name: string; deductionAmount: number; thresholdCount: number }
+  personnel?: { id: number; name: string }
+  branch?: { id: number; name: string }
+}
+
 // 数据记录
 export interface DataRecord {
   id: number
@@ -329,6 +356,10 @@ export interface RankingItem {
   noWelfare?: boolean
   // 无福利标记备注
   noWelfareRemark?: string | null
+  // 违规扣减福利合计（按周期累计）
+  violationDeduction?: number
+  // 违规清零标记：true 表示该周期违规次数达阈值，福利已清空
+  violationCleared?: boolean
   // 冠名明细
   namings: NamingItem[]
 }
