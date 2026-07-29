@@ -13,6 +13,7 @@ import {
   hostFlowApi,
   personnelApi,
   branchesApi,
+  branchGroupsApi,
   rewardRulesApi,
   getErrorMessage,
 } from '../api'
@@ -22,7 +23,7 @@ import { matchNamePinyin, formatMonthCN } from '../utils'
 import { Skeleton, Spinner } from '../components/Skeleton'
 import GroupedSelect from '../components/GroupedSelect'
 import Modal from '../components/Modal'
-import type { HostFlowRecord, Personnel, RewardRule } from '../types'
+import type { HostFlowRecord, Personnel, RewardRule, BranchGroup } from '../types'
 
 const PAGE_SIZE = 30
 
@@ -70,6 +71,14 @@ interface EditDraft {
   totalFlow: string
 }
 
+// 编辑目标：合厅组模式下需要记录每个目标所属的 branchId
+interface EditTarget {
+  id: number
+  name: string
+  branchId: number
+  branchName: string
+}
+
 export default function HostFlowRecords() {
   const { user } = useAuth()
   const toast = useToast()
@@ -77,7 +86,12 @@ export default function HostFlowRecords() {
   const isChaoguan = user?.role === 'CHAOGUAN'
   const canEdit = isHuizhang || isChaoguan
 
-  const [branches, setBranches] = useState<{ id: number; name: string }[]>([])
+  const [branches, setBranches] = useState<
+    { id: number; name: string; statCycle: 'WEEK' | 'MONTH'; closed: boolean }[]
+  >([])
+  const [branchGroups, setBranchGroups] = useState<BranchGroup[]>([])
+  // 选中的合厅组 ID（与 branchId 互斥）
+  const [selectedGroupId, setSelectedGroupId] = useState<number | undefined>(undefined)
   const [branchId, setBranchId] = useState<number | undefined>(undefined)
   const [personnel, setPersonnel] = useState<Personnel[]>([])
   const [records, setRecords] = useState<HostFlowRecord[]>([])
@@ -97,8 +111,9 @@ export default function HostFlowRecords() {
 
   // 编辑模态框
   const [editOpen, setEditOpen] = useState(false)
-  const [editTargets, setEditTargets] = useState<Personnel[]>([])
-  const [editDrafts, setEditDrafts] = useState<Record<number, EditDraft>>({})
+  const [editTargets, setEditTargets] = useState<EditTarget[]>([])
+  // key 为 `${personnelId}:${branchId}`（合厅组模式）或 `${personnelId}:0`（普通模式）
+  const [editDrafts, setEditDrafts] = useState<Record<string, EditDraft>>({})
   const [editSaving, setEditSaving] = useState(false)
 
   // 厅选择：会长可任意选；超管默认主厅，可切换授权厅；管理默认本厅
@@ -108,46 +123,89 @@ export default function HostFlowRecords() {
     return user?.branchId ?? undefined
   }, [isHuizhang, isChaoguan, branchId, user])
 
-  // 加载厅列表
+  // 合厅组模式
+  const isGroupMode = selectedGroupId !== undefined
+  const selectedGroup = useMemo(
+    () => branchGroups.find((g) => g.id === selectedGroupId),
+    [branchGroups, selectedGroupId],
+  )
+  // 合厅组模式下：组内未关闭厅的 ID 列表
+  const groupBranchIds = useMemo(() => {
+    if (!isGroupMode || !selectedGroup) return []
+    return selectedGroup.branches.filter((b) => !b.closed).map((b) => b.id)
+  }, [isGroupMode, selectedGroup])
+  // 当前查询的厅 ID 列表：合厅组模式下为组成员厅，普通模式为单厅
+  const queryBranchIds = useMemo(() => {
+    if (isGroupMode) return groupBranchIds
+    return effectiveBranchId !== undefined ? [effectiveBranchId] : []
+  }, [isGroupMode, groupBranchIds, effectiveBranchId])
+  const hasBranchSelected = queryBranchIds.length > 0
+
+  // 加载厅列表（含合厅组）
   useEffect(() => {
     branchesApi
       .list()
-      .then((list) => setBranches(list.map((b) => ({ id: b.id, name: b.name }))))
+      .then((list) =>
+        setBranches(
+          list.map((b) => ({
+            id: b.id,
+            name: b.name,
+            statCycle: b.statCycle,
+            closed: b.closed ?? false,
+          })),
+        ),
+      )
+      .catch(() => {})
+    branchGroupsApi
+      .list()
+      .then(setBranchGroups)
       .catch(() => {})
   }, [])
 
-  // 加载人员（仅主持）
+  // 加载人员（仅主持）：合厅组模式下并行加载各成员厅人员并合并去重
   const loadPersonnel = async () => {
-    if (effectiveBranchId === undefined) {
+    if (queryBranchIds.length === 0) {
       setPersonnel([])
       return
     }
     try {
-      const list = await personnelApi.list(effectiveBranchId)
-      // 仅保留标记为主持的人员
-      setPersonnel(
-        list.filter((p) =>
-          p.branches?.some((b) => b.id === effectiveBranchId && b.isHost),
-        ),
+      const lists = await Promise.all(
+        queryBranchIds.map((bid) => personnelApi.list(bid)),
       )
+      // 合并所有人员，仅保留在对应厅标记为主持的人员
+      // 同一人员可能存在于多个厅，保留其首次出现
+      const seen = new Set<number>()
+      const merged: Personnel[] = []
+      for (let i = 0; i < queryBranchIds.length; i++) {
+        const bid = queryBranchIds[i]
+        const list = lists[i]
+        for (const p of list) {
+          if (seen.has(p.id)) continue
+          if (!p.branches?.some((b) => b.id === bid && b.isHost)) continue
+          seen.add(p.id)
+          merged.push(p)
+        }
+      }
+      setPersonnel(merged)
     } catch (err) {
       toast.error(getErrorMessage(err))
       setPersonnel([])
     }
   }
 
-  // 加载流水记录
+  // 加载流水记录：合厅组模式下并行加载各成员厅记录并合并
   const loadRecords = async () => {
-    if (effectiveBranchId === undefined) {
+    if (queryBranchIds.length === 0) {
       setRecords([])
       return
     }
     try {
-      const list = await hostFlowApi.list({
-        month: selectedMonth,
-        branchId: effectiveBranchId,
-      })
-      setRecords(list)
+      const lists = await Promise.all(
+        queryBranchIds.map((bid) =>
+          hostFlowApi.list({ month: selectedMonth, branchId: bid }),
+        ),
+      )
+      setRecords(lists.flat())
     } catch (err) {
       toast.error(getErrorMessage(err))
       setRecords([])
@@ -155,14 +213,37 @@ export default function HostFlowRecords() {
   }
 
   // 加载奖励规则（取 flowMultiplier 和 flowZeroCount）
+  // 合厅组模式下：合并所有成员厅规则，取任一厅非 0 倍率（保证显示）
   const loadRewardRule = async () => {
-    if (effectiveBranchId === undefined) {
+    if (queryBranchIds.length === 0) {
       setRewardRule(null)
       return
     }
     try {
-      const rules = await rewardRulesApi.get(effectiveBranchId)
-      setRewardRule(rules[0] ?? null)
+      const rules = await Promise.all(
+        queryBranchIds.map((bid) => rewardRulesApi.get(bid)),
+      )
+      const first = rules[0]?.[0] ?? null
+      if (!isGroupMode) {
+        setRewardRule(first)
+        return
+      }
+      // 合厅组模式：合并各成员厅规则
+      // flowMultiplier 取所有成员厅的最大值（保证流水福利不为 0）
+      // flowZeroCount 取所有成员厅的最大值
+      let maxMul = 0
+      let maxZero = 0
+      for (const r of rules) {
+        const rule = r[0]
+        if (!rule) continue
+        if ((rule.flowMultiplier ?? 0) > maxMul) maxMul = rule.flowMultiplier ?? 0
+        if ((rule.flowZeroCount ?? 0) > maxZero) maxZero = rule.flowZeroCount ?? 0
+      }
+      setRewardRule({
+        ...(first as RewardRule),
+        flowMultiplier: maxMul,
+        flowZeroCount: maxZero,
+      } as RewardRule)
     } catch (err) {
       toast.error(getErrorMessage(err))
       setRewardRule(null)
@@ -171,16 +252,17 @@ export default function HostFlowRecords() {
 
   // 加载有流水记录的月份列表（归一化为 YYYY-MM-01 格式，避免时区不匹配）
   const loadMonths = async () => {
-    if (effectiveBranchId === undefined) {
+    if (queryBranchIds.length === 0) {
       setAvailableMonths([currentMonthStart()])
       return
     }
     try {
-      const months = await hostFlowApi.listMonths(effectiveBranchId)
-      // 将后端返回的 ISO 字符串归一化为 YYYY-MM-01
-      const normalized = months.map((m) => normalizeMonthStart(m))
-      // 去重 + 降序排列
-      const unique = Array.from(new Set(normalized)).sort((a, b) =>
+      const monthsLists = await Promise.all(
+        queryBranchIds.map((bid) => hostFlowApi.listMonths(bid)),
+      )
+      // 合并所有月份并去重
+      const all = monthsLists.flat().map((m) => normalizeMonthStart(m))
+      const unique = Array.from(new Set(all)).sort((a, b) =>
         b.localeCompare(a),
       )
       // 确保当前月在列表中
@@ -200,9 +282,9 @@ export default function HostFlowRecords() {
     setLoading(false)
   }
 
-  // 切换厅或月份时重新加载
+  // 切换厅/合厅组或月份时重新加载
   useEffect(() => {
-    if (effectiveBranchId !== undefined) {
+    if (queryBranchIds.length > 0) {
       reloadAll()
       setSelectedIds(new Set())
     } else {
@@ -213,21 +295,35 @@ export default function HostFlowRecords() {
       setSelectedIds(new Set())
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveBranchId, selectedMonth])
+  }, [queryBranchIds, selectedMonth])
 
   // 搜索或切厅/月时重置到第1页
   useEffect(() => {
     setPage(1)
-  }, [searchTerm, effectiveBranchId, selectedMonth])
+  }, [searchTerm, queryBranchIds, selectedMonth])
 
-  // 记录映射：(personnelId) -> record
+  // 记录映射：
+  // - 普通模式：personnelId -> record
+  // - 合厅组模式：personnelId -> record[]（同一人员可能在多个厅都有记录）
   const recordMap = useMemo(() => {
-    const m = new Map<number, HostFlowRecord>()
+    const m = new Map<number, HostFlowRecord[]>()
     for (const r of records) {
-      m.set(r.personnelId, r)
+      const arr = m.get(r.personnelId) ?? []
+      arr.push(r)
+      m.set(r.personnelId, arr)
     }
     return m
   }, [records])
+
+  // 按厅 ID 查找厅名
+  const branchNameMap = useMemo(() => {
+    const m = new Map<number, string>()
+    for (const b of branches) m.set(b.id, b.name)
+    if (selectedGroup) {
+      for (const b of selectedGroup.branches) m.set(b.id, b.name)
+    }
+    return m
+  }, [branches, selectedGroup])
 
   // 厅倍率
   const flowMultiplier = rewardRule?.flowMultiplier ?? 0
@@ -243,7 +339,7 @@ export default function HostFlowRecords() {
     return personnel.filter((p) => matchNamePinyin(p.name, trimmed))
   }, [personnel, searchTerm])
 
-  // 分页
+  // 分页：普通模式下按人员分页；合厅组模式下按人员分页（每页内包含各厅记录展开的行）
   const totalPages = Math.max(1, Math.ceil(filteredPersonnel.length / PAGE_SIZE))
   const pagedPersonnel = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE
@@ -251,29 +347,54 @@ export default function HostFlowRecords() {
   }, [filteredPersonnel, page])
 
   // 当前页数据合并：personnel + 已保存的 record
+  // 合厅组模式下：同一人员可能在多个厅都有记录，每条记录展开为独立行
   type RowItem = {
+    key: string // 唯一键：personnelId 或 personnelId:branchId
     personnelId: number
     personnelName: string
+    branchId: number // 该记录所属的厅 ID
+    branchName: string // 该记录所属的厅名称
     record: HostFlowRecord | undefined
     displayFlow: number // 只读显示用原始数值（反向换算）
     flowWelfare: number
   }
 
   const rows: RowItem[] = useMemo(() => {
-    return pagedPersonnel.map((p) => {
-      const record = recordMap.get(p.id)
-      const actual = record ? Number(record.totalFlow) : 0
-      const displayFlow = actual / flowMultiplier10
-      const flowWelfare = Math.round(actual * flowMultiplier) / 100
-      return {
-        personnelId: p.id,
-        personnelName: p.name,
-        record,
-        displayFlow,
-        flowWelfare,
+    const result: RowItem[] = []
+    for (const p of pagedPersonnel) {
+      const recordArr = recordMap.get(p.id) ?? []
+      if (recordArr.length === 0) {
+        // 无记录的占位行
+        // 合厅组模式下人员可能属于多个厅，使用第一个查询厅作为默认占位 branchId
+        const defaultBid = queryBranchIds[0]
+        result.push({
+          key: isGroupMode ? `${p.id}:${defaultBid}` : String(p.id),
+          personnelId: p.id,
+          personnelName: p.name,
+          branchId: defaultBid,
+          branchName: branchNameMap.get(defaultBid) ?? '',
+          record: undefined,
+          displayFlow: 0,
+          flowWelfare: 0,
+        })
+      } else {
+        for (const r of recordArr) {
+          const actual = Number(r.totalFlow) || 0
+          result.push({
+            key: isGroupMode ? `${r.personnelId}:${r.branchId}` : String(r.personnelId),
+            personnelId: p.id,
+            personnelName: p.name,
+            branchId: r.branchId,
+            branchName: branchNameMap.get(r.branchId) ?? r.branch?.name ?? '',
+            record: r,
+            displayFlow: actual / flowMultiplier10,
+            flowWelfare: Math.round(actual * flowMultiplier) / 100,
+          })
+        }
       }
-    })
-  }, [pagedPersonnel, recordMap, flowMultiplier, flowMultiplier10])
+    }
+    return result
+  }, [pagedPersonnel, recordMap, flowMultiplier, flowMultiplier10, isGroupMode, queryBranchIds, branchNameMap])
 
   // 当前页人员 ID（用于全选当前页）
   const currentPageIds = useMemo(
@@ -328,25 +449,36 @@ export default function HostFlowRecords() {
   }, [records, personnel, flowMultiplier, flowMultiplier10])
 
   // ============ 编辑模态框（单人/批量）============
-  const openEditSingle = (p: Personnel) => {
-    if (!effectiveBranchId) {
+  // 草稿 key 生成：合厅组模式 `${personnelId}:${branchId}`，普通模式 `${personnelId}:0`
+  const draftKey = (personnelId: number, branchId: number) =>
+    isGroupMode ? `${personnelId}:${branchId}` : `${personnelId}:0`
+
+  // 单人编辑：使用行所在的 branchId（合厅组模式下可能不同于 effectiveBranchId）
+  const openEditSingle = (row: RowItem) => {
+    if (!hasBranchSelected) {
       toast.error('请先选择厅')
       return
     }
-    setEditTargets([p])
-    const record = recordMap.get(p.id)
+    const target: EditTarget = {
+      id: row.personnelId,
+      name: row.personnelName,
+      branchId: row.branchId,
+      branchName: row.branchName,
+    }
+    setEditTargets([target])
     setEditDrafts({
-      [p.id]: {
-        totalFlow: record
-          ? String(Number(record.totalFlow) / flowMultiplier10)
+      [draftKey(row.personnelId, row.branchId)]: {
+        totalFlow: row.record
+          ? String(Number(row.record.totalFlow) / flowMultiplier10)
           : '',
       },
     })
     setEditOpen(true)
   }
 
+  // 批量编辑：合厅组模式下使用每行实际 branchId
   const openEditBatch = () => {
-    if (!effectiveBranchId) {
+    if (!hasBranchSelected) {
       toast.error('请先选择厅')
       return
     }
@@ -354,45 +486,63 @@ export default function HostFlowRecords() {
       toast.error('请先勾选要编辑的人员')
       return
     }
-    const targets = personnel.filter((p) => selectedIds.has(p.id))
-    setEditTargets(targets)
-    // 批量初始化：每人一个独立草稿，沿用当前已保存值
-    const drafts: Record<number, EditDraft> = {}
-    for (const p of targets) {
-      const record = recordMap.get(p.id)
-      drafts[p.id] = {
-        totalFlow: record
-          ? String(Number(record.totalFlow) / flowMultiplier10)
+    // 选中行：合厅组模式下每个 (personnelId, branchId) 组合为一个编辑目标
+    const targets: EditTarget[] = []
+    const drafts: Record<string, EditDraft> = {}
+    const seenKeys = new Set<string>()
+    for (const row of rows) {
+      // 普通模式：按 personnelId 判定选中；合厅组模式：同样按 personnelId 判定选中
+      if (!selectedIds.has(row.personnelId)) continue
+      const key = draftKey(row.personnelId, row.branchId)
+      if (seenKeys.has(key)) continue
+      seenKeys.add(key)
+      targets.push({
+        id: row.personnelId,
+        name: row.personnelName,
+        branchId: row.branchId,
+        branchName: row.branchName,
+      })
+      drafts[key] = {
+        totalFlow: row.record
+          ? String(Number(row.record.totalFlow) / flowMultiplier10)
           : '',
       }
     }
+    if (targets.length === 0) {
+      toast.error('请先勾选要编辑的人员')
+      return
+    }
+    setEditTargets(targets)
     setEditDrafts(drafts)
     setEditOpen(true)
   }
 
-  const updateEditDraft = (personnelId: number, patch: Partial<EditDraft>) => {
+  const updateEditDraft = (key: string, patch: Partial<EditDraft>) => {
     setEditDrafts((prev) => ({
       ...prev,
-      [personnelId]: { ...prev[personnelId], ...patch },
+      [key]: { ...prev[key], ...patch },
     }))
   }
 
-  const removeEditTarget = (personnelId: number) => {
-    setEditTargets((prev) => prev.filter((p) => p.id !== personnelId))
+  const removeEditTarget = (key: string) => {
+    setEditTargets((prev) =>
+      prev.filter((t) => draftKey(t.id, t.branchId) !== key),
+    )
     setEditDrafts((prev) => {
       const next = { ...prev }
-      delete next[personnelId]
+      delete next[key]
       return next
     })
   }
 
   const handleEditSave = async () => {
-    if (!effectiveBranchId) return
+    if (!hasBranchSelected) return
     const isBatch = editTargets.length > 1
 
-    // 校验所有人员的流水金额
+    // 校验所有草稿的流水金额
     for (const target of editTargets) {
-      const draft = editDrafts[target.id]
+      const key = draftKey(target.id, target.branchId)
+      const draft = editDrafts[key]
       if (!draft) continue
       if (!isValidFlowValue(draft.totalFlow)) {
         toast.error(`「${target.name}」的流水金额必须为非负数（最多两位小数）`)
@@ -404,17 +554,18 @@ export default function HostFlowRecords() {
     try {
       // 串行提交，避免并发冲突
       for (const target of editTargets) {
-        const draft = editDrafts[target.id]
+        const key = draftKey(target.id, target.branchId)
+        const draft = editDrafts[key]
         if (!draft) continue
         const actualFlow = Number(draft.totalFlow) * flowMultiplier10
         await hostFlowApi.upsert({
-          branchId: effectiveBranchId,
+          branchId: target.branchId,
           personnelId: target.id,
           month: selectedMonth,
           totalFlow: actualFlow,
         })
       }
-      toast.success(isBatch ? `已批量保存 ${editTargets.length} 人流水` : '流水已保存')
+      toast.success(isBatch ? `已批量保存 ${editTargets.length} 项流水` : '流水已保存')
       setEditOpen(false)
       if (isBatch) setSelectedIds(new Set())
       await Promise.all([loadRecords(), loadMonths()])
@@ -427,16 +578,15 @@ export default function HostFlowRecords() {
 
   // ============ 删除单条记录 ============
   const handleDelete = async (row: RowItem) => {
-    if (!effectiveBranchId) return
     if (!row.record) {
       toast.error('该人员本月无流水记录')
       return
     }
-    if (!window.confirm(`确认删除「${row.personnelName}」本月流水记录？`)) return
+    if (!window.confirm(`确认删除「${row.personnelName}」${isGroupMode ? `（${row.branchName}）` : ''}本月流水记录？`)) return
     setDeletingId(row.personnelId)
     try {
       await hostFlowApi.remove({
-        branchId: effectiveBranchId,
+        branchId: row.branchId,
         personnelId: row.personnelId,
         month: selectedMonth,
       })
@@ -454,8 +604,9 @@ export default function HostFlowRecords() {
     }
   }
 
-  const hasBranchSelected = effectiveBranchId !== undefined
-  const branchName = branches.find((b) => b.id === effectiveBranchId)?.name ?? '全部授权厅'
+  const branchName = isGroupMode
+    ? (selectedGroup?.name ?? '合厅组')
+    : (branches.find((b) => b.id === effectiveBranchId)?.name ?? '全部授权厅')
   const isBatchEdit = editTargets.length > 1
 
   return (
@@ -474,24 +625,48 @@ export default function HostFlowRecords() {
             <>
               <GroupedSelect
                 value={
-                  branchId !== undefined
-                    ? String(branchId)
-                    : isChaoguan
-                      ? String(user?.branchId ?? '')
-                      : ''
+                  isGroupMode
+                    ? `g${selectedGroupId}`
+                    : (branchId !== undefined ? String(branchId) : '')
                 }
-                onChange={(val) =>
-                  setBranchId(val ? Number(val) : undefined)
-                }
+                onChange={(val) => {
+                  if (val.startsWith('g')) {
+                    // 选择合厅组：清空厅选择
+                    setSelectedGroupId(Number(val.slice(1)))
+                    setBranchId(undefined)
+                  } else {
+                    // 选择普通厅：清空合厅组选择
+                    setSelectedGroupId(undefined)
+                    setBranchId(val ? Number(val) : undefined)
+                  }
+                }}
                 placeholder="选择厅"
                 topOption={
                   isHuizhang ? { value: '', label: '选择厅' } : undefined
                 }
-                options={branches.map((b) => ({
-                  value: String(b.id),
-                  label: b.name,
-                }))}
-                minWidth={150}
+                groups={[
+                  ...(branchGroups.length > 0
+                    ? [{
+                        label: '合厅组',
+                        options: branchGroups.map((g) => ({
+                          value: `g${g.id}`,
+                          label: `${g.name}（${g.branches.filter((b) => !b.closed).length}个厅）`,
+                        })),
+                      }]
+                    : []),
+                  {
+                    label: '厅',
+                    // 隐藏已关闭的厅
+                    options: branches
+                      .filter((b) => !b.closed)
+                      .map((b) => ({
+                        value: String(b.id),
+                        label: `${b.name}${b.statCycle === 'MONTH' ? '（按月）' : ''}`,
+                      })),
+                  },
+                ]}
+                minWidth={180}
+                maxWidth={280}
               />
               <GroupedSelect
                 value={selectedMonth}
@@ -565,7 +740,7 @@ export default function HostFlowRecords() {
           <div className="flex items-center gap-2 px-3 py-2 rounded-custom-sm bg-primary/5 border border-primary/20 text-xs text-textSecondary">
             <Info size={14} className="text-primary shrink-0" />
             <span>
-              当前厅「{branchName}」流水倍率：
+              {isGroupMode ? '合厅组' : '当前厅'}「{branchName}」流水倍率：
               <span className="font-mono text-primary font-semibold">
                 {flowMultiplier}%
               </span>
@@ -578,6 +753,11 @@ export default function HostFlowRecords() {
                   </span>
                   个 0（如输入 100 实际为 {formatThousands(100 * flowMultiplier10)}）
                 </>
+              )}
+              {isGroupMode && (
+                <span className="ml-1 text-textMuted">
+                  （合厅组取成员厅最大倍率）
+                </span>
               )}
             </span>
           </div>
@@ -637,6 +817,9 @@ export default function HostFlowRecords() {
                     )}
                     <th className="px-4 py-3 font-medium">序号</th>
                     <th className="px-4 py-3 font-medium">姓名</th>
+                    {isGroupMode && (
+                      <th className="px-4 py-3 font-medium">所属厅</th>
+                    )}
                     <th className="px-4 py-3 font-medium">总流水</th>
                     <th className="px-4 py-3 font-medium">流水福利</th>
                     {canEdit && (
@@ -651,7 +834,7 @@ export default function HostFlowRecords() {
                         key={i}
                         className="border-b border-border last:border-0"
                       >
-                        {Array.from({ length: canEdit ? 6 : 5 }).map((_, j) => (
+                        {Array.from({ length: (canEdit ? 1 : 0) + 2 + (isGroupMode ? 1 : 0) + 2 + (canEdit ? 1 : 0) }).map((_, j) => (
                           <td key={j} className="px-4 py-3">
                             <Skeleton className="h-5 w-full" />
                           </td>
@@ -661,7 +844,7 @@ export default function HostFlowRecords() {
                   ) : pagedPersonnel.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={canEdit ? 6 : 5}
+                        colSpan={(canEdit ? 1 : 0) + 2 + (isGroupMode ? 1 : 0) + 2 + (canEdit ? 1 : 0)}
                         className="px-4 py-16 text-center text-textMuted"
                       >
                         <div className="flex flex-col items-center gap-2">
@@ -670,7 +853,9 @@ export default function HostFlowRecords() {
                             {searchTerm
                               ? '未找到匹配的主持'
                               : personnel.length === 0
-                                ? '当前厅暂无主持，请先在人员管理页标记主持'
+                                ? isGroupMode
+                                  ? '当前合厅组暂无主持，请先在人员管理页标记主持'
+                                  : '当前厅暂无主持，请先在人员管理页标记主持'
                                 : '暂无数据'}
                           </span>
                         </div>
@@ -681,7 +866,7 @@ export default function HostFlowRecords() {
                       const isSelected = selectedIds.has(row.personnelId)
                       return (
                       <tr
-                        key={row.personnelId}
+                        key={row.key}
                         className={`border-b border-border last:border-0 hover:bg-surface transition-colors duration-200 ${
                           isSelected ? 'bg-primary/5' : ''
                         }`}
@@ -703,6 +888,11 @@ export default function HostFlowRecords() {
                         <td className="px-4 py-3 text-textPrimary font-medium">
                           {row.personnelName}
                         </td>
+                        {isGroupMode && (
+                          <td className="px-4 py-3 text-textSecondary text-xs">
+                            {row.branchName || '-'}
+                          </td>
+                        )}
                         <td className="px-4 py-3 font-mono text-textPrimary">
                           {row.displayFlow}
                         </td>
@@ -713,9 +903,7 @@ export default function HostFlowRecords() {
                           <td className="px-4 py-3 text-right">
                             <div className="flex items-center justify-end gap-1">
                               <button
-                                onClick={() => openEditSingle(
-                                  personnel.find((p) => p.id === row.personnelId)!,
-                                )}
+                                onClick={() => openEditSingle(row)}
                                 className="p-1.5 text-textSecondary hover:text-primary hover:bg-primary/10 rounded transition-colors duration-200 cursor-pointer"
                                 title="编辑"
                               >
@@ -784,7 +972,7 @@ export default function HostFlowRecords() {
         open={editOpen}
         title={
           isBatchEdit
-            ? `批量编辑流水（${editTargets.length} 人）`
+            ? `批量编辑流水（${editTargets.length} 项）`
             : '编辑流水'
         }
         onClose={() => setEditOpen(false)}
@@ -814,7 +1002,9 @@ export default function HostFlowRecords() {
           <div className="flex items-center gap-2 px-3 py-2 rounded-custom-sm bg-surface border border-border text-xs text-textSecondary">
             <Info size={14} className="text-primary shrink-0" />
             <span>
-              厅：{branchName} ｜ 月份：{formatMonthCN(selectedMonth.slice(0, 7))}
+              {isGroupMode
+                ? `合厅组：${branchName}`
+                : `厅：${branchName}`} ｜ 月份：{formatMonthCN(selectedMonth.slice(0, 7))}
               ｜ 倍率：{flowMultiplier}%｜ 补 0：{flowZeroCount} 个
             </span>
           </div>
@@ -823,11 +1013,11 @@ export default function HostFlowRecords() {
           {isBatchEdit && (
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <span className="text-xs text-textMuted">
-                共 {editTargets.length} 人，每人独立录入
+                共 {editTargets.length} 项，每项独立录入
               </span>
               <button
                 onClick={() => {
-                  // 清空所有人
+                  // 清空所有
                   setEditTargets([])
                   setEditDrafts({})
                 }}
@@ -842,32 +1032,38 @@ export default function HostFlowRecords() {
           <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
             {editTargets.length === 0 ? (
               <div className="text-center py-8 text-sm text-textMuted">
-                已清空所有人员
+                已清空所有项目
               </div>
             ) : (
-              editTargets.map((p) => {
-                const draft = editDrafts[p.id] ?? { totalFlow: '' }
+              editTargets.map((t) => {
+                const key = draftKey(t.id, t.branchId)
+                const draft = editDrafts[key] ?? { totalFlow: '' }
                 const inputValue = draft.totalFlow === '' ? 0 : Number(draft.totalFlow) || 0
                 const actualFlow = inputValue * flowMultiplier10
                 const welfare = Math.round(actualFlow * flowMultiplier) / 100
                 return (
                   <div
-                    key={p.id}
+                    key={key}
                     className="p-3 rounded-custom-sm border border-border bg-card space-y-2"
                   >
                     {/* 人员头部 */}
                     <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-medium text-textPrimary">
-                          {p.name}
+                          {t.name}
                         </span>
+                        {isGroupMode && (
+                          <span className="text-xs text-textMuted">
+                            （{t.branchName}）
+                          </span>
+                        )}
                         <span className="text-xs text-textMuted font-mono">
                           流水福利：{welfare}
                         </span>
                       </div>
                       {isBatchEdit && (
                         <button
-                          onClick={() => removeEditTarget(p.id)}
+                          onClick={() => removeEditTarget(key)}
                           className="p-1 text-textMuted hover:text-danger rounded transition-colors duration-200 cursor-pointer"
                           title="移除"
                         >
@@ -891,7 +1087,7 @@ export default function HostFlowRecords() {
                         step="0.01"
                         value={draft.totalFlow}
                         onChange={(e) =>
-                          updateEditDraft(p.id, { totalFlow: e.target.value })
+                          updateEditDraft(key, { totalFlow: e.target.value })
                         }
                         placeholder="0"
                         className="w-full px-2 py-1.5 border border-border rounded-custom-sm bg-card text-sm text-textPrimary font-mono focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
