@@ -4,6 +4,7 @@ import type { DataLogType } from '../../../types'
 export type FieldKey = 'sg' | 'mx' | 'qm' | 'zcDays'
 
 // 四级交互视图状态
+// personnel-all：通过筛选直接选中人员后的视图，展示该人员所有历史记录
 export type ViewState =
   | { level: 'type' }
   | { level: 'personnel'; type: DataLogType }
@@ -14,6 +15,7 @@ export type ViewState =
       personnelId: number
       field: FieldKey
     }
+  | { level: 'personnel-all'; personnelId: number }
 
 // 人员聚合项：用于 Level 2 人员卡片展示
 export interface PersonnelAgg {

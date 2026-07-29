@@ -28,6 +28,7 @@ import TypeCardsView from './data-history/components/TypeCardsView'
 import PersonnelCardsView from './data-history/components/PersonnelCardsView'
 import FieldCardsView from './data-history/components/FieldCardsView'
 import DetailTableView from './data-history/components/DetailTableView'
+import PersonnelAllLogsView from './data-history/components/PersonnelAllLogsView'
 
 /**
  * 录入历史记录页面
@@ -146,9 +147,9 @@ export default function DataHistoryPage() {
     return map
   }, [logs])
 
-  // 当前选中的类型
+  // 当前选中的类型（personnel-all 视图无类型）
   const activeType: DataLogType | null =
-    view.level === 'type' ? null : view.type
+    view.level === 'type' || view.level === 'personnel-all' ? null : view.type
 
   // Level 2: 当前类型下按人员聚合
   const personnelAggList = useMemo<PersonnelAgg[]>(() => {
@@ -223,15 +224,30 @@ export default function DataHistoryPage() {
   const detailTotalPages = getTotalPages(detailLogs.length, DETAIL_PAGE_SIZE)
   const safeDetailPage = getSafePage(detailPage, detailTotalPages)
 
+  // personnel-all 视图：当前人员的所有历史记录（合并所有操作类型，按时间倒序）
+  const personnelAllLogs = useMemo(() => {
+    if (view.level !== 'personnel-all') return []
+    return logs
+      .filter((l) => l.personnelId === view.personnelId)
+      .sort((a, b) => b.time.localeCompare(a.time))
+  }, [view, logs])
+
+  const personnelAllTotalPages = getTotalPages(personnelAllLogs.length, DETAIL_PAGE_SIZE)
+  const safePersonnelAllPage = getSafePage(detailPage, personnelAllTotalPages)
+
   // ============ 视图切换重置 ============
   useEffect(() => {
     setPersonnelPage(1)
     setDetailPage(1)
   }, [view])
 
-  // 筛选变化时回到 Level 1
+  // 筛选变化时重置视图：选中人员时直接进入该人员全部记录视图，否则回到类型卡片入口
   useEffect(() => {
-    setView({ level: 'type' })
+    if (filterPersonnelId) {
+      setView({ level: 'personnel-all', personnelId: Number(filterPersonnelId) })
+    } else {
+      setView({ level: 'type' })
+    }
   }, [filterDate, filterBranchId, filterPersonnelId])
 
   // ============ 无权限提示 ============
@@ -243,9 +259,25 @@ export default function DataHistoryPage() {
     )
   }
 
+  // 当前人员姓名（personnel-all 视图时从 logs 中查找，其他视图从人员聚合列表查找）
+  const currentPersonnelName =
+    view.level === 'personnel-all'
+      ? (logs.find((l) => l.personnelId === view.personnelId)?.personnelName ?? `ID:${view.personnelId}`)
+      : view.level === 'field' || view.level === 'detail'
+        ? (personnelAggList.find((p) => p.personnelId === view.personnelId)?.personnelName ?? `ID:${view.personnelId}`)
+        : ''
+
   // ============ 面包屑配置 ============
+  // 点击「全部记录」：若当前是人员筛选视图，先清空人员筛选（会触发回到类型入口），否则直接回到类型入口
+  const goBackToType = () => {
+    if (filterPersonnelId) {
+      setFilterPersonnelId('')
+    } else {
+      setView({ level: 'type' })
+    }
+  }
   const breadcrumbItems: BreadcrumbItem[] = [
-    { label: '全部记录', onClick: () => setView({ level: 'type' }) },
+    { label: '全部记录', onClick: goBackToType },
   ]
   if (activeType) {
     breadcrumbItems.push({
@@ -270,12 +302,9 @@ export default function DataHistoryPage() {
     const meta = FIELD_LABELS.find((f) => f.key === view.field)
     breadcrumbItems.push({ label: meta?.label ?? view.field })
   }
-
-  // 当前人员姓名
-  const currentPersonnelName =
-    view.level === 'field' || view.level === 'detail'
-      ? (personnelAggList.find((p) => p.personnelId === view.personnelId)?.personnelName ?? `ID:${view.personnelId}`)
-      : ''
+  if (view.level === 'personnel-all') {
+    breadcrumbItems.push({ label: currentPersonnelName })
+  }
 
   // ============ 渲染 ============
   return (
@@ -354,6 +383,19 @@ export default function DataHistoryPage() {
             onBack={() =>
               setView({ level: 'field', type: view.type, personnelId: view.personnelId })
             }
+            onPageChange={setDetailPage}
+          />
+        )}
+
+        {view.level === 'personnel-all' && (
+          <PersonnelAllLogsView
+            personnelName={currentPersonnelName}
+            logs={personnelAllLogs}
+            loading={loading}
+            currentPage={safePersonnelAllPage}
+            totalPages={personnelAllTotalPages}
+            personnelMap={personnelMap}
+            onBack={goBackToType}
             onPageChange={setDetailPage}
           />
         )}

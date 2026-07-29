@@ -44,14 +44,16 @@ export default function FilterBar({
 
   return (
     <motion.div
-      className="art-card p-4 relative overflow-hidden"
+      className="art-card p-4 relative"
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
     >
-      {/* 装饰性背景 */}
-      <div className="absolute -right-8 -top-8 opacity-[0.03] pointer-events-none">
-        <Filter size={80} strokeWidth={1.5} />
+      {/* 装饰性背景（独立裁剪容器，避免外层 overflow-hidden 影响下拉列表） */}
+      <div className="absolute inset-0 overflow-hidden rounded-[inherit] pointer-events-none">
+        <div className="absolute -right-8 -top-8 opacity-[0.03]">
+          <Filter size={80} strokeWidth={1.5} />
+        </div>
       </div>
 
       <div className="relative">

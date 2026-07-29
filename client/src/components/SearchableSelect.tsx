@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Search, X, ChevronDown } from 'lucide-react'
+import { pinyin } from 'pinyin-pro'
 
 interface Option {
   value: string
@@ -18,7 +19,7 @@ interface SearchableSelectProps {
 
 /**
  * 搜索选择框：
- * - 始终显示输入框，聚焦时下方浮动显示全部选项
+ * - 输入文本时才显示下拉列表（聚焦不展开）
  * - 输入即过滤，匹配项高亮
  * - 键盘导航：↑↓ 选择、Enter 确认、Esc 关闭
  * - 选中后输入框回显选中项 label
@@ -42,15 +43,36 @@ export default function SearchableSelect({
 
   const selectedOption = options.find((o) => o.value === value)
   const selectedLabel = selectedOption?.label ?? ''
-  // 输入框显示：open 时有输入显示输入内容，否则回显选中项 label
-  const displayText = open && query !== '' ? query : selectedLabel
+  // 输入框显示：有输入内容时显示输入内容，否则回显选中项 label
+  const displayText = query !== '' ? query : selectedLabel
+
+  // 预计算每个选项的拼音信息：首字母（如 zs）+ 完整拼音（如 zhangsan）
+  // 用于支持输入英文字母时按拼音首字母或完整拼音匹配中文姓名
+  const pinyinIndex = useMemo(() => {
+    return options.map((o) => {
+      const first = pinyin(o.label, { pattern: 'first', toneType: 'none' }).replace(/\s+/g, '')
+      const full = pinyin(o.label, { toneType: 'none' }).replace(/\s+/g, '')
+      return { option: o, first, full }
+    })
+  }, [options])
 
   const filtered =
     query.trim() === ''
       ? options
-      : options.filter((o) =>
-          o.label.toLowerCase().includes(query.trim().toLowerCase())
-        )
+      : (() => {
+          const q = query.trim().toLowerCase()
+          return pinyinIndex
+            .filter(({ option, first, full }) => {
+              // 中文名字字符匹配 / 英文 label 匹配
+              if (option.label.toLowerCase().includes(q)) return true
+              // 拼音首字母匹配（如 zs → 张三）
+              if (first.toLowerCase().includes(q)) return true
+              // 完整拼音匹配（如 zhangsan → 张三）
+              if (full.toLowerCase().includes(q)) return true
+              return false
+            })
+            .map(({ option }) => option)
+        })()
 
   // 点击外部关闭
   useEffect(() => {
@@ -78,7 +100,7 @@ export default function SearchableSelect({
       )
       el?.scrollIntoView({ block: 'nearest' })
     } else {
-      setActiveIndex(-1)
+      setActiveIndex(0)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
@@ -106,12 +128,22 @@ export default function SearchableSelect({
 
   const handleInputChange = (v: string) => {
     setQuery(v)
-    setOpen(true)
-    setActiveIndex(v.trim() === '' ? -1 : 0)
-    // 清空输入时同步清除选中项
+    // 仅在输入非空文本时展开下拉列表
     if (v.trim() === '') {
+      setOpen(false)
+      setActiveIndex(-1)
+      // 清空输入时同步清除选中项
       onChange('')
+    } else {
+      setOpen(true)
+      setActiveIndex(0)
     }
+  }
+
+  const handleFocus = () => {
+    if (disabled) return
+    // 聚焦时全选文本，方便重新输入覆盖；不自动展开下拉
+    inputRef.current?.select()
   }
 
   const handleClear = (e: React.MouseEvent) => {
@@ -127,22 +159,16 @@ export default function SearchableSelect({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (disabled) return
     if (e.key === 'ArrowDown') {
+      if (!open) return
       e.preventDefault()
-      if (!open) {
-        setOpen(true)
-        return
-      }
       if (filtered.length > 0) {
         setActiveIndex((prev) =>
           prev < filtered.length - 1 ? prev + 1 : 0
         )
       }
     } else if (e.key === 'ArrowUp') {
+      if (!open) return
       e.preventDefault()
-      if (!open) {
-        setOpen(true)
-        return
-      }
       if (filtered.length > 0) {
         setActiveIndex((prev) =>
           prev > 0 ? prev - 1 : filtered.length - 1
@@ -173,7 +199,7 @@ export default function SearchableSelect({
           type="text"
           value={displayText}
           onChange={(e) => handleInputChange(e.target.value)}
-          onFocus={() => !disabled && setOpen(true)}
+          onFocus={handleFocus}
           onKeyDown={handleKeyDown}
           disabled={disabled}
           placeholder={placeholder}
