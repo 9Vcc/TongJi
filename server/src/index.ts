@@ -28,6 +28,7 @@ import deductionRoutes from './routes/deductions';
 import timeSlotMultiplierRoutes from './routes/time-slot-multipliers';
 import fineRoutes from './routes/fines';
 import noWelfareMarkRoutes from './routes/no-welfare-marks';
+import hostFlowRecordRoutes from './routes/host-flow-records';
 import publicRoutes from './routes/public';
 
 const isDev = process.env.NODE_ENV !== 'production';
@@ -182,6 +183,9 @@ fastify.register(fineRoutes);
 
 // 无福利标记路由（会长+超管可编辑）
 fastify.register(noWelfareMarkRoutes);
+
+// 主持流水记录路由（会长+超管可编辑）
+fastify.register(hostFlowRecordRoutes);
 
 // 公开排名路由（无需登录，所有人可查看）
 fastify.register(publicRoutes);

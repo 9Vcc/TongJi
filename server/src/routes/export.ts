@@ -113,6 +113,56 @@ function parseBranchIdsParam(
   return ids.filter((id) => id === currentUser.branchId)
 }
 
+/**
+ * 查询主持流水福利，返回 (branchId, personnelId) -> flowWelfare 的映射
+ * 流水福利 = 总流水 × 厅倍率(flowMultiplier) / 100
+ * 仅当厅配置了 flowMultiplier > 0 且该人员有 HostFlowRecord 时才有流水福利
+ */
+async function getFlowWelfareMap(
+  refDate: Date,
+  branchIds: number[]
+): Promise<Map<string, { flowWelfare: number; totalFlow: number; multiplier: number }>> {
+  if (branchIds.length === 0) return new Map()
+
+  // 月初1日（流水按月计算）
+  const monthStart = new Date(refDate.getFullYear(), refDate.getMonth(), 1)
+
+  const [flowRecords, rewardRules] = await Promise.all([
+    prisma.hostFlowRecord.findMany({
+      where: {
+        periodStart: monthStart,
+        branchId: { in: branchIds },
+      },
+      select: {
+        branchId: true,
+        personnelId: true,
+        totalFlow: true,
+      },
+    }),
+    prisma.rewardRule.findMany({
+      where: { branchId: { in: branchIds } },
+      select: { branchId: true, flowMultiplier: true },
+    }),
+  ])
+
+  // 厅倍率映射
+  const multiplierMap = new Map<number, number>()
+  for (const r of rewardRules) {
+    multiplierMap.set(r.branchId, r.flowMultiplier)
+  }
+
+  const result = new Map<string, { flowWelfare: number; totalFlow: number; multiplier: number }>()
+  for (const fr of flowRecords) {
+    const multiplier = multiplierMap.get(fr.branchId) ?? 0
+    if (multiplier <= 0) continue
+    const totalFlow = Number(fr.totalFlow)
+    const flowWelfare = toDecimal2((totalFlow * multiplier) / 100)
+    result.set(`${fr.branchId}:${fr.personnelId}`, { flowWelfare, totalFlow, multiplier })
+  }
+
+  return result
+}
+
 export default async function exportRoutes(fastify: FastifyInstance) {
   // GET /api/export/excel - 导出Excel（支持按周/按月，仅超管及以上可访问）
   // 有冠名数据的厅：导出包含冠名列（按等级动态生成）和冠名福利列
@@ -159,6 +209,14 @@ export default async function exportRoutes(fastify: FastifyInstance) {
       }
       const hasNaming = namingLevels.size > 0
 
+      // 查询主持流水福利（导出时计入总福利）
+      // 流水福利按月计算，使用 refDate 所在月
+      const flowBranchIds = involvedBranchIds.length > 0
+        ? involvedBranchIds
+        : [...new Set(ranking.map((r) => r.branchId))]
+      const flowWelfareMap = await getFlowWelfareMap(refDate, flowBranchIds)
+      const hasFlow = flowWelfareMap.size > 0
+
       const data = ranking.map((r) => {
         const row: Record<string, string | number> = {
           排名: r.rank,
@@ -196,11 +254,63 @@ export default async function exportRoutes(fastify: FastifyInstance) {
           }
           row['冠名福利'] = r.namingWelfare
         }
+        // 流水福利（仅当存在流水记录时显示列，正常显示）
+        let flowWelfare = 0
+        if (hasFlow) {
+          const flowEntry = flowWelfareMap.get(`${r.branchId}:${r.personnelId}`)
+          flowWelfare = flowEntry?.flowWelfare ?? 0
+          row['流水福利'] = flowWelfare
+        }
         row['扣减'] = r.deduction
         // 总福利与页面显示一致：不含排名奖金（排名奖金仅作为排名激励信息列展示）
-        row['总福利'] = toDecimal2(r.totalWelfare - r.rankBonus)
+        // 流水福利计入总福利；无福利标记时总福利清零
+        row['总福利'] = r.noWelfare
+          ? 0
+          : toDecimal2(r.totalWelfare - r.rankBonus + flowWelfare)
+        // 无福利标记备注：被标记无福利人员显示其备注，否则为空
+        row['备注'] = r.noWelfare && r.noWelfareRemark ? `无福利：${r.noWelfareRemark}` : ''
         return row
       })
+
+      // 追加"总计"行：汇总所有人员的总福利总和
+      const totalWelfareSum = ranking.reduce((sum, r) => {
+        let flowWelfare = 0
+        if (hasFlow) {
+          const flowEntry = flowWelfareMap.get(`${r.branchId}:${r.personnelId}`)
+          flowWelfare = flowEntry?.flowWelfare ?? 0
+        }
+        // 无福利标记时总福利为 0，不计入总和
+        const welfare = r.noWelfare
+          ? 0
+          : r.totalWelfare - r.rankBonus + flowWelfare
+        return sum + welfare
+      }, 0)
+      const totalRow: Record<string, string | number> = {
+        排名: '',
+        姓名: '总计',
+        分部: '',
+        收光: '',
+        麦序: '',
+      }
+      if (qmEnabled) totalRow['全麦'] = ''
+      if (zcEnabled) {
+        totalRow['主持天数'] = ''
+      }
+      totalRow['基础福利'] = ''
+      if (zcEnabled) totalRow['主持福利'] = ''
+      totalRow['排名奖金'] = ''
+      totalRow['麦序奖励'] = ''
+      if (hasNaming) {
+        for (const levelName of namingLevels.values()) {
+          totalRow[levelName] = ''
+        }
+        totalRow['冠名福利'] = ''
+      }
+      if (hasFlow) totalRow['流水福利'] = ''
+      totalRow['扣减'] = ''
+      totalRow['总福利'] = toDecimal2(totalWelfareSum)
+      totalRow['备注'] = ''
+      data.push(totalRow)
 
       const sheetName = cycle === StatCycle.MONTH ? '月排名' : '周排名'
       const worksheet = xlsx.utils.json_to_sheet(data)
@@ -278,7 +388,15 @@ export default async function exportRoutes(fastify: FastifyInstance) {
         }
       }
 
-      // 构建 CSV 字段：基础列 + 动态冠名列 + 冠名福利 + 扣减 + 总福利
+      // 查询主持流水福利（导出时计入总福利），与 Excel 导出保持一致
+      // 合并导出时 flowBranchIds 包含所有成员厅，按 branchId:personnelId 独立计算
+      const flowBranchIds = involvedBranchIds.length > 0
+        ? involvedBranchIds
+        : [...new Set(ranking.map((r) => r.branchId))]
+      const flowWelfareMap = await getFlowWelfareMap(refDate, flowBranchIds)
+      const hasFlow = flowWelfareMap.size > 0
+
+      // 构建 CSV 字段：基础列 + 动态冠名列 + 冠名福利 + 流水福利 + 扣减 + 总福利
       // 未开启全麦转换的厅不包含全麦列
       const fields: { label: string; value: string }[] = [
         { label: '排名', value: 'rank' },
@@ -306,8 +424,12 @@ export default async function exportRoutes(fastify: FastifyInstance) {
         }
         fields.push({ label: '冠名福利', value: 'namingWelfare' })
       }
+      if (hasFlow) {
+        fields.push({ label: '流水福利', value: 'flowWelfare' })
+      }
       fields.push({ label: '扣减', value: 'deduction' })
       fields.push({ label: '总福利', value: 'totalWelfare' })
+      fields.push({ label: '备注', value: 'remark' })
 
       // 将 ranking 展平为 CSV 用的行数据
       // 同名等级（不同 levelId）的 count 累加到 naming_<levelName> 字段
@@ -343,10 +465,60 @@ export default async function exportRoutes(fastify: FastifyInstance) {
           row['namingWelfare'] = r.namingWelfare
         }
         row['deduction'] = r.deduction
-        // 总福利与页面显示一致：不含排名奖金
-        row['totalWelfare'] = toDecimal2(r.totalWelfare - r.rankBonus)
+        // 流水福利（仅当存在流水记录时显示列，正常显示）
+        let flowWelfare = 0
+        if (hasFlow) {
+          const flowEntry = flowWelfareMap.get(`${r.branchId}:${r.personnelId}`)
+          flowWelfare = flowEntry?.flowWelfare ?? 0
+          row['flowWelfare'] = flowWelfare
+        }
+        // 总福利与页面显示一致：不含排名奖金（排名奖金仅作为排名激励信息列展示）
+        // 流水福利计入总福利；无福利标记时总福利清零
+        row['totalWelfare'] = r.noWelfare
+          ? 0
+          : toDecimal2(r.totalWelfare - r.rankBonus + flowWelfare)
+        // 无福利标记备注：被标记无福利人员显示其备注，否则为空
+        row['remark'] = r.noWelfare && r.noWelfareRemark ? `无福利：${r.noWelfareRemark}` : ''
         return row
       })
+
+      // 追加"总计"行：汇总所有人员的总福利总和
+      const totalWelfareSum = ranking.reduce((sum, r) => {
+        let flowWelfare = 0
+        if (hasFlow) {
+          const flowEntry = flowWelfareMap.get(`${r.branchId}:${r.personnelId}`)
+          flowWelfare = flowEntry?.flowWelfare ?? 0
+        }
+        // 无福利标记时总福利为 0，不计入总和
+        const welfare = r.noWelfare
+          ? 0
+          : r.totalWelfare - r.rankBonus + flowWelfare
+        return sum + welfare
+      }, 0)
+      const totalRow: Record<string, string | number> = {
+        rank: '',
+        personnelName: '总计',
+        branchName: '',
+        sg: '',
+        mx: '',
+      }
+      if (qmEnabled) totalRow['qm'] = ''
+      if (zcEnabled) totalRow['zcDays'] = ''
+      totalRow['baseWelfare'] = ''
+      if (zcEnabled) totalRow['zcWelfare'] = ''
+      totalRow['rankBonus'] = ''
+      totalRow['maixuBonus'] = ''
+      if (hasNaming) {
+        for (const levelName of uniqueLevelNames) {
+          totalRow[`naming_${levelName}`] = ''
+        }
+        totalRow['namingWelfare'] = ''
+      }
+      if (hasFlow) totalRow['flowWelfare'] = ''
+      totalRow['deduction'] = ''
+      totalRow['totalWelfare'] = toDecimal2(totalWelfareSum)
+      totalRow['remark'] = ''
+      flatRanking.push(totalRow)
 
       const parser = new Json2CSVParser({ fields })
       const csv = parser.parse(flatRanking)

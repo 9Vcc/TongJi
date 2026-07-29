@@ -23,6 +23,9 @@ interface RewardRuleInput {
   zcEnabled?: boolean
   zcDayReward?: number
   mxSlotEnabled?: boolean
+  flowMultiplier?: number
+  // 主持流水输入时自动追加末尾 0 的数量（默认 2）
+  flowZeroCount?: number
 }
 
 function isBool(v: unknown): boolean {
@@ -105,6 +108,8 @@ export default async function rewardRuleRoutes(fastify: FastifyInstance) {
         'maixuReward',
         'maixuMinStandard',
         'zcDayReward',
+        'flowMultiplier',
+        'flowZeroCount',
       ]
       // 校验布尔开关字段
       const boolFields: (keyof RewardRuleInput)[] = [

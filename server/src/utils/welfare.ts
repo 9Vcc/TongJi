@@ -330,75 +330,78 @@ export async function computeRanking(
     )
 
     const rule = ruleMap.get(branchId) ?? DEFAULT_RULE
-    personnelList.forEach((p, idx) => {
-      const rank = idx + 1
-      // 麦序最低标准门控：启用且麦序未达标则不计任何福利
-      const maixuDisqualified =
-        rule.maixuMinEnabled && p.mx < rule.maixuMinStandard
-      // 无福利标记：标记后福利清零（扣减仍生效，最终福利 = max(0, 0 - deduction) = 0）
-      const noWelfareEntry = noWelfareMap.get(`${branchId}:${p.personnelId}`)
-      const noWelfare = !!noWelfareEntry?.marked
-      const noWelfareRemark = noWelfareEntry?.remark ?? null
-      const baseWelfare = (maixuDisqualified || noWelfare)
-        ? 0
-        : computeBaseWelfare(p.sg, p.qm, rule)
-      const zcWelfare = (maixuDisqualified || noWelfare)
-        ? 0
-        : computeZcWelfare(p.zcDays, rule)
-      // 排名奖金与麦序达标奖励分别计算（受 maixuDisqualified / noWelfare 门控）
-      const rankBonus = (maixuDisqualified || noWelfare) ? 0 : computeRankBonus(rank, rule)
-      let maixuBonus = (maixuDisqualified || noWelfare) ? 0 : computeMaixuBonus(p.mx, rule)
-      // 叠加开关：前3名（rankBonus > 0）且关闭叠加时，不重复发放 maixuBonus
-      if (rankBonus > 0 && !rule.stackRankAndMaixu) {
-        maixuBonus = 0
-      }
-      const rankReward = rankBonus + maixuBonus
-
-      // 冠名福利：各等级冠名数 × 对应等级福利
-      // 麦序最低标准未达标/无福利标记：无任何福利（含冠名福利）
-      const namings: { levelId: number; levelName: string; count: number; reward: number }[] = []
-      let namingWelfare = 0
-      if (!maixuDisqualified && !noWelfare) {
-        for (const [levelId, count] of p.namings) {
-          if (count <= 0) continue
-          const info = levelInfoMap.get(levelId)
-          if (!info) continue
-          namings.push({ levelId, levelName: info.name, count, reward: info.reward })
-          namingWelfare += count * info.reward
+      personnelList.forEach((p, idx) => {
+        const rank = idx + 1
+        // 麦序最低标准门控：启用且麦序未达标则不计任何福利
+        const maixuDisqualified =
+          rule.maixuMinEnabled && p.mx < rule.maixuMinStandard
+        // 无福利标记：各项福利仍正常计算展示，仅总福利清零
+        const noWelfareEntry = noWelfareMap.get(`${branchId}:${p.personnelId}`)
+        const noWelfare = !!noWelfareEntry?.marked
+        const noWelfareRemark = noWelfareEntry?.remark ?? null
+        const baseWelfare = maixuDisqualified
+          ? 0
+          : computeBaseWelfare(p.sg, p.qm, rule)
+        const zcWelfare = maixuDisqualified
+          ? 0
+          : computeZcWelfare(p.zcDays, rule)
+        // 排名奖金与麦序达标奖励分别计算（仅受 maixuDisqualified 门控）
+        const rankBonus = maixuDisqualified ? 0 : computeRankBonus(rank, rule)
+        let maixuBonus = maixuDisqualified ? 0 : computeMaixuBonus(p.mx, rule)
+        // 叠加开关：前3名（rankBonus > 0）且关闭叠加时，不重复发放 maixuBonus
+        if (rankBonus > 0 && !rule.stackRankAndMaixu) {
+          maixuBonus = 0
         }
-      } else {
-        // 未达标/无福利：仍展示冠名明细（count > 0 的），但不计福利
-        for (const [levelId, count] of p.namings) {
-          if (count <= 0) continue
-          const info = levelInfoMap.get(levelId)
-          if (!info) continue
-          namings.push({ levelId, levelName: info.name, count, reward: info.reward })
-        }
-      }
+        const rankReward = rankBonus + maixuBonus
 
-      result.push({
-        rank,
-        personnelId: p.personnelId,
-        personnelName: p.personnelName,
-        branchId,
-        branchName: p.branchName,
-        sg: p.sg,
-        mx: p.mx,
-        qm: p.qm,
-        zcDays: p.zcDays,
-        baseWelfare,
-        zcWelfare,
-        rankBonus,
-        maixuBonus,
-        rankReward,
-        namingWelfare: toDecimal2(namingWelfare),
-        deduction: deductionMap.get(`${branchId}:${p.personnelId}`) ?? 0,
-        totalWelfare: Math.max(0, toDecimal2(baseWelfare + zcWelfare + rankReward + namingWelfare - (deductionMap.get(`${branchId}:${p.personnelId}`) ?? 0))),
-        noWelfare,
-        noWelfareRemark,
-        namings,
+        // 冠名福利：各等级冠名数 × 对应等级福利
+        // 麦序最低标准未达标：无任何福利（含冠名福利）
+        const namings: { levelId: number; levelName: string; count: number; reward: number }[] = []
+        let namingWelfare = 0
+        if (!maixuDisqualified) {
+          for (const [levelId, count] of p.namings) {
+            if (count <= 0) continue
+            const info = levelInfoMap.get(levelId)
+            if (!info) continue
+            namings.push({ levelId, levelName: info.name, count, reward: info.reward })
+            namingWelfare += count * info.reward
+          }
+        } else {
+          // 未达标：仍展示冠名明细（count > 0 的），但不计福利
+          for (const [levelId, count] of p.namings) {
+            if (count <= 0) continue
+            const info = levelInfoMap.get(levelId)
+            if (!info) continue
+            namings.push({ levelId, levelName: info.name, count, reward: info.reward })
+          }
+        }
+
+        result.push({
+          rank,
+          personnelId: p.personnelId,
+          personnelName: p.personnelName,
+          branchId,
+          branchName: p.branchName,
+          sg: p.sg,
+          mx: p.mx,
+          qm: p.qm,
+          zcDays: p.zcDays,
+          baseWelfare,
+          zcWelfare,
+          rankBonus,
+          maixuBonus,
+          rankReward,
+          namingWelfare: toDecimal2(namingWelfare),
+          deduction: deductionMap.get(`${branchId}:${p.personnelId}`) ?? 0,
+          // 无福利标记：总福利清零（各项福利仍正常展示）
+          totalWelfare: noWelfare
+            ? 0
+            : Math.max(0, toDecimal2(baseWelfare + zcWelfare + rankReward + namingWelfare - (deductionMap.get(`${branchId}:${p.personnelId}`) ?? 0))),
+          noWelfare,
+          noWelfareRemark,
+          namings,
+        })
       })
-    })
   }
 
   return result

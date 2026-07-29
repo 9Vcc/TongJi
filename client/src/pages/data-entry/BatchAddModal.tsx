@@ -153,8 +153,8 @@ export default function BatchAddModal({
       toast.error(isHuizhang ? "请选择厅" : "当前账户未关联厅");
       return;
     }
-    // 备注必填（含时间段模式）
-    if (!batchRemark.trim()) {
+    // 备注必填（仅普通模式；时间段模式无需备注）
+    if (!mxSlotEnabled && !batchRemark.trim()) {
       toast.error("请填写备注");
       return;
     }
@@ -244,7 +244,7 @@ export default function BatchAddModal({
                   qm: p.qm,
                   zcDays: p.zcDays,
                 })),
-                remark: batchRemark.trim(),
+                remark: undefined,
               });
               successCount += items.length;
             } catch {
@@ -267,7 +267,7 @@ export default function BatchAddModal({
                 qm: p.qm,
                 zcDays: p.zcDays,
               })),
-              remark: batchRemark.trim(),
+              remark: undefined,
             });
             successCount = parsed.length;
           } catch {
@@ -391,24 +391,26 @@ export default function BatchAddModal({
           </div>
         )}
 
-        {/* 备注：两种模式共用 */}
-        <div>
-          <label className="block text-xs text-textSecondary mb-1">
-            备注
-            <span className="text-danger ml-0.5">*</span>
-            <span className="ml-1 text-[10px] text-textMuted">
-              （共用，覆盖原有备注）
-            </span>
-          </label>
-          <input
-            type="text"
-            maxLength={100}
-            value={batchRemark}
-            onChange={(e) => onBatchRemarkChange(e.target.value)}
-            placeholder="必填，最多 100 字"
-            className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
-          />
-        </div>
+        {/* 备注：仅普通模式显示（时间段模式无需备注） */}
+        {!mxSlotEnabled && (
+          <div>
+            <label className="block text-xs text-textSecondary mb-1">
+              备注
+              <span className="text-danger ml-0.5">*</span>
+              <span className="ml-1 text-[10px] text-textMuted">
+                （共用，覆盖原有备注）
+              </span>
+            </label>
+            <input
+              type="text"
+              maxLength={100}
+              value={batchRemark}
+              onChange={(e) => onBatchRemarkChange(e.target.value)}
+              placeholder="必填，最多 100 字"
+              className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
+            />
+          </div>
+        )}
 
         <div className="max-h-[60vh] overflow-auto scrollbar-thin border border-border rounded-custom-sm">
           <table className="w-full text-sm">

@@ -64,6 +64,10 @@ type RuleForm = {
   stackRankAndMaixu: boolean
   zcEnabled: boolean
   zcDayReward: number
+  // 主持流水福利倍率（百分比，如10表示10%）：导出时流水福利 = 总流水 × flowMultiplier / 100
+  flowMultiplier: number
+  // 主持流水输入时自动追加末尾 0 的数量（默认 2，按万位计算场景使用）
+  flowZeroCount: number
 }
 
 const defaultRuleForm: RuleForm = {
@@ -83,6 +87,8 @@ const defaultRuleForm: RuleForm = {
   stackRankAndMaixu: true,
   zcEnabled: false,
   zcDayReward: 0,
+  flowMultiplier: 0,
+  flowZeroCount: 2,
 }
 
 // 开关行：左侧标签 + 右侧 toggle
@@ -407,6 +413,8 @@ export default function BranchesPage() {
           stackRankAndMaixu: r.stackRankAndMaixu,
           zcEnabled: r.zcEnabled,
           zcDayReward: r.zcDayReward,
+          flowMultiplier: r.flowMultiplier,
+          flowZeroCount: r.flowZeroCount,
         })
       }
     } catch (err) {
@@ -450,6 +458,8 @@ export default function BranchesPage() {
           stackRankAndMaixu: r.stackRankAndMaixu,
           zcEnabled: r.zcEnabled,
           zcDayReward: r.zcDayReward,
+          flowMultiplier: r.flowMultiplier,
+          flowZeroCount: r.flowZeroCount,
         })
       }
     } catch (err) {
@@ -1632,6 +1642,43 @@ export default function BranchesPage() {
                 />
               </div>
             )}
+
+            {/* 主持流水福利倍率（百分比） */}
+            <div>
+              <ToggleRow
+                label="主持流水福利"
+                desc="开启后在「主持流水记录」页按月录入主持总流水，导出时流水福利 = 总流水 × 倍率 / 100 计入总福利"
+                checked={ruleForm.flowMultiplier > 0}
+                onChange={(v) =>
+                  setRuleForm({ ...ruleForm, flowMultiplier: v ? 10 : 0 })
+                }
+              />
+              {ruleForm.flowMultiplier > 0 && (
+                <div className="pl-4 border-l-2 border-primary/30 ml-1 space-y-3">
+                  <NumberInput
+                    label="流水倍率（%，如10表示10%）"
+                    value={ruleForm.flowMultiplier}
+                    onChange={(v) =>
+                      setRuleForm({ ...ruleForm, flowMultiplier: v })
+                    }
+                  />
+                  <NumberInput
+                    label="末尾自动补 0 数量（按万位计算时设为 4）"
+                    value={ruleForm.flowZeroCount}
+                    onChange={(v) =>
+                      setRuleForm({
+                        ...ruleForm,
+                        flowZeroCount: Math.max(0, Math.min(6, v)),
+                      })
+                    }
+                  />
+                  <p className="text-xs text-textMuted mt-1.5 leading-relaxed">
+                    在「主持流水记录」页输入总流水时，系统会自动在末尾追加 N 个 0 作为实际金额存储。
+                    例如设置 2，输入 100 则实际流水为 10000；设置 0 则不追加（按实际金额录入）。
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </Modal>

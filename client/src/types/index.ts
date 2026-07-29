@@ -81,9 +81,26 @@ export interface Personnel {
   id: number
   name: string
   createdAt: string
-  branches?: { id: number; name: string; statCycle?: StatCycle }[]
+  // isHost 为该人员在对应厅的主持标记（按厅独立）
+  branches?: { id: number; name: string; statCycle?: StatCycle; isHost?: boolean }[]
   hasDataThisWeek?: boolean
   weekData?: PersonnelWeekData[]
+}
+
+// 主持流水记录（按月存储，导出时流水福利 = 总流水 × 厅倍率 / 100）
+export interface HostFlowRecord {
+  id: number
+  branchId: number
+  personnelId: number
+  // 月初1日（periodStart 固定为月初1日）
+  periodStart: string
+  // 总流水金额（最多两位小数）
+  totalFlow: number
+  createdBy: number
+  createdAt: string
+  updatedAt: string
+  personnel?: { id: number; name: string }
+  branch?: { id: number; name: string }
 }
 
 // 数据记录
@@ -250,6 +267,11 @@ export interface RewardRule {
   zcEnabled: boolean
   zcDayReward: number
   mxSlotEnabled: boolean
+  // 主持流水福利倍率（百分比，如10表示10%）：导出时流水福利 = 总流水 × flowMultiplier / 100
+  flowMultiplier: number
+  // 主持流水输入时自动追加末尾 0 的数量（默认 2，按万位计算场景使用）
+  // 用户输入 N，实际存储 = N × 10^flowZeroCount
+  flowZeroCount: number
   branch?: { id: number; name: string }
 }
 
@@ -472,6 +494,8 @@ export interface UpdateRewardRuleInput {
   zcEnabled?: boolean
   zcDayReward?: number
   mxSlotEnabled?: boolean
+  flowMultiplier?: number
+  flowZeroCount?: number
 }
 
 // 录入历史记录日志项（创建/修改/删除统一结构）
@@ -498,6 +522,12 @@ export interface DataLogItem {
   mx?: number
   qm?: number
   zcDays?: number
+  // 时间段倍率录入信息（仅时间段模式录入时存在）
+  slotDate?: string
+  slotIndex?: number
+  rawMx?: number
+  multiplier?: number
+  convertedMx?: number
   // 修改操作：变更前后的结构化数值（type=update 时使用）
   before?: { sg?: number; mx?: number; qm?: number; zcDays?: number; personnelId?: number } | null
   after?: { sg?: number; mx?: number; qm?: number; zcDays?: number; personnelId?: number } | null

@@ -33,6 +33,7 @@ import type {
   Fine,
   FineSummary,
   FineReasonType,
+  HostFlowRecord,
 } from '../types'
 
 const request = axios.create({
@@ -207,15 +208,26 @@ export const personnelApi = {
       branchId,
     })
   },
-  delete(id: number, branchId: number) {
+  // 删除人员：需输入当前账户登录密码二次确认
+  // 带数据记录的人员会一并级联删除（会长+超管权限）
+  delete(id: number, branchId: number, password: string) {
     return request.delete<unknown, { message: string }>(`/personnel/${id}`, {
       params: { branchId },
+      data: { password },
     })
   },
   rename(id: number, name: string, branchId?: number) {
     return request.put<unknown, Personnel>(`/personnel/${id}`, {
       name,
       branchId,
+    })
+  },
+  // 切换人员主持标记（按厅独立标记）
+  // 取消主持标记时后端会自动删除该人员该厅所有历史流水记录
+  toggleHost(id: number, branchId: number, isHost: boolean) {
+    return request.put<unknown, { message: string }>(`/personnel/${id}/host`, {
+      branchId,
+      isHost,
     })
   },
 }
@@ -706,6 +718,47 @@ export const noWelfareMarksApi = {
   }) {
     return request.delete<unknown, { message: string }>('/no-welfare-marks', {
       data,
+    })
+  },
+}
+
+// ============ 主持流水记录 ============
+export const hostFlowApi = {
+  // 查询指定月份+厅的主持流水记录
+  // month 为 YYYY-MM-DD（月内任意日期，后端归一到月初1日）
+  list(params: { month: string; branchId?: number }) {
+    return request.get<unknown, HostFlowRecord[]>('/host-flow-records', {
+      params,
+    })
+  },
+  // 设置/更新主持流水记录（会长+超管）
+  // totalFlow 为 0 时表示清零（删除记录）
+  upsert(data: {
+    branchId: number
+    personnelId: number
+    month: string
+    totalFlow: number
+  }) {
+    return request.put<unknown, HostFlowRecord | { message: string }>(
+      '/host-flow-records',
+      data,
+    )
+  },
+  // 删除主持流水记录（会长+超管）
+  remove(data: {
+    branchId: number
+    personnelId: number
+    month: string
+  }) {
+    return request.delete<unknown, { message: string }>('/host-flow-records', {
+      data,
+    })
+  },
+  // 查询有流水记录的月份列表（YYYY-MM-DD 月初1日，按降序）
+  // 始终包含当前月
+  listMonths(branchId?: number) {
+    return request.get<unknown, string[]>('/host-flow-records/months', {
+      params: branchId ? { branchId } : undefined,
     })
   },
 }

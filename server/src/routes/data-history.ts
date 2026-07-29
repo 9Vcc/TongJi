@@ -101,6 +101,12 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
         mx?: number
         qm?: number
         zcDays?: number
+        // 时间段倍率录入信息（仅时间段模式录入时存在）
+        slotDate?: string
+        slotIndex?: number
+        rawMx?: number
+        multiplier?: number
+        convertedMx?: number
         // 修改操作：变更前后的结构化数值（type=update 时使用）
         before?: { sg?: number; mx?: number; qm?: number; zcDays?: number; personnelId?: number } | null
         after?: { sg?: number; mx?: number; qm?: number; zcDays?: number; personnelId?: number } | null
@@ -171,9 +177,12 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
           take: limit,
         })
 
-        // 解析 newValue JSON 还原本次录入的增量值
+        // 解析 newValue JSON 还原本次录入的增量值（可能含时段信息）
         const createItems: LogItem[] = createHistories.map((h) => {
-          let parsedNew: { sg?: number; mx?: number; qm?: number; zcDays?: number } = {}
+          let parsedNew: {
+            sg?: number; mx?: number; qm?: number; zcDays?: number
+            slotDate?: string; slotIndex?: number; rawMx?: number; multiplier?: number; convertedMx?: number
+          } = {}
           try {
             parsedNew = JSON.parse(h.newValue || '{}')
           } catch {
@@ -195,6 +204,12 @@ export default async function dataHistoryRoutes(fastify: FastifyInstance) {
             mx: parsedNew.mx,
             qm: parsedNew.qm,
             zcDays: parsedNew.zcDays,
+            // 时段信息（仅时间段模式录入时存在）
+            slotDate: parsedNew.slotDate,
+            slotIndex: parsedNew.slotIndex,
+            rawMx: parsedNew.rawMx,
+            multiplier: parsedNew.multiplier,
+            convertedMx: parsedNew.convertedMx,
             remark: h.remark,
           }
         })

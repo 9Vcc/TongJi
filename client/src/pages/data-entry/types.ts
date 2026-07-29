@@ -57,6 +57,8 @@ export type DisplayRow = {
   // 无福利标记：true 表示该周期被标记，福利清零（扣减仍生效）
   noWelfare?: boolean;
   noWelfareRemark?: string | null;
+  // 主持标记（按厅独立）
+  isHost?: boolean;
   namings?: NamingItem[];
 };
 

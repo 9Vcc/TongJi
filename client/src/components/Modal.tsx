@@ -77,9 +77,9 @@ export default function Modal({
   return (
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 overflow-y-auto">
           <motion.div
-            className="absolute inset-0 bg-black/40"
+            className="fixed inset-0 bg-black/40"
             onClick={onClose}
             aria-hidden="true"
             initial={{ opacity: 0 }}
@@ -87,42 +87,44 @@ export default function Modal({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
           />
-          <motion.div
-            ref={dialogRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={title ? 'modal-title' : undefined}
-            tabIndex={-1}
-            className={`relative bg-card rounded-lg border border-border w-full ${width} max-h-[90vh] flex flex-col shadow-xl focus:outline-none`}
-            initial={{ opacity: 0, scale: 0.96, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 8 }}
-            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-          >
-            {title && (
-              <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-                <h3
-                  id="modal-title"
-                  className="text-base font-semibold text-textPrimary"
-                >
-                  {title}
-                </h3>
-                <button
-                  onClick={onClose}
-                  aria-label="关闭弹窗"
-                  className="p-1 text-textMuted hover:text-textPrimary hover:bg-surface rounded-lg transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-            )}
-            <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
-            {footer && (
-              <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-border">
-                {footer}
-              </div>
-            )}
-          </motion.div>
+          <div className="relative min-h-full flex items-center justify-center p-4">
+            <motion.div
+              ref={dialogRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={title ? 'modal-title' : undefined}
+              tabIndex={-1}
+              className={`relative bg-card rounded-lg border border-border w-full ${width} flex flex-col shadow-xl focus:outline-none`}
+              initial={{ opacity: 0, scale: 0.96, y: 8 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            >
+              {title && (
+                <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+                  <h3
+                    id="modal-title"
+                    className="text-base font-semibold text-textPrimary"
+                  >
+                    {title}
+                  </h3>
+                  <button
+                    onClick={onClose}
+                    aria-label="关闭弹窗"
+                    className="p-1 text-textMuted hover:text-textPrimary hover:bg-surface rounded-lg transition-colors duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+              )}
+              <div className="px-5 py-4">{children}</div>
+              {footer && (
+                <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-border">
+                  {footer}
+                </div>
+              )}
+            </motion.div>
+          </div>
         </div>
       )}
     </AnimatePresence>

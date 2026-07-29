@@ -3,6 +3,7 @@ import prisma from '../lib/prisma'
 import { authenticate, requireRole, canAccessBranch, getAccessibleBranchIds } from '../middleware/auth'
 import { Role } from '../../generated/prisma/client'
 import { getWeekStart } from '../utils/week'
+import { comparePassword } from '../utils/password'
 
 export default async function personnelRoutes(fastify: FastifyInstance) {
   // POST /api/personnel - 添加人员
@@ -358,7 +359,11 @@ export default async function personnelRoutes(fastify: FastifyInstance) {
           id: p.id,
           name: p.name,
           createdAt: p.createdAt,
-          branches: p.personnelBranches.map((pb) => pb.branch),
+          // branches 包含 isHost 字段（按厅独立标记）
+          branches: p.personnelBranches.map((pb) => ({
+            ...pb.branch,
+            isHost: pb.isHost,
+          })),
           hasDataThisWeek: weekData.length > 0,
           weekData,
         }
@@ -435,12 +440,14 @@ export default async function personnelRoutes(fastify: FastifyInstance) {
   )
 
   // DELETE /api/personnel/:id - 移除人员
+  // 需输入登录密码二次确认；带数据记录的人员一并级联删除（会长+超管权限）
   fastify.delete(
     '/api/personnel/:id',
     { preHandler: [authenticate, requireRole(Role.CHAOGUAN)] },
     async (request, reply) => {
       const { id } = request.params as { id: string }
       const { branchId } = request.query as { branchId?: string }
+      const { password } = (request.body ?? {}) as { password?: string }
       const currentUser = request.user
 
       const personnelId = Number(id)
@@ -457,6 +464,21 @@ export default async function personnelRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: '无效的分部ID' })
       }
 
+      // 密码二次确认
+      if (!password) {
+        return reply.code(400).send({ error: '请输入登录密码以确认删除' })
+      }
+      const account = await prisma.account.findUnique({
+        where: { id: currentUser.id },
+      })
+      if (!account) {
+        return reply.code(401).send({ error: '账户不存在' })
+      }
+      const pwdOk = await comparePassword(password, account.passwordHash)
+      if (!pwdOk) {
+        return reply.code(403).send({ error: '密码错误，删除已取消' })
+      }
+
       // 超管只能操作授权厅
       if (currentUser.role === Role.CHAOGUAN) {
         if (!canAccessBranch(currentUser, targetBranchId)) {
@@ -468,7 +490,10 @@ export default async function personnelRoutes(fastify: FastifyInstance) {
         where: { id: personnelId },
         include: {
           personnelBranches: true,
-          dataRecords: { where: { branchId: targetBranchId }, select: { id: true } },
+          dataRecords: {
+            where: { branchId: targetBranchId },
+            select: { id: true },
+          },
         },
       })
 
@@ -484,26 +509,106 @@ export default async function personnelRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: '该人员不属于此分部' })
       }
 
-      // 如果人员有数据记录，禁止移除
-      if (personnel.dataRecords.length > 0) {
-        return reply.code(400).send({ error: '该人员有数据记录，禁止移除' })
-      }
+      const hasData = personnel.dataRecords.length > 0
 
-      // 如果人员只属于该分部，则删除人员（先删关联再删人员）；否则只删除关联记录
-      if (personnel.personnelBranches.length === 1) {
-        await prisma.$transaction(async (tx) => {
+      // 事务内级联删除：
+      // - DataRecord 删除时，DataRecordNaming / MxTimeSlotRecord 自动级联；DataHistory.recordId 自动 SetNull
+      // - Deduction / HostFlowRecord / NoWelfareMark 在人员删除时自动级联（onDelete: Cascade）
+      // - PersonnelBranch 不带级联，需手动删除
+      await prisma.$transaction(async (tx) => {
+        // 1. 删除该厅下该人员的所有数据记录
+        await tx.dataRecord.deleteMany({
+          where: { personnelId, branchId: targetBranchId },
+        })
+        // 2. 删除该厅下该人员的扣减记录（多厅人员仅清本厅）
+        await tx.deduction.deleteMany({
+          where: { personnelId, branchId: targetBranchId },
+        })
+        // 3. 删除该厅下该人员的无福利标记
+        await tx.noWelfareMark.deleteMany({
+          where: { personnelId, branchId: targetBranchId },
+        })
+        // 4. 删除该厅下该人员的主持流水记录
+        await tx.hostFlowRecord.deleteMany({
+          where: { personnelId, branchId: targetBranchId },
+        })
+
+        if (personnel.personnelBranches.length === 1) {
+          // 仅属于该分部：删除所有关联 + 删除人员本身
           await tx.personnelBranch.deleteMany({ where: { personnelId } })
           await tx.personnel.delete({ where: { id: personnelId } })
-        })
-      } else {
-        await prisma.personnelBranch.delete({
-          where: {
-            personnelId_branchId: { personnelId, branchId: targetBranchId },
-          },
+        } else {
+          // 多厅人员：仅解除该厅关联，保留人员本身
+          await tx.personnelBranch.delete({
+            where: {
+              personnelId_branchId: { personnelId, branchId: targetBranchId },
+            },
+          })
+        }
+      })
+
+      return reply.send({
+        message: hasData ? '人员及关联数据已删除' : '人员已移除',
+      })
+    }
+  )
+
+  // PUT /api/personnel/:id/host - 切换人员主持标记（按厅独立标记）
+  // body: { branchId, isHost }
+  // 会长+超管可操作；取消主持标记时自动删除该月流水记录
+  fastify.put(
+    '/api/personnel/:id/host',
+    { preHandler: [authenticate, requireRole(Role.CHAOGUAN)] },
+    async (request, reply) => {
+      const { id } = request.params as { id: string }
+      const { branchId, isHost } = request.body as {
+        branchId: number
+        isHost: boolean
+      }
+      const currentUser = request.user
+
+      const personnelId = Number(id)
+      if (Number.isNaN(personnelId)) {
+        return reply.code(400).send({ error: '无效的人员ID' })
+      }
+
+      if (!branchId || typeof isHost !== 'boolean') {
+        return reply.code(400).send({ error: '缺少必要参数或参数类型错误' })
+      }
+
+      // 权限校验：超管只能操作授权厅
+      if (currentUser.role === Role.CHAOGUAN) {
+        if (!canAccessBranch(currentUser, branchId)) {
+          return reply.code(403).send({ error: '只能操作授权厅人员' })
+        }
+      }
+
+      // 校验人员属于该分部
+      const assoc = await prisma.personnelBranch.findUnique({
+        where: {
+          personnelId_branchId: { personnelId, branchId },
+        },
+      })
+      if (!assoc) {
+        return reply.code(400).send({ error: '人员不属于此分部' })
+      }
+
+      // 更新主持标记
+      await prisma.personnelBranch.update({
+        where: {
+          personnelId_branchId: { personnelId, branchId },
+        },
+        data: { isHost },
+      })
+
+      // 取消主持标记时，删除该人员该厅所有历史流水记录
+      if (!isHost) {
+        await prisma.hostFlowRecord.deleteMany({
+          where: { personnelId, branchId },
         })
       }
 
-      return reply.send({ message: '人员已移除' })
+      return reply.send({ message: isHost ? '已标记为主持' : '已取消主持' })
     }
   )
 }

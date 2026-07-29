@@ -11,6 +11,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Download,
+  Star,
+  CheckSquare,
 } from 'lucide-react'
 import {
   personnelApi,
@@ -27,6 +29,8 @@ import GroupedSelect from '../components/GroupedSelect'
 import type { Personnel as PersonnelType, Branch } from '../types'
 
 type AddTab = 'single' | 'batch'
+// 主持标记编辑模式：keep=不修改，on=标记为主持，off=取消主持
+type HostMode = 'keep' | 'on' | 'off'
 
 const PAGE_SIZE = 20
 
@@ -59,15 +63,23 @@ export default function Personnel() {
   const [addBranchId, setAddBranchId] = useState<number | undefined>(undefined)
   const [submitting, setSubmitting] = useState(false)
 
-  // 改名弹窗
-  const [renameOpen, setRenameOpen] = useState(false)
-  const [renameTarget, setRenameTarget] = useState<PersonnelType | null>(null)
-  const [renameName, setRenameName] = useState('')
-  const [renaming, setRenaming] = useState(false)
+  // 多选（仅 canEdit/canDelete 可操作）
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
 
-  // 删除确认弹窗
+  // 编辑信息弹窗（单人改名 + 主持标记；多人批量主持标记）
+  const [editOpen, setEditOpen] = useState(false)
+  // 编辑目标：单人时为 [personnel]，多人时为完整列表
+  const [editTargets, setEditTargets] = useState<PersonnelType[]>([])
+  const [editName, setEditName] = useState('')
+  // 单人：显示当前主持状态作为 toggle 初始值；多人：3态
+  const [editHostMode, setEditHostMode] = useState<HostMode>('keep')
+  const [editing, setEditing] = useState(false)
+
+  // 删除确认弹窗（需输入密码）
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<PersonnelType | null>(null)
+  const [deletePassword, setDeletePassword] = useState('')
+  const [deleting, setDeleting] = useState(false)
 
   // 导出人员名单
   const [exporting, setExporting] = useState<'excel' | 'csv' | null>(null)
@@ -103,6 +115,8 @@ export default function Personnel() {
     } else {
       setPersonnel([])
     }
+    // 切厅时清空多选
+    setSelectedIds(new Set())
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveBranchId])
 
@@ -124,6 +138,40 @@ export default function Personnel() {
     const start = (page - 1) * PAGE_SIZE
     return filteredPersonnel.slice(start, start + PAGE_SIZE)
   }, [filteredPersonnel, page])
+
+  // 当前页人员 ID（用于"全选当前页"）
+  const currentPageIds = useMemo(
+    () => pagedPersonnel.map((p) => p.id),
+    [pagedPersonnel],
+  )
+  const allCurrentPageSelected =
+    currentPageIds.length > 0 &&
+    currentPageIds.every((id) => selectedIds.has(id))
+
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (allCurrentPageSelected) {
+        // 取消当前页全选
+        for (const id of currentPageIds) next.delete(id)
+      } else {
+        // 选中当前页全部
+        for (const id of currentPageIds) next.add(id)
+      }
+      return next
+    })
+  }
+
+  const toggleSelect = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const selectedCount = selectedIds.size
 
   const openAdd = () => {
     setName('')
@@ -193,38 +241,112 @@ export default function Personnel() {
     }
   }
 
-  const openRename = (p: PersonnelType) => {
-    setRenameTarget(p)
-    setRenameName(p.name)
-    setRenameOpen(true)
+  // ============ 编辑信息（单人：改名+主持 / 多人：批量主持）============
+  // 单人入口：操作列点击 Pencil 图标
+  const openEditSingle = (p: PersonnelType) => {
+    if (!effectiveBranchId) {
+      toast.error('请先选择厅')
+      return
+    }
+    setEditTargets([p])
+    setEditName('')
+    // 初始 host 模式为 keep（不修改），单人弹窗中显示当前状态作为参考
+    setEditHostMode('keep')
+    setEditOpen(true)
   }
 
-  const handleRename = async () => {
-    if (!renameTarget) return
-    const trimmed = renameName.trim()
-    if (!trimmed) {
-      toast.error('请输入姓名')
+  // 多人入口：工具栏"批量编辑"按钮
+  const openEditBatch = () => {
+    if (!effectiveBranchId) {
+      toast.error('请先选择厅')
       return
     }
-    if (trimmed === renameTarget.name) {
-      toast.error('姓名未更改')
+    if (selectedIds.size === 0) {
+      toast.error('请先勾选要编辑的人员')
       return
     }
-    setRenaming(true)
+    const targets = personnel.filter((p) => selectedIds.has(p.id))
+    setEditTargets(targets)
+    setEditName('')
+    setEditHostMode('keep')
+    setEditOpen(true)
+  }
+
+  const handleEditSubmit = async () => {
+    if (!effectiveBranchId) {
+      toast.error('请先选择厅')
+      return
+    }
+    const isBatch = editTargets.length > 1
+
+    // 校验：必须至少有一项变更
+    if (isBatch) {
+      if (editHostMode === 'keep') {
+        toast.error('请选择主持标记操作（标记为主持 / 取消主持）')
+        return
+      }
+    } else {
+      const target = editTargets[0]
+      const trimmed = editName.trim()
+      const nameChanged = trimmed.length > 0 && trimmed !== target.name
+      const hostChanged = editHostMode !== 'keep'
+      if (!nameChanged && !hostChanged) {
+        toast.error('信息未变更')
+        return
+      }
+    }
+
+    setEditing(true)
     try {
-      await personnelApi.rename(renameTarget.id, trimmed, effectiveBranchId)
-      toast.success('修改成功')
-      setRenameOpen(false)
+      const tasks: Promise<unknown>[] = []
+
+      if (!isBatch) {
+        const target = editTargets[0]
+        const trimmed = editName.trim()
+        // 单人改名
+        if (trimmed.length > 0 && trimmed !== target.name) {
+          tasks.push(personnelApi.rename(target.id, trimmed, effectiveBranchId))
+        }
+        // 单人主持切换
+        if (editHostMode !== 'keep') {
+          tasks.push(
+            personnelApi.toggleHost(
+              target.id,
+              effectiveBranchId,
+              editHostMode === 'on',
+            ),
+          )
+        }
+      } else {
+        // 批量：仅支持主持标记
+        for (const target of editTargets) {
+          tasks.push(
+            personnelApi.toggleHost(
+              target.id,
+              effectiveBranchId,
+              editHostMode === 'on',
+            ),
+          )
+        }
+      }
+
+      await Promise.all(tasks)
+      toast.success(isBatch ? '批量编辑完成' : '修改成功')
+      setEditOpen(false)
+      // 批量编辑后清空多选
+      if (isBatch) setSelectedIds(new Set())
       await loadPersonnel()
     } catch (err) {
       toast.error(getErrorMessage(err))
     } finally {
-      setRenaming(false)
+      setEditing(false)
     }
   }
 
+  // ============ 删除人员（需密码二次确认）============
   const openDelete = (p: PersonnelType) => {
     setDeleteTarget(p)
+    setDeletePassword('')
     setDeleteOpen(true)
   }
 
@@ -235,13 +357,32 @@ export default function Personnel() {
       toast.error('无法确定人员所属厅')
       return
     }
+    if (!deletePassword) {
+      toast.error('请输入登录密码')
+      return
+    }
+    setDeleting(true)
     try {
-      await personnelApi.delete(deleteTarget.id, targetBranchId)
-      toast.success('移除成功')
+      await personnelApi.delete(
+        deleteTarget.id,
+        targetBranchId,
+        deletePassword,
+      )
+      toast.success('删除成功')
       setDeleteOpen(false)
+      setDeleteTarget(null)
+      setDeletePassword('')
+      // 删除后从多选中移除
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        next.delete(deleteTarget.id)
+        return next
+      })
       await loadPersonnel()
     } catch (err) {
       toast.error(getErrorMessage(err))
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -296,6 +437,17 @@ export default function Personnel() {
     return isMonthCycle ? '本月数据状态' : '本周数据状态'
   }, [branches, effectiveBranchId, personnel])
 
+  // 编辑弹窗是否为批量模式
+  const isBatchEdit = editTargets.length > 1
+  // 单人模式：当前主持状态
+  const singleCurrentHost = useMemo(() => {
+    if (isBatchEdit || editTargets.length === 0) return false
+    const target = editTargets[0]
+    return (
+      target.branches?.find((b) => b.id === effectiveBranchId)?.isHost ?? false
+    )
+  }, [editTargets, effectiveBranchId, isBatchEdit])
+
   return (
     <div className="space-y-5">
       {/* 顶部工具栏 */}
@@ -319,6 +471,17 @@ export default function Personnel() {
               }))}
               minWidth={160}
             />
+          )}
+          {/* 批量编辑按钮：仅在选中时显示 */}
+          {canEdit && selectedCount > 0 && (
+            <button
+              onClick={openEditBatch}
+              disabled={!hasBranchSelected}
+              className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-custom-sm text-sm font-medium hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
+            >
+              <CheckSquare size={16} />
+              批量编辑（{selectedCount} 人）
+            </button>
           )}
           <button
             onClick={openAdd}
@@ -405,9 +568,21 @@ export default function Personnel() {
               <table className="w-full text-sm">
                 <thead className="bg-surface border-b border-border">
                   <tr className="text-left text-textSecondary">
+                    {(canEdit || canDelete) && (
+                      <th className="px-4 py-3 font-medium w-10">
+                        <input
+                          type="checkbox"
+                          className="checkbox-round"
+                          checked={allCurrentPageSelected}
+                          onChange={toggleSelectAll}
+                          aria-label="全选当前页"
+                        />
+                      </th>
+                    )}
                     <th className="px-4 py-3 font-medium">序号</th>
                     <th className="px-4 py-3 font-medium">姓名</th>
                     <th className="px-4 py-3 font-medium">所属厅</th>
+                    <th className="px-4 py-3 font-medium">主持</th>
                     <th className="px-4 py-3 font-medium">{dataStatusLabel}</th>
                     {(canEdit || canDelete) && (
                       <th className="px-4 py-3 font-medium text-right">操作</th>
@@ -418,19 +593,19 @@ export default function Personnel() {
                   {loading ? (
                     Array.from({ length: 6 }).map((_, i) => (
                       <tr key={i} className="border-b border-border last:border-0">
-                        {Array.from({ length: canEdit || canDelete ? 5 : 4 }).map(
-                          (_, j) => (
-                            <td key={j} className="px-4 py-3">
-                              <Skeleton className="h-5 w-full" />
-                            </td>
-                          ),
-                        )}
+                        {Array.from({
+                          length: (canEdit || canDelete ? 1 : 0) + 5 + (canEdit || canDelete ? 1 : 0),
+                        }).map((_, j) => (
+                          <td key={j} className="px-4 py-3">
+                            <Skeleton className="h-5 w-full" />
+                          </td>
+                        ))}
                       </tr>
                     ))
                   ) : pagedPersonnel.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={canEdit || canDelete ? 5 : 4}
+                        colSpan={(canEdit || canDelete ? 1 : 0) + 5 + (canEdit || canDelete ? 1 : 0)}
                         className="px-4 py-16 text-center"
                       >
                         <div className="flex flex-col items-center gap-2 text-textMuted">
@@ -442,11 +617,30 @@ export default function Personnel() {
                       </td>
                     </tr>
                   ) : (
-                    pagedPersonnel.map((p, idx) => (
+                    pagedPersonnel.map((p, idx) => {
+                      // 当前厅的主持状态（按厅独立标记）
+                      const currentBranchHost =
+                        p.branches?.find((b) => b.id === effectiveBranchId)
+                          ?.isHost ?? false
+                      const isSelected = selectedIds.has(p.id)
+                      return (
                       <tr
                         key={p.id}
-                        className="border-b border-border last:border-0 hover:bg-surface transition-colors duration-200"
+                        className={`border-b border-border last:border-0 hover:bg-surface transition-colors duration-200 ${
+                          isSelected ? 'bg-primary/5' : ''
+                        }`}
                       >
+                        {(canEdit || canDelete) && (
+                          <td className="px-4 py-3">
+                            <input
+                              type="checkbox"
+                              className="checkbox-round"
+                              checked={isSelected}
+                              onChange={() => toggleSelect(p.id)}
+                              aria-label={`选择 ${p.name}`}
+                            />
+                          </td>
+                        )}
                         <td className="px-4 py-3 text-textMuted font-mono">
                           {(page - 1) * PAGE_SIZE + idx + 1}
                         </td>
@@ -455,6 +649,19 @@ export default function Personnel() {
                         </td>
                         <td className="px-4 py-3 text-textSecondary">
                           {p.branches?.map((b) => b.name).join('、') || '-'}
+                        </td>
+                        <td className="px-4 py-3">
+                          {currentBranchHost ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800">
+                              <Star
+                                size={12}
+                                className="fill-amber-500 text-amber-500"
+                              />
+                              主持
+                            </span>
+                          ) : (
+                            <span className="text-textMuted text-xs">-</span>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           {p.hasDataThisWeek ? (
@@ -474,9 +681,9 @@ export default function Personnel() {
                             <div className="flex items-center justify-end gap-1">
                               {canEdit && (
                                 <button
-                                  onClick={() => openRename(p)}
+                                  onClick={() => openEditSingle(p)}
                                   className="p-1.5 text-textSecondary hover:text-primary hover:bg-primary/10 rounded transition-colors duration-200 cursor-pointer"
-                                  title="改名"
+                                  title="编辑信息"
                                 >
                                   <Pencil size={16} />
                                 </button>
@@ -485,7 +692,7 @@ export default function Personnel() {
                                 <button
                                   onClick={() => openDelete(p)}
                                   className="p-1.5 text-textSecondary hover:text-danger hover:bg-danger/10 rounded transition-colors duration-200 cursor-pointer"
-                                  title="移除"
+                                  title="删除"
                                 >
                                   <Trash2 size={16} />
                                 </button>
@@ -494,7 +701,8 @@ export default function Personnel() {
                           </td>
                         )}
                       </tr>
-                    ))
+                      )
+                    })
                   )}
                 </tbody>
               </table>
@@ -506,6 +714,7 @@ export default function Personnel() {
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <span className="text-xs text-textMuted">
                 共 {filteredPersonnel.length} 人，第 {page}/{totalPages} 页
+                {selectedCount > 0 && `，已选 ${selectedCount} 人`}
               </span>
               <div className="flex items-center gap-1">
                 <button
@@ -654,83 +863,247 @@ export default function Personnel() {
         </div>
       </Modal>
 
-      {/* 改名弹窗 */}
+      {/* 编辑信息弹窗（单人：改名+主持 / 多人：批量主持） */}
       <Modal
-        open={renameOpen}
-        title="修改姓名"
-        onClose={() => setRenameOpen(false)}
+        open={editOpen}
+        title={isBatchEdit ? `批量编辑（${editTargets.length} 人）` : '编辑信息'}
+        onClose={() => setEditOpen(false)}
         footer={
           <>
             <button
-              onClick={() => setRenameOpen(false)}
-              className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+              onClick={() => setEditOpen(false)}
+              disabled={editing}
+              className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer disabled:opacity-60"
             >
               取消
             </button>
             <button
-              onClick={handleRename}
-              disabled={renaming}
+              onClick={handleEditSubmit}
+              disabled={editing}
               className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white rounded-custom-sm text-sm font-medium hover:bg-primary-hover disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
             >
-              {renaming && <Spinner className="h-4 w-4" />}
-              {renaming ? '处理中...' : '保存'}
+              {editing && <Spinner className="h-4 w-4" />}
+              {editing ? '处理中...' : '保存'}
             </button>
           </>
         }
       >
-        <div className="space-y-3">
+        <div className="space-y-4">
+          {/* 多人时显示已选人员 */}
+          {isBatchEdit && (
+            <div className="p-3 rounded-custom-sm bg-surface border border-border">
+              <div className="text-xs text-textSecondary mb-1.5">
+                已选 {editTargets.length} 人
+              </div>
+              <div className="text-sm text-textPrimary leading-relaxed">
+                {editTargets
+                  .slice(0, 5)
+                  .map((p) => p.name)
+                  .join('、')}
+                {editTargets.length > 5 &&
+                  ` 等 ${editTargets.length} 人`}
+              </div>
+            </div>
+          )}
+
+          {/* 单人显示当前姓名 */}
+          {!isBatchEdit && editTargets.length === 1 && (
+            <div>
+              <label className="block text-xs text-textSecondary mb-1">
+                当前姓名
+              </label>
+              <p className="text-sm text-textMuted">{editTargets[0].name}</p>
+            </div>
+          )}
+
+          {/* 新姓名输入框：仅单人可填 */}
           <div>
             <label className="block text-xs text-textSecondary mb-1">
-              当前姓名
-            </label>
-            <p className="text-sm text-textMuted">{renameTarget?.name}</p>
-          </div>
-          <div>
-            <label className="block text-xs text-textSecondary mb-1">
-              新姓名
+              {isBatchEdit ? (
+                <span className="text-textMuted">
+                  新姓名（批量操作不支持改名）
+                </span>
+              ) : (
+                '新姓名'
+              )}
             </label>
             <input
               type="text"
-              value={renameName}
-              onChange={(e) => setRenameName(e.target.value)}
-              placeholder="请输入新姓名"
-              autoFocus
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              placeholder={
+                isBatchEdit
+                  ? '批量操作不支持改名，请在单人编辑时修改'
+                  : '留空则不改名'
+              }
+              disabled={isBatchEdit}
               maxLength={50}
-              className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200"
+              className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
             />
+          </div>
+
+          {/* 主持标记：单人 toggle / 多人 3态单选 */}
+          <div className="py-2 border-t border-border">
+            <div className="text-sm text-textPrimary mb-2 flex items-center gap-1.5">
+              <Star size={14} className="text-amber-500" />
+              主持标记
+            </div>
+            {isBatchEdit ? (
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setEditHostMode('keep')}
+                  className={`px-3 py-1.5 rounded-custom-sm text-xs font-medium transition-colors duration-200 cursor-pointer border ${
+                    editHostMode === 'keep'
+                      ? 'bg-surface text-textPrimary border-border'
+                      : 'bg-card text-textSecondary border-border hover:text-textPrimary'
+                  }`}
+                >
+                  不修改
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditHostMode('on')}
+                  className={`px-3 py-1.5 rounded-custom-sm text-xs font-medium transition-colors duration-200 cursor-pointer border ${
+                    editHostMode === 'on'
+                      ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800'
+                      : 'bg-card text-textSecondary border-border hover:text-amber-600 hover:border-amber-300'
+                  }`}
+                >
+                  标记为主持
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditHostMode('off')}
+                  className={`px-3 py-1.5 rounded-custom-sm text-xs font-medium transition-colors duration-200 cursor-pointer border ${
+                    editHostMode === 'off'
+                      ? 'bg-danger/10 text-danger border-danger/30'
+                      : 'bg-card text-textSecondary border-border hover:text-danger hover:border-danger/40'
+                  }`}
+                >
+                  取消主持
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() =>
+                  setEditHostMode(
+                    singleCurrentHost
+                      ? editHostMode === 'keep'
+                        ? 'off'
+                        : 'keep'
+                      : editHostMode === 'keep'
+                        ? 'on'
+                        : 'keep',
+                  )
+                }
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-custom-sm text-xs font-medium transition-colors duration-200 cursor-pointer border ${
+                  editHostMode === 'on'
+                    ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800'
+                    : editHostMode === 'off'
+                      ? 'bg-danger/10 text-danger border-danger/30'
+                      : singleCurrentHost
+                        ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-800'
+                        : 'bg-card text-textSecondary border-border hover:text-amber-600 hover:border-amber-300'
+                }`}
+              >
+                <Star
+                  size={12}
+                  className={
+                    editHostMode === 'on' ||
+                    (editHostMode === 'keep' && singleCurrentHost)
+                      ? 'fill-amber-500 text-amber-500'
+                      : ''
+                  }
+                />
+                {editHostMode === 'on'
+                  ? '将标记为主持'
+                  : editHostMode === 'off'
+                    ? '将取消主持'
+                    : singleCurrentHost
+                      ? '当前为主持（不修改）'
+                      : '当前非主持（不修改）'}
+              </button>
+            )}
+            {isBatchEdit && editHostMode === 'off' && (
+              <p className="mt-2 text-xs text-warning">
+                取消主持标记将删除选中人员在本厅的所有历史流水记录，此操作不可撤销。
+              </p>
+            )}
           </div>
         </div>
       </Modal>
 
-      {/* 删除确认弹窗 */}
+      {/* 删除确认弹窗（需输入登录密码） */}
       <Modal
         open={deleteOpen}
-        title="确认移除"
-        onClose={() => setDeleteOpen(false)}
+        title="删除人员确认"
+        onClose={() => {
+          setDeleteOpen(false)
+          setDeleteTarget(null)
+          setDeletePassword('')
+        }}
         footer={
           <>
             <button
-              onClick={() => setDeleteOpen(false)}
-              className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer"
+              onClick={() => {
+                setDeleteOpen(false)
+                setDeleteTarget(null)
+                setDeletePassword('')
+              }}
+              disabled={deleting}
+              className="px-4 py-2 border border-border rounded-custom-sm text-sm text-textSecondary hover:text-textPrimary hover:border-primary transition-colors duration-200 cursor-pointer disabled:opacity-60"
             >
               取消
             </button>
             <button
               onClick={handleDelete}
-              className="flex items-center gap-1.5 px-4 py-2 bg-danger text-white rounded-custom-sm text-sm font-medium hover:bg-danger-hover transition-colors duration-200 cursor-pointer"
+              disabled={deleting || !deletePassword}
+              className="flex items-center gap-1.5 px-4 py-2 bg-danger text-white rounded-custom-sm text-sm font-medium hover:bg-danger/90 disabled:opacity-60 disabled:cursor-not-allowed transition-colors duration-200 cursor-pointer"
             >
-              <Trash2 size={16} />
-              确认移除
+              {deleting ? <Spinner className="h-4 w-4" /> : <Trash2 size={16} />}
+              {deleting ? '删除中...' : '确认删除'}
             </button>
           </>
         }
       >
-        <p className="text-sm text-textPrimary">
-          确认移除人员「{deleteTarget?.name}」？
-        </p>
-        <p className="mt-2 text-xs text-textMuted">
-          该操作将解除该人员与当前厅的关联。若该人员有数据记录，将无法移除。
-        </p>
+        <div className="space-y-3">
+          <div
+            className={`p-3 rounded-custom-sm border ${
+              deleteTarget?.hasDataThisWeek
+                ? 'bg-danger/10 border-danger/20'
+                : 'bg-warning/10 border-warning/20'
+            }`}
+          >
+            <p className="text-sm font-medium text-textPrimary">
+              即将删除人员「{deleteTarget?.name}」
+            </p>
+            <p className="text-xs text-textSecondary mt-1 leading-relaxed">
+              {deleteTarget?.hasDataThisWeek
+                ? '该人员本周/本月已有数据记录。删除后将永久删除该人员及其在本厅的所有历史数据记录（含数据、扣减、主持流水、无福利标记），且无法恢复。'
+                : '该操作将解除该人员与当前厅的关联，并删除其在本厅的所有历史数据记录，且无法恢复。'}
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs text-textSecondary mb-1">
+              请输入您的登录密码以确认删除
+            </label>
+            <input
+              type="password"
+              value={deletePassword}
+              onChange={(e) => setDeletePassword(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && deletePassword && !deleting) {
+                  handleDelete()
+                }
+              }}
+              placeholder="登录密码"
+              autoFocus
+              className="w-full px-3 py-2 border border-border rounded-custom-sm text-sm bg-card text-textPrimary focus:outline-none focus:border-danger focus:ring-1 focus:ring-danger transition-colors duration-200"
+            />
+          </div>
+        </div>
       </Modal>
     </div>
   )

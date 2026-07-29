@@ -7,6 +7,7 @@ import {
   Settings,
   BarChart3,
   ScrollText,
+  Banknote,
 } from 'lucide-react'
 import type { Role } from '../../types'
 
@@ -22,6 +23,13 @@ const navItems: NavItem[] = [
   { to: '/dashboard', label: '数据看板', icon: LayoutDashboard },
   { to: '/data', label: '数据录入', icon: FileInput },
   { to: '/personnel', label: '人员管理', icon: Users },
+  // 主持流水记录：会长+超管可见（管理角色仅可查看本厅数据）
+  {
+    to: '/host-flow',
+    label: '主持流水',
+    icon: Banknote,
+    roles: ['HUIZHANG', 'CHAOGUAN', 'GUANLI'],
+  },
   { to: '/fines', label: '罚款记录', icon: ScrollText, roles: ['HUIZHANG'] },
   { to: '/settings', label: '系统设置', icon: Settings },
 ]

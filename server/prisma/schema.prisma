@@ -69,6 +69,7 @@ model Account {
   mxTimeSlotRecords  MxTimeSlotRecord[] @relation("MxTimeSlotRecordCreator")
   fines              Fine[]         @relation("FineCreatedBy")
   noWelfareMarks     NoWelfareMark[] @relation("NoWelfareMarkCreator")
+  hostFlowRecords    HostFlowRecord[] @relation("HostFlowRecordCreator")
   accountBranches    AccountBranch[]
   accountGroups      AccountGroup[]
 
@@ -131,6 +132,7 @@ model Branch {
   deductions        Deduction[]
   timeSlotMultipliers TimeSlotMultiplier[]
   noWelfareMarks    NoWelfareMark[]
+  hostFlowRecords   HostFlowRecord[]
   // 所属合厅组（参与合厅时关联）
   group             BranchGroup? @relation(fields: [groupId], references: [id])
 
@@ -181,6 +183,7 @@ model Personnel {
   dataRecords       DataRecord[]
   deductions        Deduction[]
   noWelfareMarks    NoWelfareMark[]
+  hostFlowRecords   HostFlowRecord[]
 }
 
 // ============ 人员-分部关联表 ============
@@ -189,6 +192,8 @@ model PersonnelBranch {
   id          Int      @id @default(autoincrement())
   personnelId Int
   branchId    Int
+  // 是否为该厅的主持（按厅独立标记，同一人员在不同厅可有不同主持身份）
+  isHost      Boolean  @default(false)
   createdAt   DateTime @default(now())
 
   personnel Personnel @relation(fields: [personnelId], references: [id])
@@ -298,6 +303,11 @@ model RewardRule {
   zcDayReward Int      @default(0)
   // 时间段倍率功能开关：启用后添加数据时用日期+时间段选择替代备注，麦序按时间段倍率换算
   mxSlotEnabled Boolean @default(false)
+  // 主持流水福利倍率（百分比，如10表示10%）：导出时流水福利 = 总流水 × flowMultiplier / 100
+  flowMultiplier Int    @default(0)
+  // 主持流水输入时自动追加末尾 0 的数量（默认 2，按万位计算场景使用）
+  // 用户输入 N，实际存储 = N × 10^flowZeroCount
+  flowZeroCount Int    @default(2)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -451,6 +461,28 @@ model NoWelfareMark {
   branch    Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
   personnel Personnel @relation(fields: [personnelId], references: [id], onDelete: Cascade)
   creator   Account   @relation("NoWelfareMarkCreator", fields: [createdBy], references: [id])
+
+  @@unique([branchId, personnelId, periodStart])
+  @@index([branchId, periodStart])
+  @@index([personnelId])
+}
+
+// ============ 主持流水记录表 ============
+// 按月记录每个主持的总流水金额，导出时流水福利 = 总流水 × 厅倍率(RewardRule.flowMultiplier) / 100
+// periodStart 固定为月初1日（无论周/月统计厅，流水福利均按月计算）
+model HostFlowRecord {
+  id          Int      @id @default(autoincrement())
+  branchId    Int
+  personnelId Int
+  periodStart DateTime // 月初1日
+  totalFlow   Decimal  @default(0) @db.Decimal(12, 2) // 总流水金额（支持两位小数）
+  createdBy   Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  branch    Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  personnel Personnel @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  creator   Account   @relation("HostFlowRecordCreator", fields: [createdBy], references: [id])
 
   @@unique([branchId, personnelId, periodStart])
   @@index([branchId, periodStart])

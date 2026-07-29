@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, ChevronRight, Pencil, Trash2, Ban } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pencil, Trash2, Ban, Mic } from "lucide-react";
 import { TableSkeleton } from "../../components/Skeleton";
 import { formatNamings } from "../../utils";
 import type { StatCycle } from "../../types";
@@ -169,6 +169,16 @@ export default function DataTable({
                               >
                                 <Ban size={10} />
                                 无福利
+                              </span>
+                            )}
+                            {/* 主持标记徽标（按厅独立） */}
+                            {r.isHost && (
+                              <span
+                                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                                title="主持标记：该人员在本厅被标记为主持"
+                              >
+                                <Mic size={10} />
+                                主持
                               </span>
                             )}
                             {/* 合并同名模式：聚合标识 */}

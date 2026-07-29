@@ -218,7 +218,7 @@ async function upsertRecord(
       }
     }
     // 记录本次录入历史（累加场景也产生独立历史记录）
-    // oldValue: 累加前汇总值, newValue: 本次增量值
+    // oldValue: 累加前汇总值, newValue: 本次增量值（时间段模式含 slotDate/slotIndex/rawMx/multiplier/convertedMx）
     await client.dataHistory.create({
       data: {
         recordId: existing.id,
@@ -226,7 +226,19 @@ async function upsertRecord(
         action: HistoryAction.CREATE,
         field: null,
         oldValue: JSON.stringify({ sg: existing.sg, mx: existing.mx, qm: existing.qm, zcDays: existing.zcDays }),
-        newValue: JSON.stringify({ sg: sgToStore, mx: input.mx, qm: input.qm, zcDays: input.zcDays }),
+        newValue: JSON.stringify({
+          sg: sgToStore,
+          mx: input.mx,
+          qm: input.qm,
+          zcDays: input.zcDays,
+          ...(slotInfo ? {
+            slotDate: slotInfo.slotDate.toISOString().slice(0, 10),
+            slotIndex: slotInfo.slotIndex,
+            rawMx: slotInfo.rawMx,
+            multiplier: slotInfo.multiplier,
+            convertedMx: slotInfo.convertedMx,
+          } : {}),
+        }),
         remark,
       },
     })
@@ -273,7 +285,7 @@ async function upsertRecord(
     })
   }
   // 记录本次录入历史（新建场景）
-  // oldValue: null（首次录入）, newValue: 本次录入值
+  // oldValue: null（首次录入）, newValue: 本次录入值（时间段模式含 slotDate/slotIndex/rawMx/multiplier/convertedMx）
   await client.dataHistory.create({
     data: {
       recordId: created.id,
@@ -281,7 +293,19 @@ async function upsertRecord(
       action: HistoryAction.CREATE,
       field: null,
       oldValue: null,
-      newValue: JSON.stringify({ sg: sgToStore, mx: input.mx, qm: input.qm, zcDays: input.zcDays }),
+      newValue: JSON.stringify({
+        sg: sgToStore,
+        mx: input.mx,
+        qm: input.qm,
+        zcDays: input.zcDays,
+        ...(slotInfo ? {
+          slotDate: slotInfo.slotDate.toISOString().slice(0, 10),
+          slotIndex: slotInfo.slotIndex,
+          rawMx: slotInfo.rawMx,
+          multiplier: slotInfo.multiplier,
+          convertedMx: slotInfo.convertedMx,
+        } : {}),
+      }),
       remark,
     },
   })

@@ -211,6 +211,7 @@ export default function DataEntry() {
             deduction: number;
             finalWelfare: number;
             isRecorded: boolean;
+            isHost: boolean;
           }
         >();
         for (const p of personnel) {
@@ -222,6 +223,8 @@ export default function DataEntry() {
               r.personnelId === p.id && groupBranchIdSet.has(r.branchId),
           );
           const isRecorded = personRecords.length > 0;
+          // 任一合并厅为主持即标记为主持
+          const isHost = personGroupBranches.some((b) => b.isHost);
           const entry =
             byName.get(p.name) ??
             {
@@ -230,9 +233,11 @@ export default function DataEntry() {
               sg: 0, mx: 0, qm: 0, zcDays: 0,
               welfare: 0, deduction: 0, finalWelfare: 0,
               isRecorded: false,
+              isHost: false,
             };
           entry.personnelIds.push(p.id);
           entry.isRecorded = entry.isRecorded || isRecorded;
+          entry.isHost = entry.isHost || isHost;
           for (const r of personRecords) {
             entry.sg += r.sg;
             entry.mx += r.mx;
@@ -263,6 +268,7 @@ export default function DataEntry() {
             deduction: e.deduction,
             finalWelfare: e.finalWelfare,
             isRecorded: e.isRecorded,
+            isHost: e.isHost,
             namings: undefined,
           }),
         );
@@ -314,6 +320,7 @@ export default function DataEntry() {
               isRecorded: true,
               noWelfare: rec.noWelfare,
               noWelfareRemark: rec.noWelfareRemark,
+              isHost: b.isHost,
               namings: rec.namings,
             });
           } else {
@@ -331,6 +338,7 @@ export default function DataEntry() {
               welfare: undefined,
               createdAt: undefined,
               isRecorded: false,
+              isHost: b.isHost,
               namings: undefined,
             });
           }
@@ -382,45 +390,56 @@ export default function DataEntry() {
         })
       : records;
     return [
-      ...sortedRecords.map((r) => ({
-        key: `rec-${r.id}`,
-        id: r.id,
-        personnelId: r.personnelId,
-        branchId: r.branchId,
-        personnelName: r.personnelName || r.personnel?.name || "-",
-        branchName: r.branchName || r.branch?.name || "-",
-        sg: r.sg,
-        mx: r.mx,
-        qm: r.qm,
-        zcDays: r.zcDays ?? 0,
-        welfare: r.welfare,
-        deduction: r.deduction,
-        finalWelfare: r.finalWelfare,
-        createdAt: r.createdAt,
-        isRecorded: true,
-        noWelfare: r.noWelfare,
-        noWelfareRemark: r.noWelfareRemark,
-        namings: r.namings,
-      })),
-      ...unrecorded.map((p) => ({
-        key: `empty-${p.id}`,
-        id: 0,
-        personnelId: p.id,
-        branchId: effectiveBranchId ?? p.branches?.[0]?.id,
-        personnelName: p.name,
-        branchName:
-          p.branches?.find(
-            (b) => !effectiveBranchId || b.id === effectiveBranchId,
-          )?.name || p.branches?.[0]?.name,
-        sg: 0,
-        mx: 0,
-        qm: 0,
-        zcDays: 0,
-        welfare: undefined,
-        createdAt: undefined,
-        isRecorded: false,
-        namings: undefined,
-      })),
+      ...sortedRecords.map((r) => {
+        // 从人员列表中查找主持标记（按厅独立）
+        const personInfo = personnel.find((p) => p.id === r.personnelId);
+        const isHost = personInfo?.branches?.find(
+          (b) => b.id === r.branchId,
+        )?.isHost;
+        return {
+          key: `rec-${r.id}`,
+          id: r.id,
+          personnelId: r.personnelId,
+          branchId: r.branchId,
+          personnelName: r.personnelName || r.personnel?.name || "-",
+          branchName: r.branchName || r.branch?.name || "-",
+          sg: r.sg,
+          mx: r.mx,
+          qm: r.qm,
+          zcDays: r.zcDays ?? 0,
+          welfare: r.welfare,
+          deduction: r.deduction,
+          finalWelfare: r.finalWelfare,
+          createdAt: r.createdAt,
+          isRecorded: true,
+          noWelfare: r.noWelfare,
+          noWelfareRemark: r.noWelfareRemark,
+          isHost,
+          namings: r.namings,
+        };
+      }),
+      ...unrecorded.map((p) => {
+        const branchInfo = p.branches?.find(
+          (b) => !effectiveBranchId || b.id === effectiveBranchId,
+        );
+        return {
+          key: `empty-${p.id}`,
+          id: 0,
+          personnelId: p.id,
+          branchId: effectiveBranchId ?? p.branches?.[0]?.id,
+          personnelName: p.name,
+          branchName: branchInfo?.name || p.branches?.[0]?.name,
+          isHost: branchInfo?.isHost,
+          sg: 0,
+          mx: 0,
+          qm: 0,
+          zcDays: 0,
+          welfare: undefined,
+          createdAt: undefined,
+          isRecorded: false,
+          namings: undefined,
+        };
+      }),
     ];
   }, [
     records,
