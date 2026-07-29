@@ -325,6 +325,15 @@ export default function HostFlowRecords() {
     return m
   }, [branches, selectedGroup])
 
+  // 所有已合厅的厅 ID 集合：用于厅选择器隐藏已合厅的厅
+  const groupedBranchIds = useMemo(() => {
+    const s = new Set<number>()
+    for (const g of branchGroups) {
+      for (const b of g.branches) s.add(b.id)
+    }
+    return s
+  }, [branchGroups])
+
   // 厅倍率
   const flowMultiplier = rewardRule?.flowMultiplier ?? 0
   // 末尾自动补 0 数量（默认 2）
@@ -656,9 +665,13 @@ export default function HostFlowRecords() {
                     : []),
                   {
                     label: '厅',
-                    // 隐藏已关闭的厅
+                    // 隐藏已关闭的厅和已合厅的厅
                     options: branches
-                      .filter((b) => !b.closed)
+                      .filter(
+                        (b) =>
+                          !b.closed &&
+                          !groupedBranchIds.has(b.id),
+                      )
                       .map((b) => ({
                         value: String(b.id),
                         label: `${b.name}${b.statCycle === 'MONTH' ? '（按月）' : ''}`,
