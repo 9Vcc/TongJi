@@ -399,11 +399,9 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
   )
 
   // GET /api/data-records/latest-remark - 查询当前厅最近一次操作的备注
-  // 从 DataHistory 查询（含录入/修改/删除），所有已认证用户可访问
+  // 同时从 DataHistory（录入/修改/删除）、DataRecord（覆盖式备注）、Deduction（扣减备注）查询
+  // 取三条中时间最近的一条返回，确保修改和扣减的备注也能更新最近备注显示
   // 查询参数：branchId
-  // 注意：不按 weekStart 过滤，返回该厅最近一次有备注的操作（周/月统计厅通用）
-  //       删除操作后 DataRecord 被删除，DataHistory.recordId 变 null（onDelete: SetNull）
-  //       删除操作的备注通过 modifier.branchId 限定本厅范围
   fastify.get(
     '/api/data-records/latest-remark',
     { preHandler: [authenticate] },
@@ -437,13 +435,13 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
       const branchIdValue: number | { in: number[] } | undefined =
         branchFilter ?? (accessibleIds === null ? undefined : { in: accessibleIds })
 
-      // 查询该厅最近一条有备注的操作记录
-      // record 存在时按 branchId 过滤（录入/修改）
-      // record 为 null 时为删除操作，通过 modifier.branchId 限定本厅范围
-      // 注意：避免在 OR 中使用空对象 {}（Prisma 7.x 可能不正确处理），改为条件构建 where
-      let latest: { remark: string | null } | null = null
+      // 并行查询三个数据源，取时间最近的一条
+      type Candidate = { remark: string; time: Date }
+      const candidates: Candidate[] = []
+
+      // 1. DataHistory（录入/修改/删除的备注）
       try {
-        latest = await prisma.dataHistory.findFirst({
+        const historyLatest = await prisma.dataHistory.findFirst({
           where: branchIdValue !== undefined
             ? {
                 remark: { not: null },
@@ -456,31 +454,53 @@ export default async function dataQueryRoutes(fastify: FastifyInstance) {
                 remark: { not: null },
               },
           orderBy: { modifyTime: 'desc' },
-          select: { remark: true },
+          select: { remark: true, modifyTime: true },
         })
+        if (historyLatest && historyLatest.remark) {
+          candidates.push({ remark: historyLatest.remark, time: historyLatest.modifyTime })
+        }
       } catch (err) {
         request.log.error(err, '查询最近备注失败（DataHistory）')
       }
 
-      if (latest && latest.remark) {
-        return reply.send({ remark: latest.remark })
-      }
-
-      // Fallback：DataHistory 没有备注时，从 DataRecord.remark 获取（覆盖式存储的最近备注）
+      // 2. DataRecord（覆盖式存储的最近备注）
       try {
-        const latestRecord = await prisma.dataRecord.findFirst({
+        const recordLatest = await prisma.dataRecord.findFirst({
           where: {
             remark: { not: null },
             ...(branchIdValue !== undefined ? { branchId: branchIdValue } : {}),
           },
           orderBy: { updatedAt: 'desc' },
-          select: { remark: true },
+          select: { remark: true, updatedAt: true },
         })
-        if (latestRecord && latestRecord.remark) {
-          return reply.send({ remark: latestRecord.remark })
+        if (recordLatest && recordLatest.remark) {
+          candidates.push({ remark: recordLatest.remark, time: recordLatest.updatedAt })
         }
       } catch (err) {
-        request.log.error(err, '查询最近备注 fallback 失败（DataRecord）')
+        request.log.error(err, '查询最近备注失败（DataRecord）')
+      }
+
+      // 3. Deduction（扣减备注）
+      try {
+        const deductionLatest = await prisma.deduction.findFirst({
+          where: {
+            remark: { not: null },
+            ...(branchIdValue !== undefined ? { branchId: branchIdValue } : {}),
+          },
+          orderBy: { updatedAt: 'desc' },
+          select: { remark: true, updatedAt: true },
+        })
+        if (deductionLatest && deductionLatest.remark) {
+          candidates.push({ remark: deductionLatest.remark, time: deductionLatest.updatedAt })
+        }
+      } catch (err) {
+        request.log.error(err, '查询最近备注失败（Deduction）')
+      }
+
+      // 取三条中时间最近的一条
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => b.time.getTime() - a.time.getTime())
+        return reply.send({ remark: candidates[0].remark })
       }
 
       return reply.send({ remark: null })
