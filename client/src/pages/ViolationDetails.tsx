@@ -359,20 +359,29 @@ export default function ViolationDetails() {
 
   // 厅选择下拉分组
   const branchSelectGroups = useMemo(() => {
-    const groupOpts = branchGroups.map((g) => ({
-      label: g.name,
-      options: g.branches
-        .filter((b) => !b.closed)
-        .map(() => ({ value: `g${g.id}`, label: g.name })),
-    }))
-    const branchOpts = branches
-      .filter((b) => !b.closed)
-      .map((b) => ({ value: String(b.id), label: b.name }))
+    const groupedIds = new Set<number>()
+    for (const g of branchGroups) {
+      for (const b of g.branches) groupedIds.add(b.id)
+    }
     return [
-      ...(groupOpts.length > 0
-        ? [{ label: '合厅组', options: groupOpts.flatMap((g) => g.options) }]
+      ...(branchGroups.length > 0
+        ? [{
+            label: '合厅组',
+            options: branchGroups.map((g) => ({
+              value: `g${g.id}`,
+              label: `${g.name}（${g.branches.filter((b) => !b.closed).length}个厅）`,
+            })),
+          }]
         : []),
-      { label: '独立厅', options: branchOpts },
+      {
+        label: '厅',
+        options: branches
+          .filter((b) => !b.closed && !groupedIds.has(b.id))
+          .map((b) => ({
+            value: String(b.id),
+            label: `${b.name}${b.statCycle === 'MONTH' ? '（按月）' : ''}`,
+          })),
+      },
     ]
   }, [branchGroups, branches])
 

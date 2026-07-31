@@ -22,8 +22,6 @@ import { useDebounce } from "../hooks/useDebounce";
 import { usePeriodNavigator } from "../hooks/usePeriodNavigator";
 import {
   formatDate,
-  getWeekStart,
-  getMonthStart,
   getWeekRangeText,
   getMonthRangeText,
   matchNamePinyin,
@@ -260,13 +258,9 @@ function PublicBranchCard({
 
   useEffect(() => {
     setLoading(true);
-    // 本周/本月模式 + 选本周/本月：不传 weekStart，后端用 new Date() 确保正确
-    const isThisPeriod = isMonthCycle
-      ? formatDate(weekStart) === formatDate(getMonthStart(new Date()))
-      : formatDate(weekStart) === formatDate(getWeekStart());
-    const ws = isThisPeriod ? undefined : formatDate(weekStart);
+    // 始终传客户端 weekStart，避免服务器时区差异导致查询到错误周期
     publicApi
-      .getRanking(ws, branch.id)
+      .getRanking(formatDate(weekStart), branch.id)
       .then(setRanking)
       .catch((err) => toast.error(getPublicErrorMessage(err)))
       .finally(() => setLoading(false));
@@ -476,9 +470,10 @@ function SearchResults({
     setLoading(true);
     // 同时查询所有人员列表和本周/本月排名数据
     // 人员列表用于显示未录入数据的人员，排名数据用于填充有数据的人员
+    // 传客户端今天日期避免服务器时区差异，后端按各厅 cycle 自动计算周期
     Promise.all([
       publicApi.listPersonnel(),
-      publicApi.getRanking(undefined, undefined),
+      publicApi.getRanking(formatDate(new Date()), undefined),
     ])
       .then(([allPersonnel, ranking]) => {
         const q = debouncedQuery.trim();
