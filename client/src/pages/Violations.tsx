@@ -98,6 +98,8 @@ export default function Violations() {
   const [personnel, setPersonnel] = useState<Personnel[]>([])
   const [records, setRecords] = useState<ViolationRecord[]>([])
   const [violationItems, setViolationItems] = useState<ViolationItem[]>([])
+  // 按厅存储违规项目（合厅组模式下用于按人员所属厅匹配正确的 violationItemId）
+  const [violationItemsByBranch, setViolationItemsByBranch] = useState<Map<number, ViolationItem[]>>(new Map())
 
   const [selectedMonth, setSelectedMonth] = useState<string>(currentMonthStart())
   const [availableMonths, setAvailableMonths] = useState<string[]>([])
@@ -227,12 +229,19 @@ export default function Violations() {
   const loadViolationItems = async () => {
     if (queryBranchIds.length === 0) {
       setViolationItems([])
+      setViolationItemsByBranch(new Map())
       return
     }
     try {
       const lists = await Promise.all(
         queryBranchIds.map((bid) => violationItemsApi.list(bid)),
       )
+      // 保存按厅的映射（用于合厅组模式下按人员所属厅匹配正确的 violationItemId）
+      const byBranch = new Map<number, ViolationItem[]>()
+      for (let i = 0; i < queryBranchIds.length; i++) {
+        byBranch.set(queryBranchIds[i], lists[i] ?? [])
+      }
+      setViolationItemsByBranch(byBranch)
       if (!isGroupMode) {
         setViolationItems(lists[0] ?? [])
         return
@@ -250,6 +259,7 @@ export default function Violations() {
     } catch (err) {
       toast.error(getErrorMessage(err))
       setViolationItems([])
+      setViolationItemsByBranch(new Map())
     }
   }
 
@@ -287,6 +297,7 @@ export default function Violations() {
       setPersonnel([])
       setRecords([])
       setViolationItems([])
+      setViolationItemsByBranch(new Map())
       setAvailableMonths([currentMonthStart()])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -578,29 +589,32 @@ export default function Violations() {
     let successCount = 0
     let failCount = 0
     try {
+      // 合厅组模式下：找到选中违规项目的名称，用于按厅匹配同名的 violationItemId
+      const selectedItem = violationItems.find((it) => String(it.id) === batchItemId)
+      const selectedItemName = selectedItem?.name
       for (const row of targets) {
-        let targetBranchId: number | undefined
-        if (isGroupMode) {
-          const memberIds = new Set(queryBranchIds)
-          const p = personnel.find((x) => x.id === row.personnelId)
-          const matchedBranch = p?.branches?.find((b) => memberIds.has(b.id))
-          targetBranchId = matchedBranch?.id
-          if (!targetBranchId) {
-            failCount++
-            continue
-          }
-        } else {
-          targetBranchId = effectiveBranchId
-        }
+        // 直接用 row.branchId（该行所属的厅），避免误用人员的其他厅
+        const targetBranchId = row.branchId
         if (!targetBranchId) {
           failCount++
           continue
+        }
+        // 合厅组模式下：按 row.branchId 找到该厅的同名违规项目 id
+        let targetItemId = Number(batchItemId)
+        if (isGroupMode && selectedItemName) {
+          const branchItems = violationItemsByBranch.get(targetBranchId) ?? []
+          const matched = branchItems.find((it) => it.name === selectedItemName)
+          if (!matched) {
+            failCount++
+            continue
+          }
+          targetItemId = matched.id
         }
         try {
           await violationRecordsApi.create({
             branchId: targetBranchId,
             personnelId: row.personnelId,
-            violationItemId: Number(batchItemId),
+            violationItemId: targetItemId,
             violationDate: batchDate,
             periodStart: selectedMonth,
             remark: undefined,
