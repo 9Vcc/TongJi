@@ -599,24 +599,33 @@ export default function BranchesPage() {
         // 合厅组模式：按名称匹配，批量更新或创建到所有成员厅
         const memberBranches = violationGroup.branches.filter((b) => !b.closed)
         if (violationFormId) {
-          // 编辑：按名称在所有成员厅中找对应项目并更新
+          // 编辑：按名称在所有成员厅中找对应项目并更新，缺失则自动创建（同步到所有成员厅）
           const original = violationItems.find((it) => it.id === violationFormId)
           const matchName = original?.name ?? violationForm.name.trim()
           const allLists = await Promise.all(
             memberBranches.map((b) => violationItemsApi.list(b.id)),
           )
+          let syncedCount = 0
           await Promise.all(
-            memberBranches.map(async (_, idx) => {
+            memberBranches.map(async (b, idx) => {
               const matched = allLists[idx].find((it) => it.name === matchName)
               if (matched) {
                 await violationItemsApi.update(matched.id, {
                   name: violationForm.name.trim(),
                   thresholdCount: violationForm.thresholdCount,
                 })
+              } else {
+                // 该厅缺少此违规项目，自动创建以保持合厅组配置一致
+                await violationItemsApi.create({
+                  branchId: b.id,
+                  name: violationForm.name.trim(),
+                  thresholdCount: violationForm.thresholdCount,
+                })
               }
+              syncedCount++
             }),
           )
-          toast.success(`已同步到 ${memberBranches.length} 个成员厅`)
+          toast.success(`已同步到 ${syncedCount} 个成员厅`)
         } else {
           // 新增：为所有成员厅创建
           await Promise.all(
