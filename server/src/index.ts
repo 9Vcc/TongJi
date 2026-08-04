@@ -111,8 +111,8 @@ fastify.register(multipart, {
 });
 
 // 注册速率限制插件（全局默认：每分钟 500 次）
-// 阈值留足余量：已认证用户正常使用（页面并发加载、切页）不会误触；
-// 公开接口与登录接口已在各自路由文件配置更严格的路由级限流（60/分钟、5/分钟）
+// 阈值留足余量：已认证用户与公开页面正常使用（页面并发加载、切页）不会误触；
+// 登录接口已在路由文件配置更严格的路由级限流（5/分钟）防暴力破解
 // 使用 preHandler 钩子以便路由级 keyGenerator 可读取 request.body（如登录接口的用户名）
 const rateLimitMax = process.env.RATE_LIMIT_MAX ? Number(process.env.RATE_LIMIT_MAX) : 500;
 const rateLimitWindow = process.env.RATE_LIMIT_WINDOW || '1 minute';

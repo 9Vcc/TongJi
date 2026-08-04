@@ -588,6 +588,7 @@ export default function Violations() {
     setBatchAddSubmitting(true)
     let successCount = 0
     let failCount = 0
+    let firstErrorMsg = ''
     try {
       // 合厅组模式下：找到选中违规项目的名称，用于按厅匹配同名的 violationItemId
       const selectedItem = violationItems.find((it) => String(it.id) === batchItemId)
@@ -597,6 +598,7 @@ export default function Violations() {
         const targetBranchId = row.branchId
         if (!targetBranchId) {
           failCount++
+          if (!firstErrorMsg) firstErrorMsg = `${row.personnelName}：无所属厅`
           continue
         }
         // 合厅组模式下：按 row.branchId 找到该厅的同名违规项目 id
@@ -606,6 +608,7 @@ export default function Violations() {
           const matched = branchItems.find((it) => it.name === selectedItemName)
           if (!matched) {
             failCount++
+            if (!firstErrorMsg) firstErrorMsg = `${row.personnelName}：该厅无同名违规项目`
             continue
           }
           targetItemId = matched.id
@@ -620,14 +623,15 @@ export default function Violations() {
             remark: undefined,
           })
           successCount++
-        } catch {
+        } catch (err) {
           failCount++
+          if (!firstErrorMsg) firstErrorMsg = `${row.personnelName}：${getErrorMessage(err)}`
         }
       }
       if (failCount === 0) {
         toast.success(`批量添加成功，共 ${successCount} 条`)
       } else {
-        toast.error(`部分失败：成功 ${successCount} 条，失败 ${failCount} 条`)
+        toast.error(`成功 ${successCount} 条，失败 ${failCount} 条。${firstErrorMsg}`)
       }
       setBatchAddOpen(false)
       setSelectedKeys(new Set())
