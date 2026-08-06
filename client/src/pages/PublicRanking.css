@@ -1,0 +1,403 @@
+/* ============ 公开看板专用样式 ============ */
+
+/* ---- 玻璃卡片基础 ---- */
+.pr-card {
+  position: relative;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--default-box-color) 85%, transparent) 0%,
+      color-mix(in srgb, var(--default-box-color) 60%, transparent) 100%);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid color-mix(in srgb, var(--art-primary) 12%, var(--art-card-border));
+  box-shadow:
+    0 8px 32px -12px rgba(0, 0, 0, 0.18),
+    0 2px 8px -4px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 0 color-mix(in srgb, var(--art-primary) 8%, transparent);
+}
+
+.pr-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 10%;
+  right: 10%;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent,
+    color-mix(in srgb, var(--art-primary) 50%, transparent),
+    transparent);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.dark .pr-card {
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb, var(--default-box-color) 80%, transparent) 0%,
+      color-mix(in srgb, var(--default-box-color) 55%, transparent) 100%);
+  box-shadow:
+    0 8px 32px -12px rgba(0, 0, 0, 0.5),
+    0 2px 8px -4px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 0 color-mix(in srgb, var(--art-primary) 12%, transparent);
+}
+
+/* ---- 领奖台区域 ---- */
+.podium {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1.5rem 1rem 0.5rem;
+}
+
+/* 单个领奖台项 */
+.podium-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-radius: calc(var(--custom-radius) + 2px);
+  overflow: hidden;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.podium-item:hover {
+  transform: translateY(-4px);
+}
+
+/* 领奖台人物信息区 */
+.podium-info {
+  padding: 0.75rem 0.5rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  width: 100%;
+}
+
+/* 领奖台底座（台阶） */
+.podium-base {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: ui-monospace, 'SF Mono', monospace;
+  font-weight: 800;
+  font-size: 1.5rem;
+  letter-spacing: 0.05em;
+  position: relative;
+  overflow: hidden;
+}
+
+.podium-base::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  opacity: 0.8;
+}
+
+/* ---- Top1：居中，最大 ---- */
+.podium-1 {
+  flex: 1.3;
+  max-width: 180px;
+  order: 2;
+}
+.podium-1 .podium-info {
+  padding-top: 1rem;
+}
+.podium-1 .podium-base {
+  height: 64px;
+  color: #f59e0b;
+  background: linear-gradient(180deg,
+    rgba(251, 191, 36, 0.2) 0%,
+    rgba(251, 191, 36, 0.06) 100%);
+  font-size: 2rem;
+}
+.podium-1 .podium-base::before {
+  background: linear-gradient(90deg, #fbbf24, #f59e0b, #fbbf24);
+}
+.dark .podium-1 .podium-base {
+  background: linear-gradient(180deg,
+    rgba(251, 191, 36, 0.15) 0%,
+    rgba(251, 191, 36, 0.04) 100%);
+}
+
+/* ---- Top2：左侧，中等 ---- */
+.podium-2 {
+  flex: 1;
+  max-width: 150px;
+  order: 1;
+}
+.podium-2 .podium-base {
+  height: 48px;
+  color: #94a3b8;
+  background: linear-gradient(180deg,
+    rgba(148, 163, 184, 0.18) 0%,
+    rgba(148, 163, 184, 0.05) 100%);
+  font-size: 1.75rem;
+}
+.podium-2 .podium-base::before {
+  background: linear-gradient(90deg, #cbd5e1, #94a3b8, #cbd5e1);
+}
+.dark .podium-2 .podium-base {
+  background: linear-gradient(180deg,
+    rgba(148, 163, 184, 0.12) 0%,
+    rgba(148, 163, 184, 0.03) 100%);
+}
+
+/* ---- Top3：右侧，中等 ---- */
+.podium-3 {
+  flex: 1;
+  max-width: 150px;
+  order: 3;
+}
+.podium-3 .podium-base {
+  height: 40px;
+  color: #fb923c;
+  background: linear-gradient(180deg,
+    rgba(251, 146, 60, 0.18) 0%,
+    rgba(251, 146, 60, 0.05) 100%);
+  font-size: 1.75rem;
+}
+.podium-3 .podium-base::before {
+  background: linear-gradient(90deg, #fdba74, #fb923c, #fdba74);
+}
+.dark .podium-3 .podium-base {
+  background: linear-gradient(180deg,
+    rgba(251, 146, 60, 0.12) 0%,
+    rgba(251, 146, 60, 0.03) 100%);
+}
+
+/* ---- 领奖台大徽章 ---- */
+.podium-badge {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-family: ui-monospace, monospace;
+  border-radius: 50%;
+  overflow: hidden;
+}
+.podium-badge::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -60%;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(105deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.45) 50%,
+    transparent 70%);
+  transform: skewX(-15deg);
+  transition: left 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.podium-item:hover .podium-badge::after {
+  left: 130%;
+}
+
+.podium-badge-1 {
+  width: 52px; height: 52px;
+  font-size: 1.25rem;
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d97706 100%);
+  box-shadow:
+    0 6px 20px -4px rgba(251, 191, 36, 0.5),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.4),
+    inset 0 -3px 6px 0 rgba(180, 83, 9, 0.3);
+}
+.podium-badge-2 {
+  width: 42px; height: 42px;
+  font-size: 1rem;
+  background: linear-gradient(135deg, #e2e8f0 0%, #94a3b8 50%, #64748b 100%);
+  box-shadow:
+    0 4px 14px -3px rgba(148, 163, 184, 0.4),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.5),
+    inset 0 -2px 4px 0 rgba(71, 85, 105, 0.3);
+}
+.podium-badge-3 {
+  width: 42px; height: 42px;
+  font-size: 1rem;
+  background: linear-gradient(135deg, #fdba74 0%, #fb923c 50%, #ea580c 100%);
+  box-shadow:
+    0 4px 14px -3px rgba(251, 146, 60, 0.45),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 4px 0 rgba(154, 52, 18, 0.3);
+}
+
+/* ---- 领奖台人员名 ---- */
+.podium-name {
+  font-weight: 700;
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.podium-1 .podium-name {
+  font-size: 1rem;
+}
+.podium-2 .podium-name,
+.podium-3 .podium-name {
+  font-size: 0.875rem;
+}
+
+/* ---- 领奖台麦序数字 ---- */
+.podium-mx {
+  font-family: ui-monospace, monospace;
+  font-weight: 800;
+  line-height: 1;
+}
+.podium-1 .podium-mx {
+  font-size: 1.75rem;
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d97706 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.podium-2 .podium-mx {
+  font-size: 1.25rem;
+  color: #94a3b8;
+}
+.podium-3 .podium-mx {
+  font-size: 1.25rem;
+  color: #fb923c;
+}
+
+/* 领奖台所属厅标签（合厅组模式） */
+.podium-branch {
+  font-size: 0.625rem;
+  color: var(--art-gray-600);
+  background: color-mix(in srgb, var(--art-primary) 8%, transparent);
+  padding: 1px 6px;
+  border-radius: 9999px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- 4-10 名列表行 ---- */
+.pr-row {
+  position: relative;
+  transition: background-color 0.2s ease;
+}
+.pr-row::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: transparent;
+  transition: background-color 0.25s ease, width 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  border-radius: 0 2px 2px 0;
+}
+.pr-row:hover::before {
+  width: 4px;
+  background: var(--art-primary);
+}
+.pr-row::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--art-primary) 8%, transparent) 50%,
+    transparent 100%);
+  transform: translateX(-100%);
+  transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+.pr-row:hover::after {
+  transform: translateX(100%);
+}
+
+/* 列表小徽章 */
+.list-badge {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.75rem;
+  font-family: ui-monospace, monospace;
+  color: var(--art-gray-700);
+  background: color-mix(in srgb, var(--art-primary) 8%, var(--default-box-color));
+  flex-shrink: 0;
+}
+
+/* 列表麦序数字 */
+.list-mx {
+  font-family: ui-monospace, monospace;
+  font-weight: 700;
+  font-size: 0.95rem;
+  background: linear-gradient(135deg, var(--art-gray-900) 0%, var(--art-gray-700) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ---- 周期标签 ---- */
+.pr-tag {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.25s ease;
+}
+
+/* ---- 搜索框 ---- */
+.pr-search {
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.pr-search:focus-within {
+  transform: translateY(-1px);
+  box-shadow:
+    0 8px 24px -8px color-mix(in srgb, var(--art-primary) 25%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--art-primary) 30%, transparent);
+}
+
+/* ---- 空状态 ---- */
+.pr-empty {
+  animation: prFadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes prFadeInUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- 响应式 ---- */
+@media (max-width: 640px) {
+  .podium {
+    gap: 0.5rem;
+    padding: 1rem 0.5rem 0.5rem;
+  }
+  .podium-1 { max-width: 130px; }
+  .podium-2, .podium-3 { max-width: 110px; }
+  .podium-1 .podium-mx { font-size: 1.5rem; }
+  .podium-2 .podium-mx, .podium-3 .podium-mx { font-size: 1.1rem; }
+  .podium-badge-1 { width: 44px; height: 44px; font-size: 1.1rem; }
+  .podium-badge-2, .podium-badge-3 { width: 36px; height: 36px; font-size: 0.875rem; }
+  .podium-name { font-size: 0.8rem !important; }
+  .podium-1 .podium-base { height: 52px; font-size: 1.5rem; }
+  .podium-2 .podium-base { height: 40px; font-size: 1.25rem; }
+  .podium-3 .podium-base { height: 34px; font-size: 1.25rem; }
+}
+
+/* ---- 尊重减少动画偏好 ---- */
+@media (prefers-reduced-motion: reduce) {
+  .podium-item,
+  .podium-badge::after,
+  .pr-row::after,
+  .pr-empty {
+    animation: none !important;
+    transition: none !important;
+  }
+  .podium-item:hover { transform: none; }
+}
