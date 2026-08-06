@@ -12,6 +12,7 @@ import {
   Crown,
   Medal,
   Calendar,
+  Layers,
 } from "lucide-react";
 import { publicApi, getPublicErrorMessage } from "../api/public";
 import { useToast } from "../hooks/useToast";
@@ -35,7 +36,7 @@ import DotField from "../components/DotField";
 import SpotlightCard from "../components/SpotlightCard";
 import ChromaSpotlight from "../components/ChromaSpotlight";
 import GlobalSpotlight from "../components/GlobalSpotlight";
-import type { RankingItem, Branch } from "../types";
+import type { RankingItem, Branch, BranchGroup, StatCycle } from "../types";
 
 /**
  * 公开排名页面：无需登录即可查看
@@ -64,21 +65,64 @@ export default function PublicRanking() {
   const dotGlowColor = primaryValue;
 
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [branchId, setBranchId] = useState<number | undefined>(undefined);
+  const [branchGroups, setBranchGroups] = useState<BranchGroup[]>([]);
+  // 选择值："" = 全部厅，数字字符串 = 单厅，"g{id}" = 合厅组
+  const [selectedValue, setSelectedValue] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
-    publicApi
-      .listBranches()
-      .then((list) => setBranches(list.filter((b) => !b.closed)))
+    Promise.all([
+      publicApi.listBranches(),
+      publicApi.listBranchGroups(),
+    ])
+      .then(([list, groups]) => {
+        setBranches(list.filter((b) => !b.closed));
+        setBranchGroups(groups);
+      })
       .catch((err) => toast.error(getPublicErrorMessage(err)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 解析当前选择
+  const isGroupMode = selectedValue.startsWith("g");
+  const selectedGroupId = isGroupMode ? Number(selectedValue.slice(1)) : undefined;
+  const branchId = !isGroupMode && selectedValue ? Number(selectedValue) : undefined;
 
   const selectedBranch = useMemo(
     () => branches.find((b) => b.id === branchId),
     [branches, branchId],
   );
+  const selectedGroup = useMemo(
+    () => branchGroups.find((g) => g.id === selectedGroupId),
+    [branchGroups, selectedGroupId],
+  );
+
+  // 全部厅模式：独立厅（已合并到合厅组的厅不单独显示）+ 合厅组
+  const standaloneBranches = useMemo(
+    () => branches.filter((b) => !b.groupId),
+    [branches],
+  );
+  const activeGroups = useMemo(
+    () => branchGroups
+      .map((g) => ({ ...g, branches: g.branches.filter((b) => !b.closed) }))
+      .filter((g) => g.branches.length > 0),
+    [branchGroups],
+  );
+
+  // 全部厅模式下要展示的卡片列表（独立厅 + 合厅组）
+  const allCards = useMemo(() => {
+    const branchCards = standaloneBranches.map((b) => ({
+      type: "branch" as const,
+      key: `b${b.id}`,
+      branch: b,
+    }));
+    const groupCards = activeGroups.map((g) => ({
+      type: "group" as const,
+      key: `g${g.id}`,
+      group: g,
+    }));
+    return [...branchCards, ...groupCards];
+  }, [standaloneBranches, activeGroups]);
 
   // 搜索：跨所有厅查询本周/本月数据
   const trimmedQuery = searchQuery.trim();
@@ -179,44 +223,68 @@ export default function PublicRanking() {
             )}
           </div>
 
-          {/* 厅选择器 */}
+          {/* 厅选择器：全部厅 + 合厅组 + 独立厅 */}
           <GroupedSelect
-            value={branchId !== undefined ? String(branchId) : ""}
-            onChange={(val) =>
-              setBranchId(val ? Number(val) : undefined)
-            }
+            value={selectedValue}
+            onChange={(val) => setSelectedValue(val)}
             topOption={{ value: "", label: "全部厅" }}
-            options={branches.map((b) => ({
-              value: String(b.id),
-              label: `${b.name}${b.statCycle === "MONTH" ? "（按月）" : ""}`,
-            }))}
-            minWidth={160}
+            groups={[
+              ...(activeGroups.length > 0
+                ? [{
+                    label: "合厅组",
+                    options: activeGroups.map((g) => ({
+                      value: `g${g.id}`,
+                      label: `${g.name}（${g.branches.length}个厅）`,
+                    })),
+                  }]
+                : []),
+              {
+                label: "厅",
+                options: standaloneBranches.map((b) => ({
+                  value: String(b.id),
+                  label: `${b.name}${b.statCycle === "MONTH" ? "（按月）" : ""}`,
+                })),
+              },
+            ]}
+            minWidth={180}
+            maxWidth={280}
           />
         </div>
 
         {/* 搜索结果或排名卡片 */}
         {isSearching ? (
           <SearchResults query={trimmedQuery} toast={toast} />
-        ) : !branchId ? (
-          // 全部厅模式：每个厅一个独立卡片
-          branches.length === 0 ? (
+        ) : !selectedValue ? (
+          // 全部厅模式：独立厅卡片 + 合厅组卡片
+          allCards.length === 0 ? (
             <RankingCardSkeleton />
-          ) : branches.length === 1 ? (
-            // 只有一个厅时：卡片占满宽度
-            <PublicBranchCard branch={branches[0]} toast={toast} />
+          ) : allCards.length === 1 ? (
+            allCards[0].type === "branch" ? (
+              <PublicBranchCard branch={allCards[0].branch} toast={toast} />
+            ) : (
+              <PublicGroupCard group={allCards[0].group} toast={toast} />
+            )
           ) : (
-            // 多个厅时：双列网格 + 聚光灯灰度效果
             <ChromaSpotlight radius={320} damping={0.5}>
               <div className="grid gap-5 lg:grid-cols-2">
-                {branches.map((b) => (
-                  <PublicBranchCard key={b.id} branch={b} toast={toast} />
-                ))}
+                {allCards.map((card) =>
+                  card.type === "branch" ? (
+                    <PublicBranchCard key={card.key} branch={card.branch} toast={toast} />
+                  ) : (
+                    <PublicGroupCard key={card.key} group={card.group} toast={toast} />
+                  ),
+                )}
               </div>
             </ChromaSpotlight>
           )
-        ) : (
+        ) : isGroupMode && selectedGroup ? (
+          // 单选合厅组模式
+          <PublicGroupCard group={selectedGroup} toast={toast} />
+        ) : selectedBranch ? (
           // 单厅模式：单卡片占满宽度
-          <PublicBranchCard branch={selectedBranch!} toast={toast} />
+          <PublicBranchCard branch={selectedBranch} toast={toast} />
+        ) : (
+          <RankingCardSkeleton />
         )}
       </main>
     </div>
@@ -421,6 +489,239 @@ function PublicBranchCard({
                     <td className="px-4 py-3 text-center text-textPrimary font-medium">
                       <span className={item.rank === 1 ? "font-semibold" : ""}>
                         {item.personnelName}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center text-textPrimary font-mono font-bold text-base tabular-nums">
+                      {item.mx}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </SpotlightCard>
+  );
+}
+
+/**
+ * 公开合厅组排名卡片：聚合组内所有厅的排名数据
+ * 周期跟随组内成员的 statCycle（同组合一），API 查询传 branchGroupId
+ */
+function PublicGroupCard({
+  group,
+  toast,
+}: {
+  group: BranchGroup;
+  toast: ReturnType<typeof useToast>;
+}) {
+  // 组内未关闭的成员厅（同组合一，取首个厅周期）
+  const memberBranches = useMemo(
+    () => group.branches.filter((b) => !b.closed),
+    [group.branches],
+  );
+  const groupCycle: StatCycle = memberBranches[0]?.statCycle ?? "WEEK";
+  const isMonthCycle = groupCycle === "MONTH";
+
+  const [weeks, setWeeks] = useState<string[]>([]);
+  const [ranking, setRanking] = useState<RankingItem[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const {
+    weekStart,
+    setWeekStart,
+    handlePrev,
+    handleNext,
+    handleThisPeriod,
+    availableWeeks,
+    availableMonths,
+    selectedMonthRef,
+  } = usePeriodNavigator({
+    branch: { statCycle: groupCycle },
+    availableWeeks: weeks,
+  });
+
+  useEffect(() => {
+    publicApi
+      .listWeeks(undefined, group.id)
+      .then(setWeeks)
+      .catch(() => {});
+  }, [group.id]);
+
+  useEffect(() => {
+    setLoading(true);
+    publicApi
+      .getRanking(formatDate(weekStart), undefined, undefined, group.id)
+      .then(setRanking)
+      .catch((err) => toast.error(getPublicErrorMessage(err)))
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [weekStart, group.id]);
+
+  const top10 = useMemo(() => ranking.slice(0, 10), [ranking]);
+
+  return (
+    <SpotlightCard className="glass-card">
+      {/* 卡片头部：合厅组名 + 成员数标签 + 周期标签 */}
+      <div className="relative flex items-center gap-3 px-5 py-4 border-b border-border/60 flex-wrap bg-gradient-to-r from-primary/5 via-transparent to-transparent">
+        <div className="w-9 h-9 rounded-custom-sm bg-primary/10 flex items-center justify-center ring-1 ring-primary/15">
+          <Layers size={18} className="text-primary" />
+        </div>
+        <h3 className="text-lg font-bold text-textPrimary tracking-tight">
+          {group.name}
+        </h3>
+        <span className="px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1 bg-primary/10 text-primary ring-1 ring-primary/20">
+          <Layers size={11} />
+          {memberBranches.length}个厅
+        </span>
+        <span
+          className={`px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${
+            isMonthCycle
+              ? "bg-warning/10 text-warning ring-1 ring-warning/20"
+              : "bg-success/10 text-success ring-1 ring-success/20"
+          }`}
+        >
+          <Calendar size={11} />
+          {isMonthCycle ? "按月统计" : "按周统计"}
+        </span>
+      </div>
+      {/* 日期选择器：按钮组风格 */}
+      <div className="flex items-center gap-2 px-5 py-3 border-b border-border/60 flex-wrap bg-g-100/30 dark:bg-g-100/5">
+        <div className="flex items-center rounded-custom-sm border border-border overflow-hidden">
+          <button
+            onClick={handlePrev}
+            className="p-2 bg-card text-textSecondary hover:text-primary hover:bg-primary/5 tad-200 cursor-pointer border-r border-border"
+            aria-label={isMonthCycle ? "上一月" : "上一周"}
+          >
+            <ChevronLeft size={14} />
+          </button>
+          <button
+            onClick={handleNext}
+            className="p-2 bg-card text-textSecondary hover:text-primary hover:bg-primary/5 tad-200 cursor-pointer"
+            aria-label={isMonthCycle ? "下一月" : "下一周"}
+          >
+            <ChevronRight size={14} />
+          </button>
+        </div>
+        {isMonthCycle ? (
+          <GroupedSelect
+            value={selectedMonthRef}
+            onChange={(val) => setWeekStart(new Date(val))}
+            options={availableMonths.map((m) => ({
+              value: m.ref,
+              label: getMonthRangeText(m.ref),
+            }))}
+            minWidth={200}
+          />
+        ) : (
+          <GroupedSelect
+            value={formatDate(weekStart)}
+            onChange={(val) => setWeekStart(new Date(val))}
+            options={availableWeeks.map((w) => ({
+              value: w,
+              label: getWeekRangeText(w),
+            }))}
+            minWidth={200}
+          />
+        )}
+        <button
+          onClick={handleThisPeriod}
+          className="px-3 py-1.5 rounded-custom-sm bg-primary/10 text-primary hover:bg-primary/20 text-xs font-medium tad-200 cursor-pointer border border-primary/20"
+        >
+          {isMonthCycle ? "本月" : "本周"}
+        </button>
+      </div>
+      {/* 排名表格：只显示排名、人员、所属厅、麦序 */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-g-100/50 dark:bg-g-100/5 border-b border-border/60">
+            <tr className="text-center text-textMuted">
+              <th className="px-4 py-3 font-medium text-xs uppercase tracking-wider">排名</th>
+              <th className="px-4 py-3 font-medium text-xs uppercase tracking-wider">人员</th>
+              <th className="px-4 py-3 font-medium text-xs uppercase tracking-wider">所属厅</th>
+              <th className="px-4 py-3 font-medium text-xs uppercase tracking-wider">麦序</th>
+            </tr>
+          </thead>
+          <tbody>
+            {top10.length === 0 && !loading ? (
+              <tr>
+                <td
+                  colSpan={4}
+                  className="px-4 py-12 text-center text-textMuted"
+                >
+                  <div className="flex flex-col items-center gap-2">
+                    <Trophy size={28} className="text-g-300 dark:text-g-600" />
+                    <span className="text-sm">暂无数据</span>
+                  </div>
+                </td>
+              </tr>
+            ) : top10.length === 0 ? (
+              Array.from({ length: 5 }).map((_, i) => (
+                <tr key={i} className="border-b border-border/40 last:border-0">
+                  {Array.from({ length: 4 }).map((_, j) => (
+                    <td key={j} className="px-4 py-3">
+                      <Skeleton className="h-5 w-full" />
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : (
+              top10.map((item) => {
+                const isTop3 = item.rank <= 3;
+                const rowBg = isTop3 ? rankRowBg[item.rank - 1] : "";
+                const badgeColor = isTop3
+                  ? rankBadgeColors[item.rank - 1]
+                  : "#94A3B8";
+                const rowGradient =
+                  item.rank === 1
+                    ? "bg-gradient-to-r from-amber-50/80 to-transparent dark:from-amber-900/10"
+                    : item.rank === 2
+                      ? "bg-gradient-to-r from-slate-50/80 to-transparent dark:from-slate-700/10"
+                      : item.rank === 3
+                        ? "bg-gradient-to-r from-orange-50/80 to-transparent dark:from-orange-900/10"
+                        : "";
+                const badgeClass =
+                  item.rank === 1
+                    ? "bg-gradient-to-br from-amber-400 to-yellow-500 shadow-md shadow-amber-500/30"
+                    : item.rank === 2
+                      ? "bg-gradient-to-br from-slate-300 to-slate-400 shadow-md shadow-slate-400/30"
+                      : item.rank === 3
+                        ? "bg-gradient-to-br from-orange-300 to-orange-400 shadow-md shadow-orange-400/30"
+                        : "bg-g-200 text-textSecondary";
+                // 找到该人员所属厅名
+                const memberBranch = memberBranches.find((b) => b.id === item.branchId);
+                return (
+                  <tr
+                    key={`${item.branchId}-${item.personnelId}`}
+                    className={`border-b border-border/40 last:border-0 ${rowBg} ${rowGradient} ${isTop3 ? "border-l-4" : ""} hover:bg-primary/5 dark:hover:bg-primary/10 tad-200`}
+                    style={
+                      isTop3
+                        ? { borderLeftColor: badgeColor }
+                        : undefined
+                    }
+                  >
+                    <td className="px-4 py-3 text-center">
+                      <div
+                        className={`w-8 h-8 mx-auto rounded-full flex items-center justify-center font-bold text-xs font-mono ${badgeClass} ${item.rank <= 3 ? "text-white" : ""}`}
+                      >
+                        {item.rank === 1 ? (
+                          <Crown size={13} className="text-white" />
+                        ) : item.rank <= 3 ? (
+                          <Medal size={13} className="text-white" />
+                        ) : (
+                          item.rank
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-center text-textPrimary font-medium">
+                      <span className={item.rank === 1 ? "font-semibold" : ""}>
+                        {item.personnelName}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center text-textSecondary text-xs">
+                      <span className="px-2 py-0.5 rounded-full bg-g-100/70 dark:bg-g-100/10">
+                        {memberBranch?.name ?? "-"}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center text-textPrimary font-mono font-bold text-base tabular-nums">

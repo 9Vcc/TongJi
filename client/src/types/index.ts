@@ -50,6 +50,8 @@ export interface Branch {
   createdAt: string
   personnelCount?: number
   dataRecordCount?: number
+  /** 所属合厅组 ID（null 表示未合并） */
+  groupId?: number | null
 }
 
 // 合厅组（多个厅的持久化分组）

@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { RankingItem, RewardRule, Branch, PublicPersonnelItem } from '../types'
+import type { RankingItem, RewardRule, Branch, BranchGroup, PublicPersonnelItem } from '../types'
 
 /**
  * 公开 API 客户端：不附加 token，用于无需登录的公开页面
@@ -28,14 +28,25 @@ export const publicApi = {
   listBranches() {
     return publicRequest.get<unknown, Branch[]>('/branches')
   },
-  listWeeks(branchId?: number) {
+  listBranchGroups() {
+    return publicRequest.get<unknown, BranchGroup[]>('/branch-groups')
+  },
+  listWeeks(branchId?: number, branchGroupId?: number) {
     return publicRequest.get<unknown, string[]>('/weeks', {
-      params: branchId ? { branchId } : undefined,
+      params: {
+        ...(branchId ? { branchId } : {}),
+        ...(branchGroupId ? { branchGroupId } : {}),
+      },
     })
   },
-  getRanking(weekStart?: string, branchId?: number, cycle?: 'WEEK' | 'MONTH') {
+  getRanking(
+    weekStart?: string,
+    branchId?: number,
+    cycle?: 'WEEK' | 'MONTH',
+    branchGroupId?: number,
+  ) {
     return publicRequest.get<unknown, RankingItem[]>('/ranking', {
-      params: { weekStart, branchId, cycle },
+      params: { weekStart, branchId, cycle, branchGroupId },
     })
   },
   getRewardRules(branchId?: number) {
