@@ -113,7 +113,7 @@ export default async function publicRoutes(fastify: FastifyInstance) {
     const groupFilter =
       groupIdParam && !Number.isNaN(Number(groupIdParam)) ? Number(groupIdParam) : undefined
 
-    // 合厅组模式：查询组内所有未关闭厅并合并（各厅 statCycle 一致，取首个厅周期）
+    // 合厅组模式：查询组内所有未关闭厅并合并，跨厅统一按麦序重新排名
     if (groupFilter) {
       const group = await prisma.branchGroup.findUnique({
         where: { id: groupFilter },
@@ -126,7 +126,11 @@ export default async function publicRoutes(fastify: FastifyInstance) {
       const results = await Promise.all(
         memberBranches.map((b) => computeRanking(refDate, b.id, groupCycle))
       )
-      return reply.send(results.flat())
+      const merged = results.flat()
+      // 跨厅统一按麦序降序重新排名（同麦序按人员ID升序保持稳定）
+      merged.sort((a, b) => b.mx - a.mx || a.personnelId - b.personnelId)
+      merged.forEach((item, idx) => { item.rank = idx + 1 })
+      return reply.send(merged)
     }
 
     // 指定单厅：按该厅 cycle 查询（已关闭的厅不显示）
